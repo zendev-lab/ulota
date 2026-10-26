@@ -1,20 +1,20 @@
 import { fail, error as kitError } from "@sveltejs/kit";
-import { getRequestDictionary, localeCookieName } from "$lib/i18n";
-import { ensureCurrentOwnerSession } from "$lib/server/auth";
-import { getDatabase } from "$lib/server/db";
+import { getRequestDictionary, localeCookieName } from "#lib/i18n.ts";
+import { ensureCurrentOwnerSession } from "#lib/server/auth.ts";
+import { getDatabase } from "#lib/server/db.ts";
 import {
   buildDaemonWorkspaceRegistrationCommand,
   isInsecureRemoteServerOrigin,
   isLoopbackServerOrigin,
-} from "$lib/server/daemon-registration-commands";
-import { formText } from "$lib/server/form-data";
+} from "#lib/server/daemon-registration-commands.ts";
+import { formText } from "#lib/server/form-data.ts";
 import {
   createRuntimeEnrollmentToken,
   revokeRuntimeEnrollmentToken,
 } from "@zendev-lab/spark-hub-coordination/runtime-registration";
 import { loadWorkspaceRegistrationPage } from "@zendev-lab/spark-hub-coordination/hub-queries";
 import { unbindWorkspaceLease } from "@zendev-lab/spark-hub-coordination/projection-services";
-import { workspacePath } from "$lib/workspace-routes";
+import { workspacePath } from "#lib/workspace-routes.ts";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ params, url }) => {

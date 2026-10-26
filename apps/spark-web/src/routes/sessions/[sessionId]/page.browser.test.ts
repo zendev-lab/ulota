@@ -20,12 +20,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("$app/navigation", () => ({ goto: mocks.goto, invalidate: mocks.invalidate }));
-vi.mock("$lib/live-events", () => ({
+vi.mock("#lib/live-events.ts", () => ({
   attachWebSessionEvents: mocks.attachWebSessionEvents,
 }));
-vi.mock("$lib/web-rpc", () => ({ webRpc: mocks.webRpc }));
+vi.mock("#lib/web-rpc.ts", () => ({ webRpc: mocks.webRpc }));
 
-import { getDictionary } from "$lib/i18n";
+import { getDictionary } from "#lib/i18n.ts";
 import SessionPage from "./+page.svelte";
 
 type SessionPageData = ComponentProps<typeof SessionPage>["data"];

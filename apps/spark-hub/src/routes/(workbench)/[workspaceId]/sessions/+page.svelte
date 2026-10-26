@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SessionsWorkspace from "$lib/SessionsWorkspace.svelte";
+  import SessionsWorkspace from "#lib/SessionsWorkspace.svelte";
 
   let { data, form } = $props();
   let t = $derived(data.messages.sessions);

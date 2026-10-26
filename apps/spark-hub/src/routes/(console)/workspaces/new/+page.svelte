@@ -2,11 +2,11 @@
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
   import { Icon } from "@zendev-lab/spark-ui";
-  import { formatRelativeTime } from "$lib/i18n";
+  import { formatRelativeTime } from "#lib/i18n.ts";
   import { Button, Field, Input, PageHeader } from "@zendev-lab/spark-ui";
-  import { slugifyWorkspaceIdentifier } from "$lib/slugify";
-  import { resolveWorkspaceCreationState } from "$lib/workspace-creation-state";
-  import type { SubmitFunction } from "@sveltejs/kit";
+  import { slugifyWorkspaceIdentifier } from "#lib/slugify.ts";
+  import { resolveWorkspaceCreationState } from "#lib/workspace-creation-state.ts";
+  import type { SubmitFunction } from "$app/forms";
 
   type ClipboardWriteResult =
     | { ok: true }

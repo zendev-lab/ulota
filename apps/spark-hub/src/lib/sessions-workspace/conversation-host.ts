@@ -1,17 +1,20 @@
-import type { SubmitFunction } from "@sveltejs/kit";
+import type { SubmitFunction } from "$app/forms";
 import type {
   SessionQueueItem,
   SessionQueueLabels,
   SessionStatusBarLabels,
   SlashActionAvailability,
-} from "$lib/components/conversation";
+} from "#lib/components/conversation/index.ts";
 import type { ConversationPartLabels, LoadEarlierOutcome } from "@zendev-lab/spark-ui/conversation";
-import type { ModelPickerGroup, ModelRuntimeControlLabels } from "$lib/components/model-selector";
-import type { PendingWorkbenchAsk } from "$lib/pending-ask";
-import type { SessionEventConnectionState } from "$lib/session-event-connection";
-import type { SessionTimelineItem } from "$lib/session-timeline";
-import type { HubSlashCommandSuggestion } from "$lib/slash-actions";
-import type { AppMessages } from "$lib/i18n";
+import type {
+  ModelPickerGroup,
+  ModelRuntimeControlLabels,
+} from "#lib/components/model-selector/index.ts";
+import type { PendingWorkbenchAsk } from "#lib/pending-ask.ts";
+import type { SessionEventConnectionState } from "#lib/session-event-connection.ts";
+import type { SessionTimelineItem } from "#lib/session-timeline.ts";
+import type { HubSlashCommandSuggestion } from "#lib/slash-actions.ts";
+import type { AppMessages } from "#lib/i18n.ts";
 import type {
   SparkActionBarView,
   SparkActionView,

@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   activity: vi.fn(),
 }));
 
-vi.mock("$lib/server/managed-sessions", () => ({
+vi.mock("#lib/server/managed-sessions.ts", () => ({
   archiveManagedSessionForHub: vi.fn(),
   createManagedSessionForHub: vi.fn(),
   getManagedSessionForHub: mocks.get,
@@ -20,12 +20,12 @@ vi.mock("$lib/server/managed-sessions", () => ({
   listManagedSessionsForHub: mocks.list,
 }));
 
-vi.mock("$lib/server/db", () => ({ getDatabase: () => ({}) }));
+vi.mock("#lib/server/db.ts", () => ({ getDatabase: () => ({}) }));
 vi.mock("@zendev-lab/spark-hub-coordination/events", () => ({ latestEventCursor: () => null }));
 vi.mock("@zendev-lab/spark-hub-coordination/session-activity", () => ({
   loadSessionActivity: mocks.activity,
 }));
-vi.mock("$lib/server/model-control", () => ({
+vi.mock("#lib/server/model-control.ts", () => ({
   loadModelControlForHub: mocks.modelControl,
   loadProjectedModelControlForHub: mocks.projectedModelControl,
   modelValue: vi.fn(),
@@ -34,7 +34,7 @@ vi.mock("$lib/server/model-control", () => ({
   setSessionModelForHub: vi.fn(),
   setSessionThinkingLevelForHub: vi.fn(),
 }));
-vi.mock("$lib/server/submission-idempotency", () => ({
+vi.mock("#lib/server/submission-idempotency.ts", () => ({
   createHubSubmissionId: () => "generated-browser-submission",
 }));
 import { loadSessionPage as _loadSessionPage } from "./session-detail-route";

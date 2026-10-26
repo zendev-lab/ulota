@@ -11,8 +11,8 @@ import {
   writeSessionPendingSubmission,
   writeStartConversationPendingSubmission,
   type StartConversationSubmissionContext,
-} from "$lib/session-draft";
-import { hubComposerFeedbackAfterInput } from "$lib/slash-actions";
+} from "#lib/session-draft.ts";
+import { hubComposerFeedbackAfterInput } from "#lib/slash-actions.ts";
 import type { FormValues, SubmissionState } from "./types";
 
 export type ComposerSources = {

@@ -4,26 +4,26 @@ import {
   loadWorkbenchHome,
   resolvePendingWorkspaceBinding,
 } from "@zendev-lab/spark-hub-coordination/hub-queries";
-import { getRequestDictionary, localeCookieName, type AppMessages } from "$lib/i18n";
-import { ensureCurrentOwnerSession } from "$lib/server/auth";
-import { getDatabase } from "$lib/server/db";
+import { getRequestDictionary, localeCookieName, type AppMessages } from "#lib/i18n.ts";
+import { ensureCurrentOwnerSession } from "#lib/server/auth.ts";
+import { getDatabase } from "#lib/server/db.ts";
 import {
   buildDaemonWorkspaceRegistrationCommand,
   isInsecureRemoteServerOrigin,
   isLoopbackServerOrigin,
-} from "$lib/server/daemon-registration-commands";
+} from "#lib/server/daemon-registration-commands.ts";
 import { createWorkspaceWithLease } from "@zendev-lab/spark-hub-coordination/projection-services";
 import {
   bindRuntimeRefreshTokenToWorkspace,
   createRuntimeEnrollmentToken,
 } from "@zendev-lab/spark-hub-coordination/runtime-registration";
-import { slugifyWorkspaceIdentifier } from "$lib/slugify";
-import { workspaceSessionsPath } from "$lib/workspace-routes";
+import { slugifyWorkspaceIdentifier } from "#lib/slugify.ts";
+import { workspaceSessionsPath } from "#lib/workspace-routes.ts";
 import {
   builtinFreshWorkspaceProfile,
   loadWorkspaceProfileFromGitHubUrl,
   resolveWorkspaceProfileInputs,
-} from "$lib/server/workspace-profiles";
+} from "#lib/server/workspace-profiles.ts";
 import type { Actions, PageServerLoad } from "./$types";
 
 const pendingWorkspaceSetupCookie = "spark_hub_pending_workspace_setup";

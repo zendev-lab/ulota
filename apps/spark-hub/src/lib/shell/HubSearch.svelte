@@ -3,9 +3,9 @@
   import { onMount } from "svelte";
   import { Dialog as DialogShell, Icon } from "@zendev-lab/spark-ui";
   import { DialogDescription, DialogTitle, DialogTrigger } from "@zendev-lab/spark-ui/headless";
-  import type { AppMessages } from "$lib/i18n";
-  import { hubOpenSearchEvent } from "$lib/slash-actions";
-  import { workspaceSessionsPath } from "$lib/workspace-routes";
+  import type { AppMessages } from "#lib/i18n.ts";
+  import { hubOpenSearchEvent } from "#lib/slash-actions.ts";
+  import { workspaceSessionsPath } from "#lib/workspace-routes.ts";
   import {
     buildHubSearchResults,
     type HubSearchResult,

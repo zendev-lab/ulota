@@ -4,7 +4,7 @@ import {
   createSessionActivityRefreshState,
   finishSessionActivityRefresh,
   requestSessionActivityRefresh,
-} from "$lib/session-live-events";
+} from "#lib/session-live-events.ts";
 
 export type ActivityRefreshController = {
   scheduleActivityRefresh: () => void;

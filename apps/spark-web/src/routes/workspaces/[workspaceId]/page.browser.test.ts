@@ -7,9 +7,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("$app/navigation", () => ({ goto: mocks.goto }));
-vi.mock("$lib/web-rpc", () => ({ webRpc: mocks.webRpc }));
+vi.mock("#lib/web-rpc.ts", () => ({ webRpc: mocks.webRpc }));
 
-import { getDictionary } from "$lib/i18n";
+import { getDictionary } from "#lib/i18n.ts";
 import WorkspacePage from "./+page.svelte";
 
 function deferred<T>() {

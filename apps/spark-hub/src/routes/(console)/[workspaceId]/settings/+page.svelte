@@ -1,7 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { Icon } from "@zendev-lab/spark-ui";
-  import { formatRelativeTime, statusLabel as getStatusLabel } from "$lib/i18n";
+  import { formatRelativeTime, statusLabel as getStatusLabel } from "#lib/i18n.ts";
   import { Button, Field, Input, PageHeader, Panel } from "@zendev-lab/spark-ui";
 
   let { data, form } = $props();

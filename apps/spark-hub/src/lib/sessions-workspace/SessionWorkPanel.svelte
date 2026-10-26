@@ -7,7 +7,7 @@
     sessionHasProjectedWork,
     sessionWorkObjective,
     sessionWorkStatus,
-  } from "$lib/session-work-view";
+  } from "#lib/session-work-view.ts";
   import type { IconName } from "@zendev-lab/spark-ui";
   import type { SessionConversationHost } from "./conversation-host";
 

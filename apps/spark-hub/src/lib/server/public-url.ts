@@ -1,6 +1,8 @@
 const publicUrlEnvName = "SPARK_HUB_PUBLIC_URL";
 const trustProxyEnvName = "SPARK_HUB_TRUST_PROXY";
 const proxyHopsEnvName = "SPARK_HUB_PROXY_HOPS";
+const fixedProtocolHeader = "x-spark-hub-protocol";
+const fixedHostHeader = "x-spark-hub-host";
 
 export type HubPublicUrlMode = "local" | "fixed" | "proxy";
 
@@ -44,12 +46,25 @@ export function configureHubPublicUrl(
 
   env.ORIGIN = publicUrl;
   if (trustProxy) configureAdapterProxyHeaders(env);
+  env.PROTOCOL_HEADER = fixedProtocolHeader;
+  env.HOST_HEADER = fixedHostHeader;
+  delete env.PORT_HEADER;
 
   return {
     mode: requested ? "fixed" : "local",
     publicUrl,
     trustedProxy: trustProxy,
   };
+}
+
+export function applyHubPublicUrl(
+  request: { headers: Record<string, string | string[] | undefined> },
+  config: HubPublicUrlConfig,
+): void {
+  if (!config.publicUrl) return;
+  const origin = new URL(config.publicUrl);
+  request.headers[fixedProtocolHeader] = origin.protocol.slice(0, -1);
+  request.headers[fixedHostHeader] = origin.host;
 }
 
 export function normalizePublicUrl(value: string, name = publicUrlEnvName): string {
@@ -116,6 +131,8 @@ function configureAdapterProxyHeaders(env: Record<string, string | undefined>): 
   const hops = parseProxyHops(trimmed(env[proxyHopsEnvName]));
   env.ADDRESS_HEADER = "x-forwarded-for";
   env.PROTOCOL_HEADER = "x-forwarded-proto";
+  env.HOST_HEADER = "x-forwarded-host";
+  delete env.PORT_HEADER;
   env.XFF_DEPTH = String(hops);
 }
 

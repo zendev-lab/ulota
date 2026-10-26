@@ -1,7 +1,7 @@
 import { json } from "@sveltejs/kit";
 
-import { getDatabase } from "$lib/server/db";
-import { loadProjectedReproWorkbench } from "$lib/server/repro-workbench";
+import { getDatabase } from "#lib/server/db.ts";
+import { loadProjectedReproWorkbench } from "#lib/server/repro-workbench.ts";
 import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = ({ params }) => {

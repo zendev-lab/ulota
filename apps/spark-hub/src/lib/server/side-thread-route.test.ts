@@ -15,14 +15,14 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("$lib/server/managed-sessions", () => ({
+vi.mock("#lib/server/managed-sessions.ts", () => ({
   getManagedSessionForHub: mocks.get,
   getLiveManagedSessionForHub: mocks.get,
   getManagedSideThreadSnapshotForHub: mocks.snapshot,
   controlManagedSideThreadForHub: mocks.control,
 }));
 
-vi.mock("$lib/workbench-session-scope", () => ({
+vi.mock("#lib/workbench-session-scope.ts", () => ({
   workspaceIdForWorkbenchSession: (session: { scope?: { kind?: string; workspaceId?: string } }) =>
     session.scope?.kind === "workspace" ? (session.scope.workspaceId ?? null) : null,
 }));

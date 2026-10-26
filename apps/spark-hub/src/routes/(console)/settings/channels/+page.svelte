@@ -6,10 +6,10 @@
     type DaemonMessagePlatformConnection,
     type MessagePlatformAdapter,
     type MessagePlatformFormValues,
-  } from "$lib/message-platform";
-  import { statusLabel } from "$lib/i18n";
+  } from "#lib/message-platform.ts";
+  import { statusLabel } from "#lib/i18n.ts";
   import { Button, Field, Icon, Input, PageHeader, Select } from "@zendev-lab/spark-ui";
-  import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
+  import type { ActionResult, SubmitFunction } from "$app/forms";
   import type { SparkQqbotQrAuthReason, SparkQqbotQrAuthStatus } from "@zendev-lab/spark-protocol";
   import { onDestroy, untrack } from "svelte";
 

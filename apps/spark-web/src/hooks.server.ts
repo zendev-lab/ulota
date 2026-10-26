@@ -8,7 +8,8 @@ import {
   SPARK_WEB_ACCESS_PATH,
   sparkWebRequestReturnTo,
 } from "@zendev-lab/spark-daemon-client";
-import type { Handle, RequestEvent } from "@sveltejs/kit";
+import type { Handle } from "@sveltejs/kit/hooks";
+import type { RequestEvent } from "@sveltejs/kit";
 import { error, redirect } from "@sveltejs/kit";
 
 import { localeCookieName, resolveLocale } from "./lib/i18n.ts";

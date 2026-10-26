@@ -5,10 +5,10 @@ import {
   sessionConversationAnchorCount,
   type SessionSnapshotHistory,
   type SessionSnapshotWindow,
-} from "$lib/session-snapshot-window";
-import { SESSION_TIMELINE_PAGE_SIZE } from "$lib/session-timeline";
+} from "#lib/session-snapshot-window.ts";
+import { SESSION_TIMELINE_PAGE_SIZE } from "#lib/session-timeline.ts";
 import type { SparkSessionView } from "@zendev-lab/spark-protocol";
-import type { SessionLiveEventState } from "$lib/session-live-events";
+import type { SessionLiveEventState } from "#lib/session-live-events.ts";
 import { bumpTimelineRenderLimit, loadEarlierSessionTimeline } from "./timeline-window";
 
 export type TimelineWindowSources = {

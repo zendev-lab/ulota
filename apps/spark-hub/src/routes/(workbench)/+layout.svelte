@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { browser } from "$app/environment";
+  import { browser } from "$app/env";
   import { invalidateAll } from "$app/navigation";
   import { page } from "$app/state";
   import { Icon } from "@zendev-lab/spark-ui";
@@ -7,20 +7,20 @@
     parsePendingAskEvent,
     pendingAskEventCursor,
     shouldInvalidatePendingAsk,
-  } from "$lib/pending-ask";
-  import WorkbenchSessionRail from "$lib/WorkbenchSessionRail.svelte";
-  import HubShell from "$lib/shell/HubShell.svelte";
-  import type { HubSearchSession } from "$lib/shell/hub-search";
+  } from "#lib/pending-ask.ts";
+  import WorkbenchSessionRail from "#lib/WorkbenchSessionRail.svelte";
+  import HubShell from "#lib/shell/HubShell.svelte";
+  import type { HubSearchSession } from "#lib/shell/hub-search.ts";
   import {
     buildWorkbenchNavItems,
     isWorkbenchNavItemActive,
     settingsHubHref,
-  } from "$lib/workbench-nav";
-  import { workbenchSessionIdFromPath, workspacePath } from "$lib/workspace-routes";
+  } from "#lib/workbench-nav.ts";
+  import { workbenchSessionIdFromPath, workspacePath } from "#lib/workspace-routes.ts";
   import {
     readOrCreateOccupancyClientId,
     startWorkspaceOccupancyHeartbeat,
-  } from "$lib/workspace-occupancy-client";
+  } from "#lib/workspace-occupancy-client.ts";
 
   type SessionRecord = HubSearchSession & {
     activityUpdatedAt?: string;

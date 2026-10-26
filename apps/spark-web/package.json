@@ -9,6 +9,9 @@
     "spark-web": "./bin/spark-web"
   },
   "type": "module",
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  },
   "exports": {
     "./executable": "./bin/spark-web"
   },
@@ -22,13 +25,13 @@
     "test:browser": "vp test run --config vitest.browser.config.ts"
   },
   "dependencies": {
-    "@sveltejs/adapter-node": "^5.3.1",
-    "@sveltejs/kit": "^2.28.0",
+    "@sveltejs/adapter-node": "^6.0.0",
+    "@sveltejs/kit": "^3.0.0",
     "@zendev-lab/spark-daemon-client": "workspace:*",
     "@zendev-lab/spark-i18n": "workspace:*",
     "@zendev-lab/spark-protocol": "workspace:*",
     "@zendev-lab/spark-ui": "workspace:*",
-    "svelte": "^5.38.8"
+    "svelte": "^5.57.2"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.2.0",

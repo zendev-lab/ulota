@@ -1,7 +1,7 @@
 import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 
-import { readSparkWebSessionMedia } from "$lib/server/media";
+import { readSparkWebSessionMedia } from "#lib/server/media.ts";
 
 export const GET: RequestHandler = async ({ params }) => {
   if (!/^\d+$/u.test(params.contentIndex)) error(400, "Invalid media content index");

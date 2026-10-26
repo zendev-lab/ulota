@@ -2,7 +2,7 @@
   import type { Snippet } from "svelte";
   import { OperationsShell } from "@zendev-lab/spark-ui";
 
-  import type { AppMessages } from "$lib/i18n";
+  import type { AppMessages } from "#lib/i18n.ts";
   import HubTopbar from "./HubTopbar.svelte";
   import type { HubDaemonSummary, HubSearchSession, HubSearchWorkspace } from "./hub-search";
   import "./shell-nav-link.css";

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { Icon } from "@zendev-lab/spark-ui";
-  import TokenManagementSurface from "$lib/TokenManagementSurface.svelte";
-  import { daemonDisplayStatus, type DaemonDisplayStatus } from "$lib/daemon-status";
-  import { formatRelativeTime, statusLabel as getStatusLabel } from "$lib/i18n";
+  import TokenManagementSurface from "#lib/TokenManagementSurface.svelte";
+  import { daemonDisplayStatus, type DaemonDisplayStatus } from "#lib/daemon-status.ts";
+  import { formatRelativeTime, statusLabel as getStatusLabel } from "#lib/i18n.ts";
   import { Button, ConfirmDialog, PageHeader } from "@zendev-lab/spark-ui";
   import { DialogTrigger } from "@zendev-lab/spark-ui/headless";
 

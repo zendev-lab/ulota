@@ -6,16 +6,16 @@ import {
   sessionViewRevisionKey,
   convergeSessionLiveEventStateFromRegistryStatus,
   type SessionLiveEventState,
-} from "$lib/session-live-events";
+} from "#lib/session-live-events.ts";
 import {
   initialSessionEventConnectionState,
   type SessionEventConnectionState,
-} from "$lib/session-event-connection";
+} from "#lib/session-event-connection.ts";
 import {
   sessionActivityNeedsStatusProbe,
   type SessionActivityState,
-} from "$lib/session-activity-state";
-import type { SessionSnapshotHistory } from "$lib/session-snapshot-window";
+} from "#lib/session-activity-state.ts";
+import type { SessionSnapshotHistory } from "#lib/session-snapshot-window.ts";
 import type { SparkSessionView } from "@zendev-lab/spark-protocol";
 import { attachSessionLiveEventSource, attachSessionStatusProbe } from "./live-connection";
 import { resetDequeueUiOnSessionChange, type DequeueTurnUiState } from "./cancel-dequeue";

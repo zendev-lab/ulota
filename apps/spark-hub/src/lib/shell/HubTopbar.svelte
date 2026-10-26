@@ -6,8 +6,8 @@
     PopoverRoot,
     PopoverTrigger,
   } from "@zendev-lab/spark-ui/headless";
-  import { statusLabel, type AppMessages } from "$lib/i18n";
-  import SparkLogo from "$lib/SparkLogo.svelte";
+  import { statusLabel, type AppMessages } from "#lib/i18n.ts";
+  import SparkLogo from "#lib/SparkLogo.svelte";
   import HubSearch from "./HubSearch.svelte";
   import type { HubDaemonSummary, HubSearchSession, HubSearchWorkspace } from "./hub-search";
 

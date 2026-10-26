@@ -1,15 +1,15 @@
 import { error as kitError, fail } from "@sveltejs/kit";
-import { getRequestDictionary, localeCookieName } from "$lib/i18n";
+import { getRequestDictionary, localeCookieName } from "#lib/i18n.ts";
 import {
   parseHubMemoryProposalDetail,
   parseHubMemoryQuarantineDetail,
-} from "$lib/memory-proposal-detail";
-import { renderStoredArtifactPreview } from "$lib/server/artifact-preview";
+} from "#lib/memory-proposal-detail.ts";
+import { renderStoredArtifactPreview } from "#lib/server/artifact-preview.ts";
 import {
   loadArtifactDetailPage,
   prepareArtifactPreviewForWorkspace,
 } from "@zendev-lab/spark-hub-coordination/hub-queries";
-import { getDatabase } from "$lib/server/db";
+import { getDatabase } from "#lib/server/db.ts";
 import type { ArtifactPreviewStatus } from "@zendev-lab/spark-hub-coordination/artifact-cache";
 import type { Actions, PageServerLoad } from "./$types";
 

@@ -1,7 +1,7 @@
 import { redirect } from "@sveltejs/kit";
-import { getDatabase } from "$lib/server/db";
-import { requireWorkspaceByRouteId } from "$lib/server/workspace-routing";
-import { workspacePath } from "$lib/workspace-routes";
+import { getDatabase } from "#lib/server/db.ts";
+import { requireWorkspaceByRouteId } from "#lib/server/workspace-routing.ts";
+import { workspacePath } from "#lib/workspace-routes.ts";
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ params }) => {

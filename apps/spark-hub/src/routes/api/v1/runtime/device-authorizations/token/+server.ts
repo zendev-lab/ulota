@@ -4,8 +4,8 @@ import {
   runtimeRegistrationResponseSchema,
 } from "@zendev-lab/spark-protocol";
 import { json, type RequestHandler } from "@sveltejs/kit";
-import { getDatabase } from "$lib/server/db";
-import { errorJson } from "$lib/server/json";
+import { getDatabase } from "#lib/server/db.ts";
+import { errorJson } from "#lib/server/json.ts";
 import {
   exchangeRuntimeDeviceAuthorization,
   RuntimeDeviceAuthorizationError,

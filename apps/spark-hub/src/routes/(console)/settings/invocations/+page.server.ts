@@ -1,5 +1,5 @@
 import type { SparkInvocationStatus } from "@zendev-lab/spark-protocol";
-import { loadInvocationDiagnosticsForHub } from "$lib/server/invocation-diagnostics";
+import { loadInvocationDiagnosticsForHub } from "#lib/server/invocation-diagnostics.ts";
 import type { PageServerLoad } from "./$types";
 
 const invocationStatuses = new Set<SparkInvocationStatus>([

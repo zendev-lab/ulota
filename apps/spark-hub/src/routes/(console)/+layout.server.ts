@@ -1,5 +1,5 @@
-import { loadShellWorkspaceLayout } from "$lib/server/shell-layout";
-import { isControlPlanePath } from "$lib/console-nav";
+import { loadShellWorkspaceLayout } from "#lib/server/shell-layout.ts";
+import { isControlPlanePath } from "#lib/console-nav.ts";
 import type { LayoutServerLoad } from "./$types";
 
 export const load: LayoutServerLoad = ({ cookies, locals, url }) => {

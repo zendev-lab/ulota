@@ -18,6 +18,7 @@ export function presentHubServerError(input: {
 }): App.Error {
   if (isInvocationRouteUnavailableError(input.error)) {
     return {
+      status: input.status,
       code: INVOCATION_ROUTE_UNAVAILABLE_ERROR_CODE,
       message: "This invocation is managed by another Spark service.",
       requestId: input.requestId,
@@ -26,6 +27,7 @@ export function presentHubServerError(input: {
 
   if (isHubServiceUnavailableError(input.error)) {
     return {
+      status: input.status,
       code: "service_unavailable",
       message: HUB_SERVICE_UNAVAILABLE_MESSAGE,
       requestId: input.requestId,
@@ -33,6 +35,7 @@ export function presentHubServerError(input: {
   }
 
   return {
+    status: input.status,
     code: "unexpected_error",
     message: input.fallbackMessage || `Spark Hub request failed (${input.status}).`,
     requestId: input.requestId,

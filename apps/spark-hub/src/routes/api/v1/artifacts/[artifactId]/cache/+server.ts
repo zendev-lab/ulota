@@ -1,6 +1,6 @@
 import { error, json, type RequestHandler } from "@sveltejs/kit";
 import { ensureArtifactPreviewCache } from "@zendev-lab/spark-hub-coordination/artifact-cache";
-import { getDatabase } from "$lib/server/db";
+import { getDatabase } from "#lib/server/db.ts";
 
 export const GET: RequestHandler = ({ params }) => {
   if (!params.artifactId) {

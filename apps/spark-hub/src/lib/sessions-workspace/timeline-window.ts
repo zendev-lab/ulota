@@ -6,9 +6,9 @@ import {
   SESSION_SNAPSHOT_PAGE_SIZE,
   type SessionSnapshotHistory,
   type SessionSnapshotWindow,
-} from "$lib/session-snapshot-window";
+} from "#lib/session-snapshot-window.ts";
 import type { SparkSessionView } from "@zendev-lab/spark-protocol";
-import { SESSION_TIMELINE_PAGE_SIZE } from "$lib/session-timeline";
+import { SESSION_TIMELINE_PAGE_SIZE } from "#lib/session-timeline.ts";
 
 export type TimelineHistoryLoadInput = {
   sessionId: string;

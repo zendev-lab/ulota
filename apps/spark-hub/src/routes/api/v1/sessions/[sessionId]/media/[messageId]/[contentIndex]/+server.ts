@@ -1,8 +1,8 @@
 import {
   getManagedSessionMediaForHub,
   getProjectedManagedSessionForHub,
-} from "$lib/server/managed-sessions";
-import { workspaceIdForWorkbenchSession } from "$lib/workbench-session-scope";
+} from "#lib/server/managed-sessions.ts";
+import { workspaceIdForWorkbenchSession } from "#lib/workbench-session-scope.ts";
 import { error, type RequestHandler } from "@sveltejs/kit";
 
 export const GET: RequestHandler = async ({ params }) => {

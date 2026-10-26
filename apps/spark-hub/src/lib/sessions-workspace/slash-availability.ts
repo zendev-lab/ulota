@@ -1,4 +1,4 @@
-import type { SlashActionAvailability } from "$lib/components/conversation/index";
+import type { SlashActionAvailability } from "#lib/components/conversation/index.ts";
 import type { SparkActionView } from "@zendev-lab/spark-protocol";
 import type { ComposerSurface, SessionsWorkbenchCopy, SubmissionState } from "./types";
 

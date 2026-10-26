@@ -1,6 +1,6 @@
 import type { RequestHandler } from "./$types";
 
-import { formatSseFrame, streamSessionLiveEvents } from "$lib/server/sse";
+import { formatSseFrame, streamSessionLiveEvents } from "#lib/server/sse.ts";
 
 export const GET: RequestHandler = async ({ params, url, request }) => {
   const sessionId = params.sessionId?.trim();

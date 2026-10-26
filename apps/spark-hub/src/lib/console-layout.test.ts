@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   loadShellWorkspaceLayout: vi.fn(),
 }));
 
-vi.mock("$lib/server/shell-layout", () => ({
+vi.mock("#lib/server/shell-layout.ts", () => ({
   loadShellWorkspaceLayout: mocks.loadShellWorkspaceLayout,
 }));
 

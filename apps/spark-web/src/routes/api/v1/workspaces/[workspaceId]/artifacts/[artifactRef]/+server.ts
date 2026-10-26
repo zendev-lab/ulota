@@ -3,8 +3,8 @@ import { error } from "@sveltejs/kit";
 import {
   readSparkWebArtifactContent,
   SparkWebArtifactContentError,
-} from "$lib/server/artifact-content";
-import { invokeSparkWebRpc } from "$lib/server/rpc";
+} from "#lib/server/artifact-content.ts";
+import { invokeSparkWebRpc } from "#lib/server/rpc.ts";
 import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = async ({ params }) => {

@@ -1,12 +1,12 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
-  import AskQuestionField from "$lib/AskQuestionField.svelte";
+  import AskQuestionField from "#lib/AskQuestionField.svelte";
   import { Icon } from "@zendev-lab/spark-ui";
-  import type { AppMessages } from "$lib/i18n";
-  import type { PendingWorkbenchAsk } from "$lib/pending-ask";
+  import type { AppMessages } from "#lib/i18n.ts";
+  import type { PendingWorkbenchAsk } from "#lib/pending-ask.ts";
   import { Button, Textarea } from "@zendev-lab/spark-ui";
-  import type { SubmitFunction } from "@sveltejs/kit";
+  import type { SubmitFunction } from "$app/forms";
 
   let {
     ask,

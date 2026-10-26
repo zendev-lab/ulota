@@ -1,4 +1,4 @@
-import type { SubmitFunction } from "@sveltejs/kit";
+import type { SubmitFunction } from "$app/forms";
 import { createId } from "@zendev-lab/spark-protocol";
 import {
   readStartConversationPendingSubmission,
@@ -8,9 +8,9 @@ import {
   writeSessionPendingSubmission,
   writeStartConversationPendingSubmission,
   type StartConversationSubmissionContext,
-} from "$lib/session-draft";
-import { hubSlashSubmissionError } from "$lib/slash-actions";
-import { cancelledTurnIdFromActionResult } from "$lib/session-action-result";
+} from "#lib/session-draft.ts";
+import { hubSlashSubmissionError } from "#lib/slash-actions.ts";
+import { cancelledTurnIdFromActionResult } from "#lib/session-action-result.ts";
 import {
   applyCancelSubmitResult,
   applyDequeueSubmitResult,

@@ -3,12 +3,12 @@
   import { ChannelSessionIcon } from "@zendev-lab/spark-ui";
   import { Button } from "@zendev-lab/spark-ui";
   import { enhance } from "$app/forms";
-  import { visibleSessionStatus } from "$lib/conversation-status";
+  import { visibleSessionStatus } from "#lib/conversation-status.ts";
   import {
     primarySessionLoop,
     sessionWorkObjective,
     sessionWorkStatus,
-  } from "$lib/session-work-view";
+  } from "#lib/session-work-view.ts";
   import type { IconName } from "@zendev-lab/spark-ui";
   import type { Snippet } from "svelte";
   import type { SessionConversationHost } from "./conversation-host";

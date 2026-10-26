@@ -1,12 +1,12 @@
 import {
   cancelledTurnIdFromActionResult,
   queuedTurnIdFromActionResult,
-} from "$lib/session-action-result";
+} from "#lib/session-action-result.ts";
 import {
   registerQueuedSessionTurn,
   settleCancelledSessionTurn,
   type SessionLiveEventState,
-} from "$lib/session-live-events";
+} from "#lib/session-live-events.ts";
 import { invocationStatusFromActionResult } from "./form-results";
 
 export function adoptQueuedTurnIntoLiveState(

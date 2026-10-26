@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { INVOCATION_ROUTE_UNAVAILABLE_ERROR_CODE } from "$lib/error-codes";
+  import { INVOCATION_ROUTE_UNAVAILABLE_ERROR_CODE } from "#lib/error-codes.ts";
   import { Icon } from "@zendev-lab/spark-ui";
   import { Button } from "@zendev-lab/spark-ui";
 

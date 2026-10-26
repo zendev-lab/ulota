@@ -20,8 +20,8 @@
     Textarea,
     type SelectGroup,
   } from "@zendev-lab/spark-ui";
-  import { oauthHref } from "$lib/provider-auth";
-  import { webRpc } from "$lib/web-rpc";
+  import { oauthHref } from "#lib/provider-auth.ts";
+  import { webRpc } from "#lib/web-rpc.ts";
 
   let { data } = $props();
   let copy = $derived(data.messages.web.settings);

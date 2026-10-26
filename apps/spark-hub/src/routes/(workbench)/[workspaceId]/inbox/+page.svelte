@@ -4,9 +4,9 @@
     enumLabel,
     formatRelativeTime,
     statusLabel as getStatusLabel,
-  } from "$lib/i18n";
+  } from "#lib/i18n.ts";
   import { Button, EmptyState, PageHeader, Panel } from "@zendev-lab/spark-ui";
-  import { workspacePath, workspaceSessionPath } from "$lib/workspace-routes";
+  import { workspacePath, workspaceSessionPath } from "#lib/workspace-routes.ts";
 
   let { data } = $props();
   let t = $derived(data.messages.inbox);
