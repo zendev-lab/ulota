@@ -32,6 +32,7 @@ const config = {
     browser: {
       enabled: true,
       headless: true,
+      locators: { exact: false },
       provider: playwright(),
       instances: [{ browser: "chromium" }],
       expect: {

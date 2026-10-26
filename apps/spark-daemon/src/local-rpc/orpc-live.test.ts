@@ -24,7 +24,7 @@ import { handleLocalRpcLine } from "./dispatch.ts";
 import { startLocalRpcOrpcServer } from "./orpc-server.ts";
 import { startLocalRpcServer } from "./transport.ts";
 import type { LocalRpcHandlerOptions } from "./types.ts";
-import { createDaemonWorkspaceSession } from "../../../../test/support/session-fixtures.ts";
+import { createDaemonWorkspaceSession } from "../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 describe("local-rpc direct oRPC service", () => {
   const dirs: string[] = [];

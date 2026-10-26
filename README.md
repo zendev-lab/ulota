@@ -1,24 +1,14 @@
 # Spark
 
-**A local-first coding-agent runtime for durable execution, verifiable workflows,
-and multi-workspace coordination.**
+**A local-first coding-agent runtime for durable execution, verifiable workflows, and multi-workspace coordination.**
 
-Spark keeps agent work alive beyond one terminal process. A local daemon owns
-persistent sessions, invocations, background execution, retries, and recovery.
-The Hub coordinates registered workspaces and delegations without taking over
-their repositories or execution state. The local Web workbench, Hub Web UI,
-channels, and ACP are interfaces over those owners rather than competing
-runtimes.
+Spark keeps agent work alive beyond one terminal process. A local daemon owns persistent sessions, invocations, background execution, retries, and recovery. The Hub coordinates registered workspaces and delegations without taking over their repositories or execution state. The local Web workbench, Hub Web UI, channels, and ACP are interfaces over those owners rather than competing runtimes.
 
-Use Spark when a coding task needs to continue, ask for a decision, produce
-traceable artifacts, survive frontend restarts, or move between terminal and
-browser supervision.
+Use Spark when a coding task needs to continue, ask for a decision, produce traceable artifacts, survive frontend restarts, or move between terminal and browser supervision.
 
 ## Quick start
 
-Spark requires Node.js `>=24` and npm. The verified curl bootstrap is the
-recommended direct native entry; it installs the exact managed npm payload and
-keeps atomic upgrades and rollback:
+Spark requires Node.js `>=24` and npm. The verified curl bootstrap is the recommended direct native entry; it installs the exact managed npm payload and keeps atomic upgrades and rollback:
 
 ```bash
 curl -fsSL https://github.com/zendev-lab/spark/releases/latest/download/install.sh | sh
@@ -26,8 +16,7 @@ spark doctor
 spark
 ```
 
-Global npm installation remains supported when the package manager should own
-the command:
+Global npm installation remains supported when the package manager should own the command:
 
 ```bash
 npm install --global @zendev-lab/spark
@@ -46,19 +35,15 @@ npm install --global @zendev-lab/spark-hub
 spark-hub
 ```
 
-The complete `@zendev-lab/spark` package installs matching daemon, Hub, and web
-companions, so its dispatcher can also use:
+The complete `@zendev-lab/spark` package installs matching daemon, Hub, and web companions, so its dispatcher can also use:
 
 ```bash
 spark hub
 ```
 
-Spark starts or contacts the local daemon as needed. Use `spark-daemon status
---json` when you need to inspect execution state directly.
+Spark starts or contacts the local daemon as needed. Use `spark-daemon status --json` when you need to inspect execution state directly.
 
-See the [getting-started guide][getting-started] for provider configuration,
-package-manager-owned installations, background runs, sessions, and remote
-operation.
+See the [getting-started guide][getting-started] for provider configuration, package-manager-owned installations, background runs, sessions, and remote operation.
 
 ## What Spark provides
 
@@ -100,11 +85,7 @@ browser / Hub Web ─────────────► spark-hub ◄──
 | `spark-hub` | Authentication, daemon gateway, workspace registry, delegation, audit, and embedded management UI | Target execution, repositories, or internal evidence |
 | `spark-acp` | Stateless protocol translation | Sessions or invocations |
 
-The detailed ownership and command grammar are specified in
-[`.agents/notes/contracts/command-planes.md`](./.agents/notes/contracts/command-planes.md). Package
-dependency direction and state writers are defined by
-[`architecture/packages.json`](./architecture/packages.json) and the
-[package architecture specification](./.agents/notes/contracts/package-architecture.md).
+The detailed ownership and command grammar are specified in [`.agents/notes/contracts/command-planes.md`](./.agents/notes/contracts/command-planes.md). Package dependency direction and state writers are defined by [`architecture/packages.json`](./architecture/packages.json) and the [package architecture specification](./.agents/notes/contracts/package-architecture.md).
 
 ## Typical workflow
 
@@ -117,8 +98,7 @@ dependency direction and state writers are defined by
 5. Inspect artifacts, changes, tasks, and verification before delivery.
 6. Continue locally or delegate bounded work to another workspace through Hub.
 
-The [user documentation][docs] explains these workflows without requiring
-knowledge of internal packages or storage.
+The [user documentation][docs] explains these workflows without requiring knowledge of internal packages or storage.
 
 ## Interfaces
 
@@ -130,13 +110,7 @@ knowledge of internal packages or storage.
 | `spark-hub` | Global browser management, coordination, and delegation |
 | `spark-acp` | ACP-compatible clients over canonical daemon sessions |
 
-The native root CLI accepts `spark daemon`, `spark hub`, `spark web`,
-`spark acp`, and `spark mcp` as convenience forms and executes the matching
-`spark-*` companion. The complete meta package installs every companion; the
-real parser, diagnostics, updater, and router remain in
-`@zendev-lab/spark-cli`. Run `spark --help` for the
-current command map. The complete command reference is
-maintained in the [user documentation][cli-reference].
+The native root CLI accepts `spark daemon`, `spark hub`, `spark web`, `spark acp`, and `spark mcp` as convenience forms and executes the matching `spark-*` companion. The complete meta package installs every companion; the real parser, diagnostics, updater, and router remain in `@zendev-lab/spark-cli`. Run `spark --help` for the current command map. The complete command reference is maintained in the [user documentation][cli-reference].
 
 ## Documentation
 
@@ -154,8 +128,7 @@ maintained in the [user documentation][cli-reference].
 
 ## Distribution and status
 
-Spark publishes lockstep-versioned product distributions and platform-specific
-native CLI payloads from the same private monorepo:
+Spark publishes lockstep-versioned product distributions and platform-specific native CLI payloads from the same private monorepo:
 
 - `@zendev-lab/spark` is the **complete installation meta package**. It pins the
   matching CLI, daemon, Hub, and web app packages and keeps `spark` available
@@ -166,24 +139,13 @@ native CLI payloads from the same private monorepo:
 - `@zendev-lab/spark-daemon`, `@zendev-lab/spark-hub`, and
   `@zendev-lab/spark-web` are independently installable executable apps.
 
-The split is a deployment and trust boundary, not a source-code ownership split.
-The private app composition roots and internal adapter/capability workspaces
-remain unpublished source boundaries. The product tarballs share one release
-version and protocol compatibility contract. npm resolves exactly one supported
-macOS/Linux native CLI payload for the current platform, while the app packages
-can be installed and deployed independently.
+The split is a deployment and trust boundary, not a source-code ownership split. The private app composition roots and internal adapter/capability workspaces remain unpublished source boundaries. The product tarballs share one release version and protocol compatibility contract. npm resolves exactly one supported macOS/Linux native CLI payload for the current platform, while the app packages can be installed and deployed independently.
 
-GitHub Releases also publish verified native bootstrap archives,
-`native-release-manifest.json`, `SHA256SUMS`, provenance, and an exact-version
-`install.sh`. The bootstrap contains no Node runtime: it verifies Node 24 and
-npm, then delegates the product payload transaction to the native updater.
+GitHub Releases also publish verified native bootstrap archives, `native-release-manifest.json`, `SHA256SUMS`, provenance, and an exact-version `install.sh`. The bootstrap contains no Node runtime: it verifies Node 24 and npm, then delegates the product payload transaction to the native updater.
 
-Spark is under active development. Managed root installations provide explicit
-update and rollback behavior; source checkouts are never self-modified. Direct
-app installations are updated by their package manager or container deployment.
+Spark is under active development. Managed root installations provide explicit update and rollback behavior; source checkouts are never self-modified. Direct app installations are updated by their package manager or container deployment.
 
-Spark is MIT-licensed. Source-derived component notices are recorded in
-[`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md).
+Spark is MIT-licensed. Source-derived component notices are recorded in [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md).
 
 [cli-reference]: https://spark-docs.2742392377.workers.dev/reference/cli/
 [docs]: https://spark-docs.2742392377.workers.dev/

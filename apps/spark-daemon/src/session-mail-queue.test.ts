@@ -11,7 +11,7 @@ import { MAX_PENDING_SESSION_REQUEST_QUEUE } from "./session-mail-execution.ts";
 import { drainSessionMailRequestQueue } from "./session-mail-queue.ts";
 import { openSparkDaemonDatabase } from "./store/schema.js";
 import { SparkInvocationStore } from "./store/invocations.ts";
-import { createDaemonWorkspaceSession } from "../../../test/support/session-fixtures.ts";
+import { createDaemonWorkspaceSession } from "../../../packages/spark-session/test/support/session-fixtures.ts";
 
 interface Harness {
   root: string;

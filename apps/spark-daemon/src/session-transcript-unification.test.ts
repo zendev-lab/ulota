@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createDaemonSessionRegistry } from "./session-registry.ts";
 import { ensureDaemonSessionTranscript } from "./session-transcript-control.ts";
 import { unifyDaemonSessionTranscripts } from "./session-transcript-unification.ts";
-import { createDaemonWorkspaceSession } from "../../../test/support/session-fixtures.ts";
+import { createDaemonWorkspaceSession } from "../../../packages/spark-session/test/support/session-fixtures.ts";
 
 const roots: string[] = [];
 

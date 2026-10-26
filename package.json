@@ -43,7 +43,7 @@
     "check:tool-surface": "node --experimental-strip-types scripts/check-tool-surface.mts",
     "check:boundaries": "depcruise --config .dependency-cruiser.cjs apps packages test",
     "fix": "pnpm --filter @zendev-lab/spark-hub exec svelte-kit sync && pnpm --filter @zendev-lab/spark-web exec svelte-kit sync && pnpm --filter @zendev-lab/spark-docs exec astro sync && vp fmt . --write && vp lint --fix --quiet && pnpm run typecheck",
-    "typecheck": "pnpm --filter @zendev-lab/spark-hub run check && pnpm --filter @zendev-lab/spark-web run check && vp check --no-fmt --no-lint && pnpm --filter @zendev-lab/spark-daemon run check",
+    "typecheck": "pnpm --filter @zendev-lab/spark-hub run check && pnpm --filter @zendev-lab/spark-web run check && vp check --no-fmt --no-lint && pnpm --filter @zendev-lab/spark-daemon run typecheck",
     "test": "vp test run --config vitest.root.config.ts",
     "test:unit": "pnpm --filter @zendev-lab/spark-hub exec svelte-kit sync && pnpm --filter @zendev-lab/spark-web exec svelte-kit sync && vp test run --config vitest.root.config.ts && pnpm -r --workspace-concurrency=1 --if-present run test",
     "test:process:source": "pnpm --filter @zendev-lab/spark-hub run build && vp test run --config vitest.process.config.ts",
@@ -97,7 +97,7 @@
     "@zendev-lab/spark-workflows": "workspace:^"
   },
   "devDependencies": {
-    "@codspeed/vitest-plugin": "5.7.1",
+    "@codspeed/vitest-plugin": "6.1.0",
     "@deepseek-ai/dsh-web": "catalog:dsh",
     "@j178/prek": "0.5.2",
     "@types/node": "^24.13.3",

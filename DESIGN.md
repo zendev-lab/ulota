@@ -157,9 +157,7 @@ Spark 的界面由两种互补的工作姿态构成：Web 是安静、开放的�
 
 ## Typography
 
-**Display Font:** Inter（回退 Geist Sans、系统无衬线）
-**Body Font:** Inter（回退 Geist Sans、系统无衬线）
-**Label/Mono Font:** Geist Mono（仅用于代码、标识符和诊断值）
+**Display Font:** Inter（回退 Geist Sans、系统无衬线） **Body Font:** Inter（回退 Geist Sans、系统无衬线） **Label/Mono Font:** Geist Mono（仅用于代码、标识符和诊断值）
 
 **Character:** 字体系统偏中性、紧凑和清晰，依靠字重、字号与留白建立层级。中文继承同一无衬线栈，不用英文大写或额外字距模拟层级。
 

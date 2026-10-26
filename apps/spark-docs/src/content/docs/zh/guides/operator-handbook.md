@@ -47,14 +47,9 @@ spark daemon auth import pi --json
 spark daemon model list --all --json
 ```
 
-设置了 `PI_CODING_AGENT_DIR` 时，导入源是其中的 `auth.json`；否则是
-`~/.pi/agent/auth.json`。只会导入已注册且认证类型匹配的 provider；不会展开
-`$ENV`/`${ENV}`、执行 `!command` 或修改 Pi 文件。默认保留 Spark 已有凭证；
-检查脱敏报告后才考虑 `--overwrite`。
+设置了 `PI_CODING_AGENT_DIR` 时，导入源是其中的 `auth.json`；否则是 `~/.pi/agent/auth.json`。只会导入已注册且认证类型匹配的 provider；不会展开 `$ENV`/`${ENV}`、执行 `!command` 或修改 Pi 文件。默认保留 Spark 已有凭证；检查脱敏报告后才考虑 `--overwrite`。
 
-即使全部跳过，完成的事务仍返回退出码 `0`。源文件、JSON 解析或 Spark store
-失败返回 `1` 且不写入；用法错误返回 `2`。修复可读性或 JSON 后重跑同一命令，
-排障材料中不要复制任何凭证值。
+即使全部跳过，完成的事务仍返回退出码 `0`。源文件、JSON 解析或 Spark store 失败返回 `1` 且不写入；用法错误返回 `2`。修复可读性或 JSON 后重跑同一命令，排障材料中不要复制任何凭证值。
 
 也可直接配置 provider：
 
@@ -63,9 +58,7 @@ spark daemon auth login [provider]
 spark daemon model set <provider/model> --default --json
 ```
 
-或启动 `spark web`，打开**设置**，在其中配置 provider 与模型。不可用模型仍会
-显示原因和登录动作，但不能成为 active。API Key 只应输入 Spark 的 secret 字段或
-prompt，不能写进仓库、命令历史或 Hub 注册命令。
+或启动 `spark web`，打开**设置**，在其中配置 provider 与模型。不可用模型仍会显示原因和登录动作，但不能成为 active。API Key 只应输入 Spark 的 secret 字段或 prompt，不能写进仓库、命令历史或 Hub 注册命令。
 
 没有已认证模型时，Hub Web 会禁用会话提交。JSON CLI 提交会返回可处理的错误：
 
@@ -81,8 +74,7 @@ prompt，不能写进仓库、命令历史或 Hub 注册命令。
 
 配置 provider 后，只重试原提交一次。
 
-`spark daemon login` 是另一件事：它只授权本机连接 Hub。Provider 认证由 daemon
-持有，通过 `spark daemon auth`、本地 Web 与 Hub 的模型/provider 设置暴露。
+`spark daemon login` 是另一件事：它只授权本机连接 Hub。Provider 认证由 daemon 持有，通过 `spark daemon auth`、本地 Web 与 Hub 的模型/provider 设置暴露。
 
 ## 3. 分别启动 daemon 和 Hub
 
@@ -104,8 +96,7 @@ spark hub web start --json
 spark hub web status --json
 ```
 
-浏览器必须打开完全相同的 public URL，scheme、hostname 和 port 都要一致。例如，配置期间不要在
-`localhost` 和 `127.0.0.1` 之间切换。
+浏览器必须打开完全相同的 public URL，scheme、hostname 和 port 都要一致。例如，配置期间不要在 `localhost` 和 `127.0.0.1` 之间切换。
 
 需要前台生产宿主时使用 `spark hub`。daemon 和 Hub 是两个独立进程，排查时也必须分开检查。
 
@@ -127,9 +118,7 @@ spark daemon workspace register . --name <workspace-name>
 spark daemon workspace register . --token <enrollment-token>
 ```
 
-`spark daemon login` 把 daemon 安装（每台机器一个）绑定到 Hub。第一条
-`workspace register` 在本地登记 workspace；带 token 的形式通过同一个 daemon
-绑定宣告它的 Hub 投影。Token 只显示一次，不是 provider 凭证。
+`spark daemon login` 把 daemon 安装（每台机器一个）绑定到 Hub。第一条 `workspace register` 在本地登记 workspace；带 token 的形式通过同一个 daemon 绑定宣告它的 Hub 投影。Token 只显示一次，不是 provider 凭证。
 
 检查 daemon 拥有的绑定：
 
@@ -137,13 +126,11 @@ spark daemon workspace register . --token <enrollment-token>
 spark daemon workspace ls --json
 ```
 
-注册过程中，daemon 可以先用本地目录 basename 作为占位身份。完成设置后，Hub
-拥有用户配置的工作区名称和 URL slug；daemon 继续拥有规范本地路径和 binding display name。
+注册过程中，daemon 可以先用本地目录 basename 作为占位身份。完成设置后，Hub 拥有用户配置的工作区名称和 URL slug；daemon 继续拥有规范本地路径和 binding display name。
 
 ## 5. 创建、检查并附着会话
 
-从 `spark daemon session list --registry --json` 读取受保护的 Administrator Session
-ID，选择精确静态 RoleRef，然后创建空的托管子 Session：
+从 `spark daemon session list --registry --json` 读取受保护的 Administrator Session ID，选择精确静态 RoleRef，然后创建空的托管子 Session：
 
 ```bash
 spark daemon session spawn \
@@ -155,8 +142,7 @@ spark daemon session list --registry --json
 spark daemon session show <session-id> --json
 ```
 
-`spawn` 不会创建 Invocation。只有子 Session 需要 supervisor 稳定 transcript 前缀的
-独立副本时，才使用同一组 flag 调用 `fork`。请在同一个规范工作区目录中附着：
+`spawn` 不会创建 Invocation。只有子 Session 需要 supervisor 稳定 transcript 前缀的独立副本时，才使用同一组 flag 调用 `fork`。请在同一个规范工作区目录中附着：
 
 ```bash
 spark web
@@ -199,14 +185,11 @@ spark bg --json "Queue durable background work."
 spark bg --session <session-id> "Continue the existing work."
 ```
 
-不要因为浏览器看起来空闲就重复提交。先检查 invocation；无法确认 mutation 或外部投递结果时，应
-fail closed，不能自动 replay。
+不要因为浏览器看起来空闲就重复提交。先检查 invocation；无法确认 mutation 或外部投递结果时，应 fail closed，不能自动 replay。
 
 ## 7. 体验产品工作流
 
-在[本地 Web 工作台](/zh/guides/web/)或用 `spark run` 描述预期结果。一次性的
-`/plan`、`/execute`、`/fleet` 以及 Goal、Repro 和 Workflow 仍由 daemon
-持有；用 `spark daemon --help` 发现运维 CLI。
+在[本地 Web 工作台](/zh/guides/web/)或用 `spark run` 描述预期结果。一次性的 `/plan`、`/execute`、`/fleet` 以及 Goal、Repro 和 Workflow 仍由 daemon 持有；用 `spark daemon --help` 发现运维 CLI。
 
 这些界面应协同工作：
 
@@ -217,8 +200,7 @@ fail closed，不能自动 replay。
 - Goal、Repro、Workflow 与后台 Loop 保持不同语义；不能合并 scheduled、running、
   retry-waiting、dormant、blocked 和 stopped 状态。
 
-继续阅读 [本地 Web](/zh/guides/web/)、[运行与会话](/zh/guides/runs-and-sessions/)、
-[Hub Web](/zh/guides/hub/) 和 [长期工作](/zh/guides/automation/)。
+继续阅读 [本地 Web](/zh/guides/web/)、[运行与会话](/zh/guides/runs-and-sessions/)、 [Hub Web](/zh/guides/hub/) 和 [长期工作](/zh/guides/automation/)。
 
 ## 8. 远程访问
 
@@ -266,16 +248,11 @@ spark daemon logs --lines 200
 
 ### Hub 报 binding 已属于另一个工作区
 
-不要删除任一数据库。检查 `spark daemon workspace ls --json` 和 Hub Workspace
-Settings。一个 binding 只能拥有一条 active Hub lease；要迁移时，先从当前 Hub
-工作区显式 unbind，再注册到目标工作区。
+不要删除任一数据库。检查 `spark daemon workspace ls --json` 和 Hub Workspace Settings。一个 binding 只能拥有一条 active Hub lease；要迁移时，先从当前 Hub 工作区显式 unbind，再注册到目标工作区。
 
 ### 没有已认证模型
 
-先运行 `spark daemon auth status --json` 和
-`spark daemon model list --all --json`。然后使用
-`spark daemon auth login <provider>`，或打开本地 Web 的**设置**、Hub 的
-**模型与提供商**。只有 daemon 报告可用的已认证模型后，Hub Web 才应允许提交。
+先运行 `spark daemon auth status --json` 和 `spark daemon model list --all --json`。然后使用 `spark daemon auth login <provider>`，或打开本地 Web 的**设置**、Hub 的 **模型与提供商**。只有 daemon 报告可用的已认证模型后，Hub Web 才应允许提交。
 
 ### Run 看起来卡住
 
@@ -293,8 +270,7 @@ spark daemon invocation stream <invocation-id> --after 0 --limit 500 --json
 spark paths --json
 ```
 
-确认 terminal、daemon 和 Hub 使用同一个预期根。不要重启另一个 service manager
-或另一个测试根拥有的进程。
+确认 terminal、daemon 和 Hub 使用同一个预期根。不要重启另一个 service manager 或另一个测试根拥有的进程。
 
 ## 10. 停止隔离体验
 
@@ -316,5 +292,4 @@ spark daemon session list --registry --json
 spark daemon invocation list --json
 ```
 
-报告问题时记录精确版本、`SPARK_HOME` 或 XDG roots、失败命令、退出码以及
-invocation/session ID。绝不能包含 provider 凭证、一次性注册 Token 或浏览器 Key。
+报告问题时记录精确版本、`SPARK_HOME` 或 XDG roots、失败命令、退出码以及 invocation/session ID。绝不能包含 provider 凭证、一次性注册 Token 或浏览器 Key。

@@ -59,6 +59,6 @@
     "tsx": "^4.20.5",
     "typescript": "catalog:",
     "vitest": "catalog:",
-    "vitest-browser-svelte": "3.0.0"
+    "vitest-browser-svelte": "3.1.0"
   }
 }

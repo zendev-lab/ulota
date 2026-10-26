@@ -20,7 +20,7 @@ Local Web and Hub share one product model without sharing one page topology. Web
 
 ## Positioning
 
-Spark Web is not a generic chat client, and Spark Hub is not a generic project dashboard. Their product truth comes from daemon-owned durable Sessions and Invocations, explicit human-wait states, lineage, recovery, and attributable Artifacts. Conversation is the interaction form, not a browser-owned queue; browser surfaces submit commands and render typed projections without inferring or recreating execution state.
+Spark Web and Hub present daemon-owned durable Sessions and Invocations, explicit human-wait states, lineage, recovery, and attributable Artifacts. Conversation provides the interaction model; it does not introduce a browser-owned execution queue. Browser surfaces submit commands and render typed projections without inferring or recreating execution state.
 
 ## Operating Context
 

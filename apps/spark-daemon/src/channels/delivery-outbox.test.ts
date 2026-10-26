@@ -28,7 +28,7 @@ import { CHANNEL_REPLY_DELIVERY_PENDING_ERROR_CODE } from "./reply-delivery.ts";
 import {
   createDaemonWorkspaceSession,
   workspaceSessionRecord,
-} from "../../../../test/support/session-fixtures.ts";
+} from "../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 describe("daemon channel delivery outbox", () => {
   it("rejects incomplete or inconsistent frozen bindings without creating an outbox entry", () => {
