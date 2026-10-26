@@ -117,5 +117,15 @@
     "Completed": "Completed",
     "Cancelled": "Cancelled",
     "Paused": "Paused"
+  },
+  "human": {
+    "region": "Questions and approvals",
+    "customAnswer": "Custom answer",
+    "customPlaceholder": "Enter your answer",
+    "selectPlaceholder": "Choose an answer",
+    "required": "Answer every required question.",
+    "answer": "Send answer",
+    "answering": "Sending…",
+    "cancel": "Cancel request"
   }
 }
