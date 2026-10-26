@@ -134,13 +134,7 @@ native host. An explicitly selected model remains authoritative. The default Cod
 Astra is the initial selection within that scope. Migration recognizes previous
 complete bundled scopes and preserves custom scopes.
 
-Until pinned pi-ai supplies Astra, this adapter supplements its catalog using the
-[official model metadata](https://developers.openai.com/api/docs/models/gpt-6-astra):
-$10 input, $50 output, $1 cached input and $12.50 cache write per million tokens.
-The existing 272k Codex context ceiling remains in place because Spark's current
-model contract does not preserve long-context pricing tiers. The official model's
-larger context window is not enabled by this catalog supplement. OAuth subscription
-billing is distinct from these API cost estimates.
+Model availability, context limits, reasoning levels, and cost metadata come from the pinned pi-ai catalog. The adapter does not maintain a separate model list. OAuth subscription billing is distinct from catalog API cost estimates.
 
 ## Kimi For Coding provider
 
