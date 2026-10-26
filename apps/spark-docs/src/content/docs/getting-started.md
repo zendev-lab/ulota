@@ -7,15 +7,11 @@ sidebar:
 
 ## Requirements
 
-Spark currently requires Node.js `>=24` and npm. `@zendev-lab/spark` is the
-complete product payload and brings matching daemon, Hub, and local web app
-packages. The native bootstrap does not bundle a Node runtime.
+Spark currently requires Node.js `>=24` and npm. `@zendev-lab/spark` is the complete product payload and brings matching daemon, Hub, and local web app packages. The native bootstrap does not bundle a Node runtime.
 
 ## Install
 
-The verified curl bootstrap is recommended. It detects the current macOS/Linux
-x64/arm64 target, verifies the release SHA-256, then asks the exact native CLI
-to install the matching managed npm payload:
+The verified curl bootstrap is recommended. It detects the current macOS/Linux x64/arm64 target, verifies the release SHA-256, then asks the exact native CLI to install the matching managed npm payload:
 
 ```bash
 curl -fsSL https://github.com/zendev-lab/spark/releases/latest/download/install.sh | sh
@@ -23,16 +19,14 @@ spark version --json
 spark update status --json
 ```
 
-The stable launcher defaults to `~/.local/bin/spark`. Use an explicit absolute
-prefix when needed:
+The stable launcher defaults to `~/.local/bin/spark`. Use an explicit absolute prefix when needed:
 
 ```bash
 curl -fsSL https://github.com/zendev-lab/spark/releases/latest/download/install.sh \
   | sh -s -- --prefix /opt/spark
 ```
 
-The installer prints an exact `PATH` repair if another global npm command wins
-command resolution. It never silently runs an older Node dispatcher.
+The installer prints an exact `PATH` repair if another global npm command wins command resolution. It never silently runs an older Node dispatcher.
 
 You can instead keep the package manager in charge of the complete installation:
 
@@ -48,10 +42,7 @@ npm install --global @zendev-lab/spark-daemon  # or spark-hub / spark-web
 spark-daemon --help
 ```
 
-Global npm, pnpm, Yarn, Bun, and Vite+ installations delegate exact-version
-updates to their installation owner. Source checkouts report migration guidance
-but never replace themselves; their launcher incrementally builds the same Rust
-CLI when its Cargo/source fingerprint changes.
+Global npm, pnpm, Yarn, Bun, and Vite+ installations delegate exact-version updates to their installation owner. Source checkouts report migration guidance but never replace themselves; their launcher incrementally builds the same Rust CLI when its Cargo/source fingerprint changes.
 
 Run the health check before troubleshooting a host:
 
@@ -61,8 +52,7 @@ spark doctor
 
 ## Configure a model
 
-Provider authentication and model selection are daemon-owned. Discover the
-installed commands, then inspect or set the active model:
+Provider authentication and model selection are daemon-owned. Discover the installed commands, then inspect or set the active model:
 
 ```bash
 spark daemon auth --help
@@ -70,8 +60,7 @@ spark daemon model --help
 spark daemon model status --json
 ```
 
-When Spark prompts for an API key, enter it in the prompt; do not put secrets
-in project files, `config.json`, or shell history.
+When Spark prompts for an API key, enter it in the prompt; do not put secrets in project files, `config.json`, or shell history.
 
 ## Complete a first run
 
@@ -93,8 +82,7 @@ For an interactive session, open the local workbench from the target workspace:
 spark web
 ```
 
-Spark starts or contacts the local daemon as needed. Run `spark daemon status
---json` to inspect the service rather than guessing from frontend behavior.
+Spark starts or contacts the local daemon as needed. Run `spark daemon status --json` to inspect the service rather than guessing from frontend behavior.
 
 ## Next steps
 

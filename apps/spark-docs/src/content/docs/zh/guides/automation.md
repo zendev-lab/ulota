@@ -3,8 +3,7 @@ title: 自动推进长期工作
 description: 只有普通 Plan 与 Implement 路径不够时，才选择 Goal、Loop、Repro 或 Workflow。
 ---
 
-普通项目修改先使用[规划并实现](/zh/guides/plan-and-execute/)。只有工作需要跨多个
-步骤自主推进、重复、遵循复现门控或执行已保存流程时，才选择自动推进。
+普通项目修改先使用[规划并实现](/zh/guides/plan-and-execute/)。只有工作需要跨多个步骤自主推进、重复、遵循复现门控或执行已保存流程时，才选择自动推进。
 
 不确定该选哪一种模式时，使用：
 
@@ -23,28 +22,19 @@ description: 只有普通 Plan 与 Implement 路径不够时，才选择 Goal、
 
 ## Driver 活动期间的权限
 
-在交互式会话中启动 Goal、Loop 或 Repro 时，会询问一次该 Session 是否可以使用
-driver 权限。同意后，driver 活动期间可以直接执行 `manual_only` 操作，无需重复询问。
-CLI、API 和其他非交互启动会静默写入同一条 Session 授权，并且不会弹窗。如果选择保留
-逐工具批准，即使 driver 仍在活动，`manual_only` 操作也仍需人工批准。
+在交互式会话中启动 Goal、Loop 或 Repro 时，会询问一次该 Session 是否可以使用 driver 权限。同意后，driver 活动期间可以直接执行 `manual_only` 操作，无需重复询问。 CLI、API 和其他非交互启动会静默写入同一条 Session 授权，并且不会弹窗。如果选择保留逐工具批准，即使 driver 仍在活动，`manual_only` 操作也仍需人工批准。
 
-这类操作必须低风险且可撤销；创建、更新和同步 Draft PR 都属于这一类。driver 权限仍
-限制在已确认的目标、Workspace、仓库和可写 target 范围内。
+这类操作必须低风险且可撤销；创建、更新和同步 Draft PR 都属于这一类。driver 权限仍限制在已确认的目标、Workspace、仓库和可写 target 范围内。
 
-该权限不包含 `required` 操作。破坏性、不可逆、安全敏感、高成本、高影响或实质扩大
-范围的操作始终需要人工批准；发布、部署、合并和把 Draft PR 提升为 Ready 也一样。
-driver 停止、完成或被替换后，该 driver 的权限失效；之后没有活动 driver 时，推进会使用
-手动审批行为。
+该权限不包含 `required` 操作。破坏性、不可逆、安全敏感、高成本、高影响或实质扩大范围的操作始终需要人工批准；发布、部署、合并和把 Draft PR 提升为 Ready 也一样。 driver 停止、完成或被替换后，该 driver 的权限失效；之后没有活动 driver 时，推进会使用手动审批行为。
 
-WorkflowRun 是执行机制，不是 continuation driver。它继承启动它的 driver 的审批上下文，
-但仅在该权限仍然有效时继承；自身不会授予或保留任何权限。
+WorkflowRun 是执行机制，不是 continuation driver。它继承启动它的 driver 的审批上下文，但仅在该权限仍然有效时继承；自身不会授予或保留任何权限。
 
 ## Goal
 
 Goal 围绕一个持久结果继续工作，在完成、失败或需要你的输入时停止。
 
-Goal 仍只有一条 runtime 线。`active`、`waiting_decision`、`paused` 和 `complete`
-都由 TaskGraph 推导；等待决定不会阻止互不相关的 ready Task 继续运行。
+Goal 仍只有一条 runtime 线。`active`、`waiting_decision`、`paused` 和 `complete` 都由 TaskGraph 推导；等待决定不会阻止互不相关的 ready Task 继续运行。
 
 ```text
 /goal start <目标>
@@ -64,30 +54,15 @@ Loop 用于刻意保持开放的重复工作。只有当前步骤明确调度下
 /loop restart [目标]
 ```
 
-如果每一步都应在新的 owned 子 Session 中运行，同时保留同一个工作区状态，使用
-`/loop fresh <目标>`。子 Session 会在 tick 结束后关闭，通常删除完整 transcript；
-删除前 daemon 会从 tick result 封存一份有界关闭回执。使用 driver 生命周期的 Loop
-则在 driver Session 关闭时封存最终 evaluation result。父 Session 仍保留有界活动、
-用量和显式 Evidence，但这些回执不会作为 transcript 消息注入父 Session。
+如果每一步都应在新的 owned 子 Session 中运行，同时保留同一个工作区状态，使用 `/loop fresh <目标>`。子 Session 会在 tick 结束后关闭，通常删除完整 transcript；删除前 daemon 会从 tick result 封存一份有界关闭回执。使用 driver 生命周期的 Loop 则在 driver Session 关闭时封存最终 evaluation result。父 Session 仍保留有界活动、用量和显式 Evidence，但这些回执不会作为 transcript 消息注入父 Session。
 
 ## Repro
 
-Repro 把证据门控工作放入三个稳定的子 Session：Implementation、Exactness 和
-Formalize。daemon 按五个 checkpoint 推进：Implementation、Exactness、Formalize、
-Exactness refresh、Implementation refresh。只有 Formalize 可以设置已接受的
-`formalizedRevision`。可以用 `/inspect repro` 查看有界投影。
+Repro 把证据门控工作放入三个稳定的子 Session：Implementation、Exactness 和 Formalize。daemon 按五个 checkpoint 推进：Implementation、Exactness、Formalize、 Exactness refresh、Implementation refresh。只有 Formalize 可以设置已接受的 `formalizedRevision`。可以用 `/inspect repro` 查看有界投影。
 
-`/repro <目标>` 会立即在 owning Workspace 中预留三个稳定的子 Session。Workspace
-可以包含零个、一个或多个仓库；启动不会假设 cwd 是 Git 仓库，也不会预先选择 Git
-Change。各 lane 根据实际工作自主发现并构建所需的 repository/worktree topology。
-Implementation 先运行；严格的 terminal TaskRun Evidence 会自动推进其余 checkpoint。
-daemon-owned v10 状态、TaskGraph、Evidence 与 Session registry 才是恢复真相，
-不依赖 Root transcript。
+`/repro <目标>` 会立即在 owning Workspace 中预留三个稳定的子 Session。Workspace 可以包含零个、一个或多个仓库；启动不会假设 cwd 是 Git 仓库，也不会预先选择 Git Change。各 lane 根据实际工作自主发现并构建所需的 repository/worktree topology。 Implementation 先运行；严格的 terminal TaskRun Evidence 会自动推进其余 checkpoint。 daemon-owned v10 状态、TaskGraph、Evidence 与 Session registry 才是恢复真相，不依赖 Root transcript。
 
-Repro 活动期间可以压缩 Root 或 lane Session 上下文。continuation 会重载持久化
-checkpoint 并复用原来的 lane Session，不会重放启动。如果某条 lane 需要人工注意，
-Ask 会投影到 Root，并能跨 daemon 重启或上下文压缩保留；回答后继续原 lane Session
-并在同一 checkpoint 中创建新的 attempt。
+Repro 活动期间可以压缩 Root 或 lane Session 上下文。continuation 会重载持久化 checkpoint 并复用原来的 lane Session，不会重放启动。如果某条 lane 需要人工注意， Ask 会投影到 Root，并能跨 daemon 重启或上下文压缩保留；回答后继续原 lane Session 并在同一 checkpoint 中创建新的 attempt。
 
 ```text
 /repro <目标>
@@ -115,8 +90,7 @@ Ask 会投影到 Root，并能跨 daemon 重启或上下文压缩保留；回答
 /workflow ack <runRef>
 ```
 
-空的 `/workflow` 会打开选择器。`/workflows`、`/workflow-runs` 和
-`/workflow-pause` 等旧命令仍可作为兼容别名执行，但不会出现在普通命令目录中。
+空的 `/workflow` 会打开选择器。`/workflows`、`/workflow-runs` 和 `/workflow-pause` 等旧命令仍可作为兼容别名执行，但不会出现在普通命令目录中。
 
 Spark 自带三条仓库工程工作流：
 
@@ -127,13 +101,10 @@ Spark 自带三条仓库工程工作流：
 - `workspace:feature-change` 将仓库/外部调研、架构选型、计划、实现和独立审查拆成
   明确的结构化交接。
 
-涉及 `.agents` 知识时会额外加入独立 curator 审查。三条工作流都只返回结构化的
-accepted 或 rejected 证据，不会创建、推送、合并或发布 pull request。
+涉及 `.agents` 知识时会额外加入独立 curator 审查。三条工作流都只返回结构化的 accepted 或 rejected 证据，不会创建、推送、合并或发布 pull request。
 
 ## 监督执行，而不是背诵状态
 
-使用 `/help` 查看最短日常路径，使用 `/help commands` 查看分组命令；只有诊断别名或
-Extension 注册时才使用 `/help all`。
+使用 `/help` 查看最短日常路径，使用 `/help commands` 查看分组命令；只有诊断别名或 Extension 注册时才使用 `/help all`。
 
-自动推进需要你决定时，在当前会话回答或打开 `/inbox`。Hub Web 提供 Session
-活动，以及 Tasks、Artifacts 和 Inbox 视图。
+自动推进需要你决定时，在当前会话回答或打开 `/inbox`。Hub Web 提供 Session 活动，以及 Tasks、Artifacts 和 Inbox 视图。

@@ -5,8 +5,6 @@ export default defineConfig({
     ignorePatterns: [
       "**/*.md",
       "packages/spark-i18n/src/paraglide/**",
-      "docs/codemap/codemap.html",
-      "docs/codemap/codemap.json",
       "apps/spark-docs/public/codemap/**",
       "prek.toml",
       "_typos.toml",

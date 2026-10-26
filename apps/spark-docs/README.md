@@ -48,6 +48,9 @@ Limit production builds to documentation inputs:
 
 ```text
 apps/spark-docs/**
+docs/codemap/**
+scripts/codemap.py
+architecture/packages.json
 scripts/require-docs-deploy-env.mjs
 package.json
 pnpm-lock.yaml

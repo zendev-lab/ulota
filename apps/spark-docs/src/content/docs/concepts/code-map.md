@@ -16,8 +16,9 @@ Use **查看所选模块详情** (view selected module details) to jump to the s
 relationship links clear the search filter and move keyboard focus to the detail
 panel. The map supports keyboard navigation and narrow screens.
 
-Source links open the recorded Git revision. The standalone
-`docs/codemap/codemap.html` also opens directly from a source checkout, with local
-file links and no development server. See the repository's
-[map maintenance guide](https://github.com/zendev-lab/cogfold/tree/main/docs/codemap)
-for its source, evidence boundaries, and regeneration instructions.
+Source links open the Git revision used to build the documentation. The map is
+generated with the documentation and can also be opened from
+`apps/spark-docs/public/codemap/codemap.html` in a source checkout after building.
+See the repository's
+[map maintenance guide](https://github.com/zendev-lab/ulota/tree/main/docs/codemap)
+for its source and regeneration instructions.

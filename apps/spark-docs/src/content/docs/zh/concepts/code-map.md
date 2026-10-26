@@ -14,7 +14,7 @@ description: 探索 Spark 模块，并沿工作流程查看源码证据。
 流程和关系链接会清除搜索过滤，并将键盘焦点移到详情面板。地图支持键盘导航和
 窄屏布局。
 
-源码链接打开记录的 Git 版本。在源码目录中，也可以直接打开独立的
-`docs/codemap/codemap.html`，通过本地链接阅读文件，无需开发服务器。
-地图的源码、证据边界和重新生成方式见仓库中的
-[地图维护说明](https://github.com/zendev-lab/cogfold/tree/main/docs/codemap)。
+源码链接打开构建文档时的 Git 版本。地图随文档生成；在源码目录中构建后，
+也可以直接打开 `apps/spark-docs/public/codemap/codemap.html`。
+地图的源码和重新生成方式见仓库中的
+[地图维护说明](https://github.com/zendev-lab/ulota/tree/main/docs/codemap)。

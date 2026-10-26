@@ -19,7 +19,7 @@ allowBuilds:
 catalog:
   "@zendev-lab/cue": "0.1.2"
   axe-core: "4.13.0"
-  "@agentclientprotocol/sdk": "1.4.0"
+  "@agentclientprotocol/sdk": "2.0.2"
   "@modelcontextprotocol/sdk": "1.30.0"
   "@optique/core": "1.2.5"
   "@orpc/client": "1.15.0"

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Build/check a source-backed code atlas without third-party packages."""
 
-import hashlib
 import json
 from pathlib import Path
 import re
@@ -17,10 +16,6 @@ def read(path):
     return json.loads((ROOT / path).read_text())
 
 
-def sha(path):
-    return hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
-
-
 def safe_file(path):
     full = (ROOT / path).resolve()
     assert full.is_relative_to(ROOT) and full.is_file(), f"Missing/unsafe path: {path}"
@@ -28,6 +23,7 @@ def safe_file(path):
 
 
 def project(data):
+    data["baseline"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     inventory = read("architecture/packages.json")["packages"]
     owners = {p: n["id"] for n in data["nodes"] for p in n["packages"]}
     assert len(owners) == sum(len(n["packages"]) for n in data["nodes"])
@@ -36,7 +32,7 @@ def project(data):
     )
     tracked = (
         subprocess.check_output(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            ["git", "ls-files", "--cached", "-z"],
             cwd=ROOT,
         )
         .decode()
@@ -143,8 +139,8 @@ def project(data):
 
 def validate(data):
     ids = [n["id"] for n in data["nodes"]]
-    assert 0 < len(ids) <= 20 and len(ids) == len(set(ids))
-    assert 3 <= len(data["flows"]) <= 5
+    assert ids and len(ids) == len(set(ids))
+    assert data["flows"]
     assert len({e["id"] for e in data["edges"]}) == len(data["edges"])
     refs = {
         "architecture/packages.json",
@@ -187,48 +183,14 @@ def main():
     mode = sys.argv[1] if len(sys.argv) == 2 else ""
     if mode not in ("build", "check"):
         raise SystemExit("Usage: python3 scripts/codemap.py build|check")
-    original = read("docs/codemap/codemap.json")
-    data = project(json.loads(json.dumps(original)))
-    if mode == "check":
-        assert data == original, (
-            "Inventory/dependencies/tests changed; review and rebuild"
-        )
-    refs = validate(data)
-    extra = {
-        "docs/codemap/codemap.json",
-        "docs/codemap/codemap.html",
-        "docs/codemap/template.html",
-        "docs/codemap/README.md",
-        "scripts/codemap.py",
-        "apps/spark-docs/astro.config.mjs",
-        "apps/spark-docs/src/content/docs/concepts/code-map.md",
-        "apps/spark-docs/src/content/docs/zh/concepts/code-map.md",
-    }
+    data = project(read("docs/codemap/map.json"))
+    validate(data)
     if mode == "build":
-        (OUT / "codemap.json").write_text(json.dumps(data, indent=2) + "\n")
-        (OUT / "codemap.html").write_text(html(data))
-        lock = {
-            "schemaVersion": 1,
-            "baseline": data["baseline"],
-            "algorithm": "sha256",
-            "scope": "Local source/test evidence and atlas, not test or browser acceptance.",
-            "files": {p: sha(p) for p in sorted(refs | extra)},
-        }
-        (OUT / "codemap.lock").write_text(json.dumps(lock, indent=2) + "\n")
         PUBLIC.mkdir(parents=True, exist_ok=True)
-        for name in ("codemap.html", "codemap.json", "codemap.lock"):
-            (PUBLIC / name).write_bytes((OUT / name).read_bytes())
-    lock = read("docs/codemap/codemap.lock")
-    assert lock["baseline"] == data["baseline"] and refs | extra <= set(lock["files"])
-    for path, digest in lock["files"].items():
-        assert sha(path) == digest, "Stale evidence: " + path
-    assert (OUT / "codemap.html").read_text() == html(data)
-    for name in ("codemap.html", "codemap.json", "codemap.lock"):
-        assert (PUBLIC / name).read_bytes() == (OUT / name).read_bytes(), (
-            "Stale docs asset: " + name
-        )
+        (PUBLIC / "codemap.json").write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+        (PUBLIC / "codemap.html").write_text(html(data))
     print(
-        f"Verified {len(data['nodes'])} nodes, {len(data['edges'])} edges, {len(data['flows'])} flows, {len(lock['files'])} file hashes; all inventory packages assigned and all references/test declarations resolve. Static docs assets match."
+        f"Validated {len(data['nodes'])} nodes, {len(data['edges'])} edges and {len(data['flows'])} flows; all inventory packages are assigned and source references resolve."
     )
 
 

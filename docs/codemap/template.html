@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Spark · 代码地图</title>
+    <title>Ulota · 代码地图</title>
     <style>
       :root {
         font-family:
@@ -285,13 +285,13 @@
   <body>
     <a class="skip" href="#main">跳到地图</a>
     <header>
-      <h1>Spark：从意图到执行</h1>
+      <h1>Ulota：从意图到执行</h1>
       <p>
         探索模块职责边界，沿五条完整工作流追踪源码与测试证据。选择模块，查看其调用方和下游影响。
       </p>
-      <a id="repo-guide" href="../../README.md">仓库指南</a> ·
-      <a id="map-guide" href="README.md">地图维护</a> · <a href="codemap.json">JSON</a> ·
-      <a href="codemap.lock">证据锁定清单</a>
+      <a id="repo-guide" href="../../../../README.md">仓库指南</a> ·
+      <a id="map-guide" href="../../../../docs/codemap/README.md">地图维护</a> ·
+      <a href="codemap.json">JSON</a>
     </header>
     <main id="main">
       <section class="panel full">
@@ -357,7 +357,7 @@
         const row = el("li");
         const local = el("a", path + (line ? ":" + line : ""));
         const encodedPath = path.split("/").map(encodeURIComponent).join("/");
-        local.href = "../../" + encodedPath;
+        local.href = "../../../../" + encodedPath;
         if (location.protocol === "file:") row.append(local, " · ");
         if ((map.baselineMissingPaths || []).includes(path)) {
           row.append(
@@ -373,7 +373,7 @@
           location.protocol === "file:" ? "基线源码" : path + (line ? ":" + line : ""),
         );
         remote.href =
-          "https://github.com/zendev-lab/cogfold/blob/" +
+          "https://github.com/zendev-lab/ulota/blob/" +
           encodeURIComponent(map.baseline) +
           "/" +
           encodedPath +
@@ -571,8 +571,7 @@
         b.onclick = () => showFlow(f);
         $("flows").append(b);
       }
-      $("baseline").textContent =
-        "源码基线：" + map.baseline + " · 证据完整性校验：运行 python3 scripts/codemap.py check";
+      $("baseline").textContent = "源码基线：" + map.baseline + " · 文件索引在文档构建时生成";
       map.limitations.forEach((l) => $("limits").append(el("li", l)));
       $("search").oninput = render;
       $("lens").onchange = render;
@@ -584,7 +583,7 @@
       };
       if (location.protocol !== "file:") {
         $("repo-guide").href =
-          "https://github.com/zendev-lab/cogfold/blob/" +
+          "https://github.com/zendev-lab/ulota/blob/" +
           encodeURIComponent(map.baseline) +
           "/README.md";
         $("map-guide").href = "/zh/concepts/code-map/";
