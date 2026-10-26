@@ -112,7 +112,7 @@ describe("conversation navigation", () => {
     screen.container.style.height = "650px";
     await expect
       .element(screen.getByRole("status"))
-      .toHaveTextContent("Conversations are temporarily unavailable.");
+      .toMatchTextContent("Conversations are temporarily unavailable.");
     await screen.getByRole("button", { name: "Retry", exact: true }).click();
     expect(input.retry).toHaveBeenCalledOnce();
     await expect

@@ -163,8 +163,12 @@ test("legacy provider config still exposes the bundled OpenAI Codex catalog", as
       )?.ok,
       true,
     );
-    assert.equal(snapshot.enabledModelIds.includes("openai-codex/gpt-6-astra"), true);
-    assert.equal(snapshot.enabledModelIds.includes("openai-codex/gpt-5.3-codex-spark"), true);
+    assert.deepEqual(
+      snapshot.enabledModelIds.filter((id) => id.startsWith("openai-codex/")).sort(),
+      getModels("openai-codex")
+        .map((model) => `openai-codex/${model.id}`)
+        .sort(),
+    );
     assert.equal(codex?.name, "OpenAI Codex");
     assert.equal(codex?.modelCount, getModels("openai-codex").length);
     assert.equal(codex?.auth.kind, "oauth");
@@ -177,12 +181,6 @@ test("legacy provider config still exposes the bundled OpenAI Codex catalog", as
       getModels("openai-codex")
         .map((model) => model.id)
         .sort(),
-    );
-    assert.equal(
-      snapshot.models.some(
-        (model) => model.providerId === "openai-codex" && model.modelId === "gpt-5.3-codex-spark",
-      ),
-      true,
     );
     assert.equal(
       snapshot.models

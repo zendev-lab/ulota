@@ -250,7 +250,7 @@ describe("Session page owner state", () => {
     const composer = screen.getByRole("textbox", { name: "Prompt" });
     await composer.fill("Keep this once");
     await screen.getByRole("button", { name: "Send", exact: true }).click();
-    await expect.element(screen.getByRole("alert")).toHaveTextContent("connection lost");
+    await expect.element(screen.getByRole("alert")).toMatchTextContent("connection lost");
     await screen.getByRole("button", { name: "Send", exact: true }).click();
     await composer.fill("My next message");
     response.resolve({ invocationId: "inv-a" });
@@ -339,7 +339,7 @@ describe("Session page owner state", () => {
     first.resolve({ invocationId: "inv-a" });
     await tick();
     second.reject(new Error("connection lost"));
-    await expect.element(screen.getByRole("alert")).toHaveTextContent("connection lost");
+    await expect.element(screen.getByRole("alert")).toMatchTextContent("connection lost");
     await composer.fill("Keep this once");
     await screen.getByRole("button", { name: "Send", exact: true }).click();
     const submissions = mocks.webRpc.mock.calls.filter(([method]) => method === "turn.submit");
@@ -356,7 +356,7 @@ describe("Session page owner state", () => {
     const onConnection = mocks.attachWebSessionEvents.mock.calls.at(-1)?.[2];
     expect(onConnection).toBeTypeOf("function");
     onConnection?.("reconnecting");
-    await expect.element(screen.getByRole("status")).toHaveTextContent("Reconnecting");
+    await expect.element(screen.getByRole("status")).toMatchTextContent("Reconnecting");
     await expect.element(screen.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
     onConnection?.("connected");
     await expect.element(screen.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
@@ -478,9 +478,9 @@ describe("Session page owner state", () => {
     await expect.element(screen.getByRole("button", { name: "停止" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "重试" })).not.toBeInTheDocument();
     await screen.getByText("对话设置", { exact: true }).click();
-    const thinking = screen.getByRole("button", { name: "思考级别" });
+    const thinking = screen.getByRole("combobox", { name: "思考级别" });
     await expect.element(thinking).toHaveClass(/ui-select-trigger/u);
-    await expect.element(thinking).toHaveTextContent("高");
+    await expect.element(thinking).toMatchTextContent("高");
     expect(mocks.webRpc.mock.calls.some(([method]) => method === "session.thinking.set")).toBe(
       false,
     );
@@ -626,7 +626,7 @@ describe("Session page owner state", () => {
     firstRead.resolve(Uint8Array.of(1).buffer);
     await expect.element(screen.getByText(/a-5\.txt/u)).toBeVisible();
     secondRead.resolve(Uint8Array.of(1).buffer);
-    await expect.element(screen.getByRole("alert")).toHaveTextContent("at most 8 attachments");
+    await expect.element(screen.getByRole("alert")).toMatchTextContent("at most 8 attachments");
     expect(screen.container.textContent).not.toContain("b-1.txt");
     await screen.unmount();
   });
@@ -700,12 +700,12 @@ describe("Session page owner state", () => {
     previousResponse.resolve({ invocationId: "stale-a-feedback" });
 
     await expect.element(helpfulButton()).toBeDisabled();
-    await expect.element(screen.getByRole("status")).toHaveTextContent("Sending memory feedback…");
+    await expect.element(screen.getByRole("status")).toMatchTextContent("Sending memory feedback…");
 
     currentResponse.resolve({ invocationId: "current-a-feedback" });
     await expect
       .element(screen.getByRole("status"))
-      .toHaveTextContent("Memory feedback submitted as a visible Session turn.");
+      .toMatchTextContent("Memory feedback submitted as a visible Session turn.");
     await expect.element(helpfulButton()).toBeEnabled();
     await screen.unmount();
   });
@@ -735,7 +735,7 @@ describe("Session page owner state", () => {
       .toBe(true);
     await expect
       .element(screen.getByRole("status"))
-      .toHaveTextContent("One-shot directive issued for this turn: /plan.");
+      .toMatchTextContent("One-shot directive issued for this turn: /plan.");
     await screen.unmount();
   });
 
@@ -764,12 +764,12 @@ describe("Session page owner state", () => {
     currentResponse.resolve({ invocationId: "inv-fleet" });
     await expect
       .element(screen.getByRole("status"))
-      .toHaveTextContent("One-shot directive issued for this turn: /fleet.");
+      .toMatchTextContent("One-shot directive issued for this turn: /fleet.");
     previousResponse.reject(new Error("stale Plan failure"));
 
     await expect
       .element(screen.getByRole("status"))
-      .toHaveTextContent("One-shot directive issued for this turn: /fleet.");
+      .toMatchTextContent("One-shot directive issued for this turn: /fleet.");
     expect(screen.container.textContent).not.toContain("stale Plan failure");
     await screen.unmount();
   });
@@ -787,11 +787,11 @@ describe("Session page owner state", () => {
     await screen.getByRole("button", { name: "Run /plan" }).click();
     await screen.getByRole("textbox", { name: "Prompt" }).fill("/status");
     await screen.getByRole("button", { name: "Refresh status" }).click();
-    await expect.element(screen.getByRole("status")).toHaveTextContent("Session status: idle.");
+    await expect.element(screen.getByRole("status")).toMatchTextContent("Session status: idle.");
 
     modeResponse.reject(new Error("stale Plan failure"));
 
-    await expect.element(screen.getByRole("status")).toHaveTextContent("Session status: idle.");
+    await expect.element(screen.getByRole("status")).toMatchTextContent("Session status: idle.");
     expect(screen.container.textContent).not.toContain("stale Plan failure");
     await screen.unmount();
   });
@@ -814,13 +814,13 @@ describe("Session page owner state", () => {
     await screen.getByRole("button", { name: "Send" }).click();
     await expect
       .element(screen.getByRole("status"))
-      .toHaveTextContent("Compaction queued as compact-current.");
+      .toMatchTextContent("Compaction queued as compact-current.");
 
     modeResponse.reject(new Error("stale Plan failure"));
 
     await expect
       .element(screen.getByRole("status"))
-      .toHaveTextContent("Compaction queued as compact-current.");
+      .toMatchTextContent("Compaction queued as compact-current.");
     expect(screen.container.textContent).not.toContain("stale Plan failure");
     await screen.unmount();
   });
@@ -841,11 +841,11 @@ describe("Session page owner state", () => {
     await screen.getByRole("button", { name: "Run /plan" }).click();
     await screen.getByRole("textbox", { name: "Prompt" }).fill("/queue");
     await screen.getByRole("button", { name: "Retry" }).click();
-    await expect.element(screen.getByRole("alert")).toHaveTextContent("current retry failure");
+    await expect.element(screen.getByRole("alert")).toMatchTextContent("current retry failure");
 
     modeResponse.resolve({ invocationId: "inv-plan" });
 
-    await expect.element(screen.getByRole("alert")).toHaveTextContent("current retry failure");
+    await expect.element(screen.getByRole("alert")).toMatchTextContent("current retry failure");
     expect(screen.container.textContent).not.toContain("One-shot directive issued");
     await screen.unmount();
   });
@@ -867,14 +867,14 @@ describe("Session page owner state", () => {
     await screen.getByRole("button", { name: "Model", exact: true }).click();
     await screen.getByText("Candidate", { exact: true }).click();
     modelResponse.reject(new Error("current model failure"));
-    await expect.element(screen.getByRole("alert")).toHaveTextContent("current model failure");
+    await expect.element(screen.getByRole("alert")).toMatchTextContent("current model failure");
     await expect
       .element(screen.getByRole("button", { name: "Model", exact: true }))
       .toHaveAttribute("title", "Owner");
 
     modeResponse.resolve({ invocationId: "inv-plan" });
 
-    await expect.element(screen.getByRole("alert")).toHaveTextContent("current model failure");
+    await expect.element(screen.getByRole("alert")).toMatchTextContent("current model failure");
     expect(screen.container.textContent).not.toContain("One-shot directive issued");
     await screen.unmount();
   });

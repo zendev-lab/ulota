@@ -43,9 +43,9 @@ describe("shared UI primitives", () => {
       ],
     });
 
-    const trigger = screen.getByRole("button", { name: "Theme" });
+    const trigger = screen.getByRole("combobox", { name: "Theme" });
     expect(trigger.element().classList).toContain("fit");
-    await expect.element(trigger).toHaveTextContent("System");
+    await expect.element(trigger).toMatchTextContent("System");
     await screen.unmount();
   });
 

@@ -36,6 +36,7 @@ build/
 playwright-report/
 test-results/
 .vitest-attachments/
+.vitest/
 *.tsbuildinfo
 reports/
 packages/spark-db/.codegen-tmp/

@@ -97,7 +97,7 @@
     "@zendev-lab/spark-workflows": "workspace:^"
   },
   "devDependencies": {
-    "@codspeed/vitest-plugin": "5.7.1",
+    "@codspeed/vitest-plugin": "6.1.0",
     "@deepseek-ai/dsh-web": "catalog:dsh",
     "@j178/prek": "0.5.7",
     "@types/node": "^24.13.3",

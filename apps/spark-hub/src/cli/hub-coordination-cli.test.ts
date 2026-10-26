@@ -11,7 +11,7 @@ import { test } from "vitest";
 import { TaskGraph } from "@zendev-lab/spark-tasks";
 
 import type { HubCoordinationDaemonClientOptions } from "./coordination-daemon.ts";
-import { workspaceSessionRecord } from "../../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../../packages/spark-session/test/support/session-fixtures.ts";
 import {
   handleSparkHubCliCommand,
   parseSparkHubCliArgs,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SparkSessionProjection } from "@zendev-lab/spark-protocol";
-import { workspaceSessionRecord } from "../../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 import { assignCompletedSessionName } from "./session-title.ts";
 
