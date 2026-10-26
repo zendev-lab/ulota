@@ -393,11 +393,10 @@ function prepareRestoredDatabase(
   now: string,
 ): HubRestoreResult["transientReset"] {
   const db = new DatabaseSync(databasePath);
-  db.exec("PRAGMA foreign_keys = ON");
-  db.exec("PRAGMA busy_timeout = 5000");
-  migrate(db);
-
   try {
+    db.exec("PRAGMA foreign_keys = ON");
+    db.exec("PRAGMA busy_timeout = 5000");
+    migrate(db);
     db.exec("BEGIN IMMEDIATE");
     const browserSessionsDeleted = changes(db.prepare("DELETE FROM sessions").run());
     const hubAccessTokensDeleted = db

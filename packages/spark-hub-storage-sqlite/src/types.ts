@@ -1,4 +1,5 @@
 export interface SchemaMigrationsTable {
+  checksum: string | null;
   version: string;
   name: string;
   applied_at: string;

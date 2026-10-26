@@ -37,7 +37,8 @@ export function migrateChannelDeliveryPayloadsV2(db: import("node:sqlite").Datab
   }>;
   if (rows.length === 0) return;
   const now = new Date().toISOString();
-  db.exec("BEGIN IMMEDIATE");
+  const ownsTransaction = !db.isTransaction;
+  if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
   try {
     for (const row of rows) {
       const parsed = JSON.parse(row.payloadJson) as unknown;
@@ -99,9 +100,9 @@ export function migrateChannelDeliveryPayloadsV2(db: import("node:sqlite").Datab
         throw new Error(`Channel delivery payload v2 readback failed: ${row.id}`);
       }
     }
-    db.exec("COMMIT");
+    if (ownsTransaction) db.exec("COMMIT");
   } catch (error) {
-    db.exec("ROLLBACK");
+    if (ownsTransaction) db.exec("ROLLBACK");
     throw error;
   }
 }
