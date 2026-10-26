@@ -55,7 +55,7 @@ import {
   executeSparkDaemonSessionRunTask,
   preloadSparkDaemonExecutionRuntime,
 } from "./session-run.ts";
-import { workspaceSessionRecord } from "../../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 const paths = resolveSparkPaths({
   app: "daemon",

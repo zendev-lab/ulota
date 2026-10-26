@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { test } from "vitest";
 
 import {
@@ -19,13 +17,6 @@ import {
   invocationLogChunkPayloadSchema,
   sparkInteractionRequestSchema,
 } from "./index.ts";
-
-const evidenceSurfaceNegativeValues = JSON.parse(
-  readFileSync(
-    join(import.meta.dirname, "../../../test/fixtures/evidence-surface/negative-values.json"),
-    "utf8",
-  ),
-) as { wrongNamespaceRef: string; wrongArtifactNamespaceRef: string };
 
 test("spark protocol validates core session/message/tool/run/task/artifact view models", () => {
   const session = parseSparkSessionView({
@@ -64,7 +55,7 @@ test("run and task views keep Artifacts separate from internal Evidence", () => 
         id: "run:mixed",
         kind: "task",
         status: "succeeded",
-        evidenceRefs: [evidenceSurfaceNegativeValues.wrongNamespaceRef],
+        evidenceRefs: ["artifact:not-evidence"],
       }),
     /must be an evidence: ref/,
   );
@@ -74,14 +65,14 @@ test("run and task views keep Artifacts separate from internal Evidence", () => 
         ref: "task:mixed",
         title: "Mixed",
         status: "running",
-        artifactRefs: [evidenceSurfaceNegativeValues.wrongArtifactNamespaceRef],
+        artifactRefs: ["evidence:not-artifact"],
       }),
     /must be an artifact: ref/,
   );
   assert.throws(
     () =>
       sparkArtifactProjectionContentRefSchema.parse({
-        artifactRef: evidenceSurfaceNegativeValues.wrongArtifactNamespaceRef,
+        artifactRef: "evidence:not-artifact",
         inlineJson: {},
       }),
     /must be an artifact: ref/,

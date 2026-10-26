@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import WorkbenchSessionRail from "./WorkbenchSessionRail.svelte";
 import { getDictionary } from "./i18n";
-import { workspaceSessionRecord } from "../../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 const dictionary = getDictionary("en");
 const sessionMessages = dictionary.sessions;

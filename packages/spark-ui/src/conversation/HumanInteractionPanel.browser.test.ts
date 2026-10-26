@@ -91,7 +91,7 @@ describe("HumanInteractionPanel browser contract", () => {
     });
 
     await screen.getByRole("button", { name: "Answer" }).click();
-    await expect.element(screen.getByRole("alert")).toHaveTextContent(labels.required);
+    await expect.element(screen.getByRole("alert")).toMatchTextContent(labels.required);
     expect(onRespond).not.toHaveBeenCalled();
 
     await screen.getByRole("textbox", { name: "Reason" }).fill("private draft");
@@ -169,7 +169,7 @@ describe("HumanInteractionPanel browser contract", () => {
       .click();
     await screen.getByRole("textbox", { name: "Lane: Custom answer" }).fill("maybe");
     await screen.getByRole("button", { name: "Answer" }).click();
-    await expect.element(screen.getByRole("alert")).toHaveTextContent(labels.required);
+    await expect.element(screen.getByRole("alert")).toMatchTextContent(labels.required);
     expect(onRespond).not.toHaveBeenCalled();
     await screen.unmount();
   });
