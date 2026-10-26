@@ -1,10 +1,10 @@
 <script lang="ts">
   import { Icon } from "@zendev-lab/spark-ui";
-  import { enumLabel, formatByteSize, formatRelativeTime } from "$lib/i18n";
+  import { enumLabel, formatByteSize, formatRelativeTime } from "#lib/i18n.ts";
   import { EmptyState } from "@zendev-lab/spark-ui";
   import { PageHeader } from "@zendev-lab/spark-ui";
   import { Panel } from "@zendev-lab/spark-ui";
-  import { workspacePath } from "$lib/workspace-routes";
+  import { workspacePath } from "#lib/workspace-routes.ts";
 
   let { data } = $props();
   let t = $derived(data.messages.artifacts);

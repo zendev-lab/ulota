@@ -8,19 +8,19 @@
     sessionHasChannelBinding,
     type ChannelSessionLabels,
   } from "@zendev-lab/spark-ui/channel-session";
-  import { visibleConversationActivityStatus } from "$lib/conversation-status";
-  import { formatRelativeTime, statusLabel as getStatusLabel } from "$lib/i18n";
+  import { visibleConversationActivityStatus } from "#lib/conversation-status.ts";
+  import { formatRelativeTime, statusLabel as getStatusLabel } from "#lib/i18n.ts";
   import {
     groupWorkbenchSessionsByType,
     type WorkbenchSessionType,
-  } from "$lib/workbench-session-groups";
+  } from "#lib/workbench-session-groups.ts";
   import {
     buildSessionRailTree,
     isSessionVisibleInWorkbenchRail,
     workbenchSessionScope,
     type WorkbenchSessionRailRow,
-  } from "$lib/workbench-session-scope";
-  import { workspaceSessionPath, workspaceSessionsPath } from "$lib/workspace-routes";
+  } from "#lib/workbench-session-scope.ts";
+  import { workspaceSessionPath, workspaceSessionsPath } from "#lib/workspace-routes.ts";
 
   type SessionRecord = {
     sessionId: string;

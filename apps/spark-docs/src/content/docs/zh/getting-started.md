@@ -7,14 +7,11 @@ sidebar:
 
 ## 环境要求
 
-Spark 当前要求 Node.js `>=24` 和 npm。`@zendev-lab/spark` 是完整产品载荷，
-会安装版本匹配的 daemon、Hub 与本地 Web app package。native bootstrap
-不捆绑 Node runtime。
+Spark 当前要求 Node.js `>=24` 和 npm。`@zendev-lab/spark` 是完整产品载荷，会安装版本匹配的 daemon、Hub 与本地 Web app package。native bootstrap 不捆绑 Node runtime。
 
 ## 安装
 
-推荐使用经过校验的 curl bootstrap。它会检测 macOS/Linux 的 x64/arm64 target、
-验证 release SHA-256，再由该精确版本的 native CLI 安装匹配的 managed npm 载荷：
+推荐使用经过校验的 curl bootstrap。它会检测 macOS/Linux 的 x64/arm64 target、验证 release SHA-256，再由该精确版本的 native CLI 安装匹配的 managed npm 载荷：
 
 ```bash
 curl -fsSL https://github.com/zendev-lab/spark/releases/latest/download/install.sh | sh
@@ -29,8 +26,7 @@ curl -fsSL https://github.com/zendev-lab/spark/releases/latest/download/install.
   | sh -s -- --prefix /opt/spark
 ```
 
-如果 shell 仍解析到另一个全局 npm 命令，installer 会打印精确的 `PATH` 修复提示；
-它不会静默回退到旧 Node dispatcher。
+如果 shell 仍解析到另一个全局 npm 命令，installer 会打印精确的 `PATH` 修复提示；它不会静默回退到旧 Node dispatcher。
 
 也可以继续由 package manager 管理完整安装：
 
@@ -46,9 +42,7 @@ npm install --global @zendev-lab/spark-daemon  # 或 spark-hub / spark-web
 spark-daemon --help
 ```
 
-全局 npm、pnpm、Yarn、Bun 与 Vite+ 安装会把精确版本更新委托给原安装所有者；源码
-checkout 只报告迁移指引，不会替换自身；Cargo/source fingerprint 改变时，源码入口
-会增量构建同一套 Rust CLI。
+全局 npm、pnpm、Yarn、Bun 与 Vite+ 安装会把精确版本更新委托给原安装所有者；源码 checkout 只报告迁移指引，不会替换自身；Cargo/source fingerprint 改变时，源码入口会增量构建同一套 Rust CLI。
 
 在排查某个界面前，先运行健康检查：
 
@@ -58,8 +52,7 @@ spark doctor
 
 ## 配置模型
 
-Provider 认证和模型选择由 daemon 拥有。先发现当前安装支持的命令，再查看或设置
-当前模型：
+Provider 认证和模型选择由 daemon 拥有。先发现当前安装支持的命令，再查看或设置当前模型：
 
 ```bash
 spark daemon auth --help
@@ -67,8 +60,7 @@ spark daemon model --help
 spark daemon model status --json
 ```
 
-Spark 请求 API key 时应在提示中输入；不要把密钥写进项目文件、`config.json`
-或 shell 历史。
+Spark 请求 API key 时应在提示中输入；不要把密钥写进项目文件、`config.json` 或 shell 历史。
 
 ## 完成第一次运行
 
@@ -90,8 +82,7 @@ spark run --json "列出顶层 packages。"
 spark web
 ```
 
-Spark 会按需启动或连接本地 daemon。应使用 `spark daemon status --json`
-检查服务状态，不要从前端表现猜测 daemon 是否健康。
+Spark 会按需启动或连接本地 daemon。应使用 `spark daemon status --json` 检查服务状态，不要从前端表现猜测 daemon 是否健康。
 
 ## 下一步
 

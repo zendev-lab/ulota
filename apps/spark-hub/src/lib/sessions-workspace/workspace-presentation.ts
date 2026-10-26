@@ -2,8 +2,8 @@ import {
   channelSessionPresentation,
   type ChannelSessionPresentation,
 } from "@zendev-lab/spark-ui/channel-session";
-import { workbenchSessionScope } from "$lib/workbench-session-scope";
-import { workspacePath } from "$lib/workspace-routes";
+import { workbenchSessionScope } from "#lib/workbench-session-scope.ts";
+import { workspacePath } from "#lib/workspace-routes.ts";
 import type {
   SessionRecord,
   SessionsMessages,

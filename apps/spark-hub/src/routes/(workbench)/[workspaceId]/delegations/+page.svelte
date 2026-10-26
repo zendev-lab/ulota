@@ -1,5 +1,5 @@
 <script lang="ts">
-  import WorkspaceDelegationsPage from "$lib/WorkspaceDelegationsPage.svelte";
+  import WorkspaceDelegationsPage from "#lib/WorkspaceDelegationsPage.svelte";
   let { data } = $props();
 </script>
 

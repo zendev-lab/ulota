@@ -1,7 +1,7 @@
 import { error } from "@sveltejs/kit";
 
-import { invokeSparkWebRpc } from "$lib/server/rpc";
-import { listSparkWebSessions } from "$lib/server/session-list";
+import { invokeSparkWebRpc } from "#lib/server/rpc.ts";
+import { listSparkWebSessions } from "#lib/server/session-list.ts";
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ params }) => {

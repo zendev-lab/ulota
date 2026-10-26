@@ -62,15 +62,15 @@
     type SparkThinkingLevel,
   } from "@zendev-lab/spark-protocol";
   import { formatChannelSessionTitle } from "@zendev-lab/spark-ui/channel-session";
-  import { conversationMessagesFromViews } from "$lib/conversation";
-  import { attachWebSessionEvents, type WebSessionConnectionState } from "$lib/live-events";
-  import { explicitMemoryRefs, sparkWebTurnMessageMetadata } from "$lib/memory-feedback";
+  import { conversationMessagesFromViews } from "#lib/conversation.ts";
+  import { attachWebSessionEvents, type WebSessionConnectionState } from "#lib/live-events.ts";
+  import { explicitMemoryRefs, sparkWebTurnMessageMetadata } from "#lib/memory-feedback.ts";
   import {
     parsePendingHumanInteractions,
     type PendingHumanInteraction,
-  } from "$lib/pending-human-interactions";
-  import { providerSettingsHref } from "$lib/provider-auth";
-  import { webRpc } from "$lib/web-rpc";
+  } from "#lib/pending-human-interactions.ts";
+  import { providerSettingsHref } from "#lib/provider-auth.ts";
+  import { webRpc } from "#lib/web-rpc.ts";
 
   let { data } = $props();
   let copy = $derived(data.messages.web.session);

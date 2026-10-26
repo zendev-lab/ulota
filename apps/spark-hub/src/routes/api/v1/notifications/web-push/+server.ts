@@ -1,11 +1,11 @@
 import { json, type RequestHandler } from "@sveltejs/kit";
 import type { PushSubscription } from "web-push";
-import { getDatabase } from "$lib/server/db";
+import { getDatabase } from "#lib/server/db.ts";
 import {
   deleteWebPushSubscription,
   saveWebPushSubscription,
   webPushPublicConfig,
-} from "$lib/server/web-push";
+} from "#lib/server/web-push.ts";
 
 export const GET: RequestHandler = () => json(webPushPublicConfig());
 

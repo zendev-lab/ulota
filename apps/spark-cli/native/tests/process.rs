@@ -1,20 +1,6 @@
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn temporary_directory(label: &str) -> PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let path =
-        std::env::temp_dir().join(format!("spark-cli-{label}-{}-{nonce}", std::process::id()));
-    fs::create_dir(&path).unwrap();
-    path
-}
 
 fn spark() -> Command {
     Command::new(env!("CARGO_BIN_EXE_spark"))
@@ -22,26 +8,14 @@ fn spark() -> Command {
 
 #[test]
 fn routes_web_arguments_with_the_companion_exit_code() {
-    let temporary = temporary_directory("route");
-    let arguments = temporary.join("arguments");
-    let companion = temporary.join("web");
-    fs::write(
-        &companion,
-        format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nexit 17\n",
-            arguments.display()
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&companion, fs::Permissions::from_mode(0o755)).unwrap();
-
-    let status = spark()
+    let companion = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/web-companion.sh");
+    let output = spark()
         .env("SPARK_WEB_COMMAND", companion)
         .args(["web", "--port", "3999"])
-        .status()
+        .output()
         .unwrap();
-    assert_eq!(status.code(), Some(17));
-    assert_eq!(fs::read_to_string(arguments).unwrap(), "--port\n3999\n");
+    assert_eq!(output.status.code(), Some(17));
+    assert_eq!(output.stdout.as_slice(), b"--port\n3999\n");
 }
 
 #[test]

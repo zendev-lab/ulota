@@ -1,6 +1,6 @@
 import { error, redirect } from "@sveltejs/kit";
-import { getDatabase } from "$lib/server/db";
-import { workspacePath } from "$lib/workspace-routes";
+import { getDatabase } from "#lib/server/db.ts";
+import { workspacePath } from "#lib/workspace-routes.ts";
 import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = ({ params }) => {

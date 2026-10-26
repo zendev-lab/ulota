@@ -2,7 +2,7 @@ import type { Cookies } from "@sveltejs/kit";
 import { render } from "svelte/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getDictionary } from "$lib/i18n";
+import { getDictionary } from "#lib/i18n.ts";
 import Page from "../routes/(console)/workspaces/new/+page.svelte";
 import type { ActionData, PageData } from "../routes/(console)/workspaces/new/$types";
 
@@ -16,10 +16,10 @@ const mocks = vi.hoisted(() => ({
   getDatabase: vi.fn(() => ({})),
 }));
 
-vi.mock("$lib/server/auth", () => ({
+vi.mock("#lib/server/auth.ts", () => ({
   ensureCurrentOwnerSession: mocks.ensureCurrentOwnerSession,
 }));
-vi.mock("$lib/server/db", () => ({ getDatabase: mocks.getDatabase }));
+vi.mock("#lib/server/db.ts", () => ({ getDatabase: mocks.getDatabase }));
 vi.mock("@zendev-lab/spark-hub-coordination/runtime-registration", async (importOriginal) => {
   const actual =
     await importOriginal<

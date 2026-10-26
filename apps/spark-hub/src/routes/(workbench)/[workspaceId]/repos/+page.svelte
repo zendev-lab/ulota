@@ -1,7 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { Icon } from "@zendev-lab/spark-ui";
-  import { enumLabel, formatRelativeTime, statusLabel as getStatusLabel } from "$lib/i18n";
+  import { enumLabel, formatRelativeTime, statusLabel as getStatusLabel } from "#lib/i18n.ts";
   import {
     Button,
     EmptyState,
@@ -12,7 +12,7 @@
     Select,
     Textarea,
   } from "@zendev-lab/spark-ui";
-  import { workspacePath } from "$lib/workspace-routes";
+  import { workspacePath } from "#lib/workspace-routes.ts";
 
   let { data, form } = $props();
   let t = $derived(data.messages.repos);

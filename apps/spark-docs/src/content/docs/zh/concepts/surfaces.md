@@ -3,7 +3,7 @@ title: 界面与所有权
 description: 理解 CLI 分发器、本地 Web 工作台、daemon 与 Hub，避免产生相互竞争的真相来源。
 ---
 
-Spark 提供的是同一个系统的多个视图，而不是多个可以互换的执行器。
+Spark 的多个界面共享同一套系统，执行状态始终由 daemon 统一负责。
 
 | 界面 | 用途 | 所有权 |
 | --- | --- | --- |
@@ -15,11 +15,9 @@ Spark 提供的是同一个系统的多个视图，而不是多个可以互换�
 
 ## 唯一执行所有者
 
-前台 `spark run`、后台 `spark bg`、本地 Web prompt 和 Hub Web 提交最终都使用
-daemon 拥有的执行路径。某个前端断开不会把 invocation 的所有权转移给另一个前端。
+前台 `spark run`、后台 `spark bg`、本地 Web prompt 和 Hub Web 提交最终都使用 daemon 拥有的执行路径。某个前端断开不会把 invocation 的所有权转移给另一个前端。
 
-Updater 是独立的状态所有者，不是另一个执行器。只有在 updater 完成版本切换后，
-daemon 才参与带健康检查与目标 fence 的 handoff。
+Updater 是独立的状态所有者，不是另一个执行器。只有在 updater 完成版本切换后， daemon 才参与带健康检查与目标 fence 的 handoff。
 
 排查状态不一致时，先检查 daemon：
 
@@ -30,17 +28,10 @@ spark daemon session list --json
 
 ## Workspace 绑定
 
-workspace 身份绑定到一颗 daemon。本地 Web 列出该 daemon 上的全部
-workspace；cwd 只是启动上下文。Hub 转发到多颗 daemon，不拥有
-workspace 身份。会话仍落在 daemon workspace 内。
+workspace 身份绑定到一颗 daemon。本地 Web 列出该 daemon 上的全部 workspace；cwd 只是启动上下文。Hub 转发到多颗 daemon，不拥有 workspace 身份。会话仍落在 daemon workspace 内。
 
-Workspace 内的 Spark 状态位于 `.spark/`。用户配置和服务状态在显式设置时使用
-`SPARK_HOME`，否则使用标准 XDG 根目录。详情见[配置与路径](/zh/reference/configuration-and-paths/)。
+Workspace 内的 Spark 状态位于 `.spark/`。用户配置和服务状态在显式设置时使用 `SPARK_HOME`，否则使用标准 XDG 根目录。详情见[配置与路径](/zh/reference/configuration-and-paths/)。
 
 ## 产品边界
 
-`@zendev-lab/spark` 是完整安装用的 meta package：它锁定 CLI 与各 app 的
-同版本依赖，但不包含 dispatcher 实现。`@zendev-lab/spark-cli` 拥有真实的
-`spark` 命令；`@zendev-lab/spark-daemon`、`@zendev-lab/spark-hub` 与
-`@zendev-lab/spark-web` 仍可独立安装。其他源码 workspace 是私有实现边界，
-不是受支持的安装目标。
+`@zendev-lab/spark` 是完整安装用的 meta package：它锁定 CLI 与各 app 的同版本依赖，但不包含 dispatcher 实现。`@zendev-lab/spark-cli` 拥有真实的 `spark` 命令；`@zendev-lab/spark-daemon`、`@zendev-lab/spark-hub` 与 `@zendev-lab/spark-web` 仍可独立安装。其他源码 workspace 是私有实现边界，不是受支持的安装目标。

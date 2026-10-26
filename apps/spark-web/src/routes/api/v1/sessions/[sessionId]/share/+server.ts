@@ -1,7 +1,7 @@
 import { error, json } from "@sveltejs/kit";
 
-import { createSparkWebLocalShare, SparkWebLocalShareLimitError } from "$lib/server/local-share";
-import { invokeSparkWebRpc } from "$lib/server/rpc";
+import { createSparkWebLocalShare, SparkWebLocalShareLimitError } from "#lib/server/local-share.ts";
+import { invokeSparkWebRpc } from "#lib/server/rpc.ts";
 import type { RequestHandler } from "./$types";
 
 export const POST: RequestHandler = async ({ params }) => {

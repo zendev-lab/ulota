@@ -1,5 +1,5 @@
-import { getDatabase } from "$lib/server/db";
-import { requireWorkspaceByRouteId } from "$lib/server/workspace-routing";
+import { getDatabase } from "#lib/server/db.ts";
+import { requireWorkspaceByRouteId } from "#lib/server/workspace-routing.ts";
 
 interface WorkspaceRouteEvent {
   params: { workspaceId: string };

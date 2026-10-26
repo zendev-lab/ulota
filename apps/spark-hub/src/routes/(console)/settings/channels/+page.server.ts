@@ -3,15 +3,15 @@ import { getCurrentUserIdBySessionToken } from "@zendev-lab/spark-hub-coordinati
 import { listRuntimeSessionProjections } from "@zendev-lab/spark-hub-coordination/runtime-session-control";
 import type { SparkQqbotQrAuthFlow } from "@zendev-lab/spark-protocol";
 import { renderSVG } from "uqr";
-import { daemonChannelSessionSummaries } from "$lib/daemon-channel-session";
+import { daemonChannelSessionSummaries } from "#lib/daemon-channel-session.ts";
 import {
   daemonMessagePlatformConnections,
   isMessagePlatformAdapter,
   type MessagePlatformAdapter,
   type MessagePlatformFormValues,
-} from "$lib/message-platform";
-import { getRequestDictionary, localeCookieName } from "$lib/i18n";
-import { formText } from "$lib/server/form-data";
+} from "#lib/message-platform.ts";
+import { getRequestDictionary, localeCookieName } from "#lib/i18n.ts";
+import { formText } from "#lib/server/form-data.ts";
 import {
   channelAdapterCredentialsComplete,
   channelEditorValuesFromProjection,
@@ -22,14 +22,14 @@ import {
   unavailableChannelStatusForHub,
   type HubChannelEditorValues,
   type MessagePlatformCredentialPatch,
-} from "$lib/server/channel-status";
-import { getDatabase } from "$lib/server/db";
-import { createHubRuntimeModelChannelClient } from "$lib/server/hub-runtime-model-channel-client";
-import { createHubRuntimeSessionClient } from "$lib/server/hub-runtime-session-client";
-import { requireSecretRequestContext } from "$lib/server/secret-request-context";
+} from "#lib/server/channel-status.ts";
+import { getDatabase } from "#lib/server/db.ts";
+import { createHubRuntimeModelChannelClient } from "#lib/server/hub-runtime-model-channel-client.ts";
+import { createHubRuntimeSessionClient } from "#lib/server/hub-runtime-session-client.ts";
+import { requireSecretRequestContext } from "#lib/server/secret-request-context.ts";
 import type { Actions, PageServerLoad } from "./$types";
 
-export type { MessagePlatformFormValues } from "$lib/message-platform";
+export type { MessagePlatformFormValues } from "#lib/message-platform.ts";
 
 export const load: PageServerLoad = async ({ url }) => {
   const runtimes = channelRuntimes();

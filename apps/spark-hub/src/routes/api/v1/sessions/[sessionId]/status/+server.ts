@@ -1,8 +1,8 @@
 import {
   getManagedSessionForHub,
   getProjectedManagedSessionForHub,
-} from "$lib/server/managed-sessions";
-import { workspaceIdForWorkbenchSession } from "$lib/workbench-session-scope";
+} from "#lib/server/managed-sessions.ts";
+import { workspaceIdForWorkbenchSession } from "#lib/workbench-session-scope.ts";
 import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 

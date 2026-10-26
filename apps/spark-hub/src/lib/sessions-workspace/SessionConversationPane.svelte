@@ -1,19 +1,19 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { browser } from "$app/environment";
+  import { browser } from "$app/env";
   import { replaceState } from "$app/navigation";
   import { page } from "$app/state";
   import {
     ConversationEmptyState,
     ConversationViewport,
     Message as ConversationMessage,
-  } from "$lib/components/conversation";
-  import SessionAskPanel from "$lib/SessionAskPanel.svelte";
+  } from "#lib/components/conversation/index.ts";
+  import SessionAskPanel from "#lib/SessionAskPanel.svelte";
   import {
     defaultSessionPrimaryView,
     requestedSessionPrimaryView,
     type SessionPrimaryView,
-  } from "$lib/session-work-view";
+  } from "#lib/session-work-view.ts";
   import type { Snippet } from "svelte";
   import type { SessionConversationHost } from "./conversation-host";
   import SessionStageHeader from "./SessionStageHeader.svelte";
@@ -59,7 +59,7 @@
     selectedPrimaryView = view;
     primaryViewExplicit = true;
     if (!browser) return;
-    const url = new URL(page.url);
+    const url = new URL(page.url.href);
     url.searchParams.set("view", view);
     replaceState(url, page.state);
   }

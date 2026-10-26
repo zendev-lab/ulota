@@ -9,11 +9,11 @@ const mocks = vi.hoisted(() => ({
   hubRuntimeRelocationInstanceId: vi.fn(),
 }));
 
-vi.mock("$lib/server/json", () => ({
+vi.mock("#lib/server/json.ts", () => ({
   errorJson: (code: string, message: string, status: number) =>
     Response.json({ error: { code, message } }, { status }),
 }));
-vi.mock("$lib/server/runtime-relocation", async () => ({
+vi.mock("#lib/server/runtime-relocation.ts", async () => ({
   ...(await vi.importActual("@zendev-lab/spark-hub-coordination/runtime-registration")),
   preflightHubRuntimeRelocation: mocks.preflightHubRuntimeRelocation,
   hubRuntimeRelocationInstanceId: mocks.hubRuntimeRelocationInstanceId,

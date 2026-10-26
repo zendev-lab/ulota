@@ -9,22 +9,22 @@ const mocks = vi.hoisted(() => ({
   shellLayout: vi.fn(),
 }));
 
-vi.mock("$lib/server/conversation-summaries", () => ({
+vi.mock("#lib/server/conversation-summaries.ts", () => ({
   loadConversationSummaries: mocks.conversationSummaries,
 }));
-vi.mock("$lib/server/db", () => ({ getDatabase: () => ({}) }));
-vi.mock("$lib/server/managed-sessions", () => ({
+vi.mock("#lib/server/db.ts", () => ({ getDatabase: () => ({}) }));
+vi.mock("#lib/server/managed-sessions.ts", () => ({
   getProjectedManagedSessionForHub: mocks.getProjected,
   listManagedSessionsForHub: mocks.list,
   listProjectedManagedSessionsForHub: mocks.projectedList,
 }));
-vi.mock("$lib/server/pending-ask", () => ({
+vi.mock("#lib/server/pending-ask.ts", () => ({
   loadPendingWorkbenchAsk: mocks.pendingAsk,
 }));
-vi.mock("$lib/server/shell-layout", () => ({
+vi.mock("#lib/server/shell-layout.ts", () => ({
   loadShellWorkspaceLayout: mocks.shellLayout,
 }));
-vi.mock("$lib/workbench-session-scope", () => ({
+vi.mock("#lib/workbench-session-scope.ts", () => ({
   workspaceIdForWorkbenchSession: (session: typeof cachedSession) => session.workspaceId ?? null,
   workspaceSessionsForWorkbench: (sessions: (typeof cachedSession)[]) => sessions,
 }));

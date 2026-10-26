@@ -4,12 +4,12 @@ import {
   loadWorkspaceSettings,
   updateWorkspaceSettings,
 } from "@zendev-lab/spark-hub-coordination/hub-queries";
-import { getRequestDictionary, localeCookieName } from "$lib/i18n";
-import { ensureCurrentOwnerSession } from "$lib/server/auth";
-import { getDatabase } from "$lib/server/db";
-import { formText } from "$lib/server/form-data";
-import { slugifyWorkspaceIdentifier } from "$lib/slugify";
-import { workspacePath } from "$lib/workspace-routes";
+import { getRequestDictionary, localeCookieName } from "#lib/i18n.ts";
+import { ensureCurrentOwnerSession } from "#lib/server/auth.ts";
+import { getDatabase } from "#lib/server/db.ts";
+import { formText } from "#lib/server/form-data.ts";
+import { slugifyWorkspaceIdentifier } from "#lib/slugify.ts";
+import { workspacePath } from "#lib/workspace-routes.ts";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ params }) => {

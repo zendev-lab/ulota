@@ -5,11 +5,11 @@ const mocks = vi.hoisted(() => ({
   createRuntimeDeviceAuthorization: vi.fn(),
 }));
 
-vi.mock("$lib/server/db", () => ({
+vi.mock("#lib/server/db.ts", () => ({
   getDatabase: () => ({}),
 }));
 
-vi.mock("$lib/server/json", () => ({
+vi.mock("#lib/server/json.ts", () => ({
   errorJson: (
     code: string,
     message: string,

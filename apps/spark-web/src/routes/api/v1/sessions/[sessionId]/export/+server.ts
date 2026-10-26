@@ -1,8 +1,8 @@
 import { error } from "@sveltejs/kit";
 import { sparkSessionExportFormatSchema } from "@zendev-lab/spark-protocol";
 
-import { createSparkWebSessionExport } from "$lib/server/session-export";
-import { invokeSparkWebRpc } from "$lib/server/rpc";
+import { createSparkWebSessionExport } from "#lib/server/session-export.ts";
+import { invokeSparkWebRpc } from "#lib/server/rpc.ts";
 import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = async ({ params, url }) => {

@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   submitConversationTurnForHub: vi.fn(),
 }));
 
-vi.mock("$lib/server/managed-sessions", () => ({
+vi.mock("#lib/server/managed-sessions.ts", () => ({
   archiveManagedSessionForHub: mocks.archiveManagedSessionForHub,
   createManagedSessionForHub: mocks.createManagedSessionForHub,
   getManagedSessionForHub: mocks.getManagedSessionForHub,
@@ -26,7 +26,7 @@ vi.mock("$lib/server/managed-sessions", () => ({
   listManagedSessionsForHub: mocks.listManagedSessionsForHub,
 }));
 
-vi.mock("$lib/i18n", () => ({
+vi.mock("#lib/i18n.ts", () => ({
   localeCookieName: "spark_hub_locale",
   resolveRequestLocale: () => "en",
   getRequestDictionary: () => ({
@@ -81,7 +81,7 @@ vi.mock("$lib/i18n", () => ({
   }),
 }));
 
-vi.mock("$lib/server/model-control", () => ({
+vi.mock("#lib/server/model-control.ts", () => ({
   loadModelControlForHub: mocks.loadModelControlForHub,
   loadProjectedModelControlForHub: mocks.loadProjectedModelControlForHub,
   modelValue: (model: { providerName: string; modelId: string }) =>
@@ -103,24 +103,24 @@ vi.mock("@zendev-lab/spark-hub-coordination/agents-product", () => ({
   },
 }));
 
-vi.mock("$lib/server/conversation-control", () => ({
+vi.mock("#lib/server/conversation-control.ts", () => ({
   cancelConversationTurnForHub: mocks.cancelConversationTurnForHub,
   submitConversationTurnForHub: mocks.submitConversationTurnForHub,
 }));
 
-vi.mock("$lib/server/form-data", () => ({
+vi.mock("#lib/server/form-data.ts", () => ({
   formText: (formData: FormData, key: string) => {
     const value = formData.get(key);
     return typeof value === "string" ? value : "";
   },
 }));
 
-vi.mock("$lib/server/db", () => ({ getDatabase: () => ({}) }));
-vi.mock("$lib/server/workspace-routing", () => ({
+vi.mock("#lib/server/db.ts", () => ({ getDatabase: () => ({}) }));
+vi.mock("#lib/server/workspace-routing.ts", () => ({
   requireWorkspaceByRouteId: mocks.requireWorkspaceByRouteId,
 }));
 
-vi.mock("$lib/server/submission-idempotency", () => ({
+vi.mock("#lib/server/submission-idempotency.ts", () => ({
   createHubSubmissionId: () => "generated-browser-submission",
   hubSubmissionIdempotencyKey: (submissionId: string, phase: string) =>
     `idem_${phase === "session.create" ? "1" : "2"}${submissionId.length.toString(16).padStart(31, "0")}`,

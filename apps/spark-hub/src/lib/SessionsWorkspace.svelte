@@ -1,34 +1,34 @@
 <script lang="ts">
   import { invalidateAll } from "$app/navigation";
   import { page } from "$app/state";
-  import { visibleConversationPartText } from "$lib/components/conversation/conversation-view";
+  import { visibleConversationPartText } from "#lib/components/conversation/conversation-view.ts";
   import {
     sessionStatusIdentity,
     sessionStatusUsage,
-  } from "$lib/components/conversation/session-status";
+  } from "#lib/components/conversation/session-status.ts";
   import type {
     SessionQueueItem,
     SessionQueueLabels,
     SlashActionAvailability,
-  } from "$lib/components/conversation";
+  } from "#lib/components/conversation/index.ts";
   import { sessionHasChannelBinding } from "@zendev-lab/spark-ui/channel-session";
-  import { formatRelativeTime, statusLabel as getStatusLabel, type AppMessages } from "$lib/i18n";
-  import type { PendingWorkbenchAsk } from "$lib/pending-ask";
+  import { formatRelativeTime, statusLabel as getStatusLabel, type AppMessages } from "#lib/i18n.ts";
+  import type { PendingWorkbenchAsk } from "#lib/pending-ask.ts";
   import {
     hubSlashSuggestionsForInput,
     localizeHubSlashActionBar,
-  } from "$lib/slash-actions";
-  import { resolveSessionActivityState } from "$lib/session-activity-state";
+  } from "#lib/slash-actions.ts";
+  import { resolveSessionActivityState } from "#lib/session-activity-state.ts";
   import {
     activeSessionTimelineProcessItemId,
     buildCanonicalSessionTimeline,
     latestSessionRetryCandidate,
     sessionTimelineWindow,
-  } from "$lib/session-timeline";
-  import type { SessionSnapshotHistory } from "$lib/session-snapshot-window";
-  import { buildSessionWorkbenchView } from "$lib/session-workbench";
-  import { workspaceIdForWorkbenchSession } from "$lib/workbench-session-scope";
-  import { workspaceSessionsPath } from "$lib/workspace-routes";
+  } from "#lib/session-timeline.ts";
+  import type { SessionSnapshotHistory } from "#lib/session-snapshot-window.ts";
+  import { buildSessionWorkbenchView } from "#lib/session-workbench.ts";
+  import { workspaceIdForWorkbenchSession } from "#lib/workbench-session-scope.ts";
+  import { workspaceSessionsPath } from "#lib/workspace-routes.ts";
   import {
     createId,
     DEFAULT_SPARK_THINKING_LEVEL,
@@ -45,10 +45,10 @@
     type Component,
     type Snippet,
   } from "svelte";
-  import SessionDetailsPanel from "$lib/sessions-workspace/SessionDetailsPanel.svelte";
-  import SessionActivityPanel from "$lib/sessions-workspace/SessionActivityPanel.svelte";
-  import SessionStartPane from "$lib/sessions-workspace/SessionStartPane.svelte";
-  import type { SessionConversationHost } from "$lib/sessions-workspace/conversation-host";
+  import SessionDetailsPanel from "#lib/sessions-workspace/SessionDetailsPanel.svelte";
+  import SessionActivityPanel from "#lib/sessions-workspace/SessionActivityPanel.svelte";
+  import SessionStartPane from "#lib/sessions-workspace/SessionStartPane.svelte";
+  import type { SessionConversationHost } from "#lib/sessions-workspace/conversation-host.ts";
   // SessionAskPanel mounts beside the composer via conversationHost.sessionPendingAsk.
   import {
     adoptCancelledTurnIntoLiveState,
@@ -73,14 +73,14 @@
     resetCancelUiForActiveTurn,
     sessionMessageInvocationId,
     slashActionAvailability as resolveSlashAvailability,
-  } from "$lib/sessions-workspace";
-  import { createShellFeedbackController } from "$lib/sessions-workspace/shell-feedback.svelte";
+  } from "#lib/sessions-workspace/index.ts";
+  import { createShellFeedbackController } from "#lib/sessions-workspace/shell-feedback.svelte.ts";
   import {
     channelsSettingsHref as resolveChannelsSettingsHref,
     sessionPresentation as resolveSessionPresentation,
     sessionScopeLabel as resolveSessionScopeLabel,
     workspaceHref as resolveWorkspaceHref,
-  } from "$lib/sessions-workspace/workspace-presentation";
+  } from "#lib/sessions-workspace/workspace-presentation.ts";
   import type {
     ComposerSurface,
     FormValues,
@@ -89,7 +89,7 @@
     SessionRecord,
     SessionCwdRootOption,
     WorkspaceOption,
-  } from "$lib/sessions-workspace/types";
+  } from "#lib/sessions-workspace/types.ts";
 
   type Messages = HubMessages["sessions"];
   type ConversationPaneComponent = Component<{
@@ -157,7 +157,7 @@
     if (!selected || ConversationPane) return;
     let cancelled = false;
     conversationPaneRequest ??= import(
-      "$lib/sessions-workspace/SessionConversationPane.svelte"
+      "#lib/sessions-workspace/SessionConversationPane.svelte"
     ).then((module) => module.default);
     void conversationPaneRequest.then((component) => {
       if (!cancelled) ConversationPane = component;

@@ -3,15 +3,15 @@ import {
   HubAccessTokenError,
   hasActiveHubAccessTokens,
 } from "@zendev-lab/spark-hub-coordination/hub-access";
-import { getRequestDictionary, localeCookieName } from "$lib/i18n";
+import { getRequestDictionary, localeCookieName } from "#lib/i18n.ts";
 import {
   exchangeHubAccessToken,
   getCurrentHubSession,
   setHubSessionCookies,
-} from "$lib/server/auth";
-import { getDatabase } from "$lib/server/db";
-import { formText } from "$lib/server/form-data";
-import { sanitizeHubReturnPath } from "$lib/server/navigation";
+} from "#lib/server/auth.ts";
+import { getDatabase } from "#lib/server/db.ts";
+import { formText } from "#lib/server/form-data.ts";
+import { sanitizeHubReturnPath } from "#lib/server/navigation.ts";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ locals, url }) => {

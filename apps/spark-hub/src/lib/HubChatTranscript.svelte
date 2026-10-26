@@ -9,7 +9,7 @@
     type HubChatInvocation,
     type HubChatLogChunk,
     type HubChatTranscriptTurn,
-  } from "$lib/hub-chat-transcript-view";
+  } from "#lib/hub-chat-transcript-view.ts";
 
   type Command = HubChatCommand & {
     attemptCount: number | null;

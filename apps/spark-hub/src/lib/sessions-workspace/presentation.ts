@@ -1,6 +1,6 @@
-import { visibleConversationPartText } from "$lib/components/conversation/conversation-view";
-import type { SessionTimelineItem } from "$lib/session-timeline";
-import type { SessionEventConnectionState } from "$lib/session-event-connection";
+import { visibleConversationPartText } from "#lib/components/conversation/conversation-view.ts";
+import type { SessionTimelineItem } from "#lib/session-timeline.ts";
+import type { SessionEventConnectionState } from "#lib/session-event-connection.ts";
 import type { SparkMessageView, SparkModelRef } from "@zendev-lab/spark-protocol";
 import type { SessionsWorkbenchCopy } from "./types";
 

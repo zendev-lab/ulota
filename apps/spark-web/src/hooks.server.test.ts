@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test, vi } from "vitest";
 
-import { isHttpError, isRedirect, type Handle } from "@sveltejs/kit";
+import { isHttpError, isRedirect } from "@sveltejs/kit";
+import { type Handle } from "@sveltejs/kit/hooks";
 
 import { handle } from "./hooks.server.ts";
 import {

@@ -5,8 +5,8 @@ const mocks = vi.hoisted(() => ({
   requireWorkspaceByRouteId: vi.fn(),
 }));
 
-vi.mock("$lib/server/db", () => ({ getDatabase: mocks.getDatabase }));
-vi.mock("$lib/server/workspace-routing", () => ({
+vi.mock("#lib/server/db.ts", () => ({ getDatabase: mocks.getDatabase }));
+vi.mock("#lib/server/workspace-routing.ts", () => ({
   requireWorkspaceByRouteId: mocks.requireWorkspaceByRouteId,
 }));
 

@@ -2,7 +2,7 @@ import { getHubDictionary } from "@zendev-lab/spark-i18n/hub";
 import { render } from "vitest-browser-svelte";
 import { describe, expect, it, vi } from "vitest";
 
-import { hubOpenSearchEvent } from "$lib/slash-actions";
+import { hubOpenSearchEvent } from "#lib/slash-actions.ts";
 import HubSearch from "./HubSearch.svelte";
 
 describe("HubSearch browser contract", () => {

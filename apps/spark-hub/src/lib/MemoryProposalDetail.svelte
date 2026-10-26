@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { HubMemoryProposalDetail } from "$lib/memory-proposal-detail";
+  import type { HubMemoryProposalDetail } from "#lib/memory-proposal-detail.ts";
 
   let { proposal }: { proposal: HubMemoryProposalDetail } = $props();
 

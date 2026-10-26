@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Icon } from "@zendev-lab/spark-ui";
-  import { formatRelativeTime, statusLabel as getStatusLabel } from "$lib/i18n";
+  import { formatRelativeTime, statusLabel as getStatusLabel } from "#lib/i18n.ts";
   import { Button, Input, PageHeader } from "@zendev-lab/spark-ui";
 
   let { data } = $props();

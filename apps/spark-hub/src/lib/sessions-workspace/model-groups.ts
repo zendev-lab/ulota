@@ -1,4 +1,4 @@
-import type { ModelPickerGroup } from "$lib/components/model-selector";
+import type { ModelPickerGroup } from "#lib/components/model-selector/index.ts";
 import { brandIconForModelProvider } from "@zendev-lab/spark-ui";
 import type { SparkModelCatalogProvider } from "@zendev-lab/spark-protocol";
 import { modelValue } from "./presentation";

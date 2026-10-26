@@ -2,7 +2,7 @@
 
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
-import { getDictionary } from "$lib/i18n";
+import { getDictionary } from "#lib/i18n.ts";
 import Page from "./+page.svelte";
 
 let mounted: Record<string, unknown> | undefined;
