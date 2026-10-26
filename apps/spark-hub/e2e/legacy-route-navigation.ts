@@ -7,8 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { createHubAccessToken } from "@zendev-lab/spark-hub-coordination/hub-access";
-import { createWorkspaceAccessToken } from "@zendev-lab/spark-hub-coordination/workspace-access";
-import { defaultDatabasePath, migrate, openDatabase } from "@zendev-lab/spark-hub-db";
+import { defaultDatabasePath, migrate, openDatabase } from "@zendev-lab/spark-hub-storage-sqlite";
 import {
   chromium,
   request,
@@ -57,7 +56,7 @@ try {
   assertEqual(list.status, 200, "legacy list response status");
   assertEqual(
     list.finalUrl,
-    `${baseUrl}/${workspaceSlug}/sessions?workspace=${workspaceSlug}`,
+    `${baseUrl}/${workspaceSlug}/sessions/${encodeURIComponent(sessionId)}`,
     "legacy list final URL",
   );
 
@@ -78,32 +77,11 @@ try {
   assertEqual(rootLogin.finalUrl, `${baseUrl}/login?next=%2Fsettings`, "root login final URL");
   assertIncludes(await page.locator("body").innerText(), "Hub access", "root login body");
 
-  const workspaceLogin = await navigate(
-    page,
-    api,
-    `${baseUrl}/${workspaceSlug}/login?next=%2F${workspaceSlug}%2Fsessions`,
-  );
-  assertEqual(workspaceLogin.status, 200, "workspace login response status");
-  assertEqual(
-    workspaceLogin.finalUrl,
-    `${baseUrl}/${workspaceSlug}/login?next=%2F${workspaceSlug}%2Fsessions`,
-    "workspace login final URL",
-  );
-  assertIncludes(
-    await page.locator("body").innerText(),
-    "Workspace access",
-    "workspace login body",
-  );
-
   if (browserErrors.length > 0) {
     throw new Error(`Browser errors:\n${browserErrors.join("\n")}`);
   }
   console.log(
-    JSON.stringify(
-      { list, detail, rootLogin, workspaceLogin, browserErrors: browserErrors.length },
-      null,
-      2,
-    ),
+    JSON.stringify({ list, detail, rootLogin, browserErrors: browserErrors.length }, null, 2),
   );
 } catch (error) {
   throw withServerDiagnostics(error, server, serverOutput);
@@ -135,11 +113,10 @@ function restoreEnvironment(name: "SPARK_HOME" | "HOME", value: string | undefin
 function seedDatabase(db: DatabaseSync): void {
   migrate(db);
   db.prepare(
-    `INSERT INTO workspaces (id, slug, name, status, settings_json, created_at, updated_at)
-     VALUES (?, ?, ?, 'active', '{}', ?, ?)`,
+    `INSERT INTO workspaces
+      (id, slug, name, status, provisioning_state, settings_json, created_at, updated_at)
+     VALUES (?, ?, ?, 'active', 'active', '{}', ?, ?)`,
   ).run(workspaceId, workspaceSlug, "Route Proof", now, now);
-  createHubAccessToken(db, { createdAt: now, ttlMs: 3_600_000 });
-  createWorkspaceAccessToken(db, { workspaceId, createdAt: now, ttlMs: 3_600_000 });
 
   const runtimeId = "rt_e2e_route_proof";
   const bindingId = "rtwb_e2e_route_proof";
@@ -148,15 +125,17 @@ function seedDatabase(db: DatabaseSync): void {
       (id, installation_id, name, status, protocol_version, capabilities_json, labels_json, created_at, updated_at)
      VALUES (?, 'install-e2e-route-proof', 'E2E runtime', 'online', '1', '{}', '{}', ?, ?)`,
   ).run(runtimeId, now, now);
+  createHubAccessToken(db, { daemonIds: [runtimeId], createdAt: now, ttlMs: 3_600_000 });
   db.prepare(
     `INSERT INTO runtime_sessions (id, runtime_id, transport, status, connected_at, last_seen_at)
      VALUES ('rtsn_e2e_route_proof', ?, 'websocket', 'connected', ?, ?)`,
   ).run(runtimeId, now, now);
   db.prepare(
     `INSERT INTO runtime_workspace_bindings
-      (id, runtime_id, local_workspace_key, display_name, status, capabilities_json, diagnostics_json, created_at, updated_at)
-     VALUES (?, ?, 'route-proof', 'Route Proof', 'available', '{}', '{}', ?, ?)`,
-  ).run(bindingId, runtimeId, now, now);
+      (id, runtime_id, local_workspace_key, display_name, status, administrator_session_id,
+       administrator_provisioning_state, capabilities_json, diagnostics_json, created_at, updated_at)
+     VALUES (?, ?, 'route-proof', 'Route Proof', 'available', ?, 'active', '{}', '{}', ?, ?)`,
+  ).run(bindingId, runtimeId, sessionId, now, now);
   db.prepare(
     `INSERT INTO workspace_leases
       (id, workspace_id, runtime_workspace_binding_id, owner_mode, started_at, created_at)
@@ -164,8 +143,9 @@ function seedDatabase(db: DatabaseSync): void {
   ).run(workspaceId, bindingId, now, now);
   db.prepare(
     `INSERT INTO runtime_session_projections
-      (runtime_id, session_id, scope, workspace_id, runtime_workspace_binding_id, status, record_json, projected_at)
-     VALUES (?, ?, 'workspace', ?, ?, 'ready', ?, ?)`,
+      (runtime_id, session_id, scope, workspace_id, runtime_workspace_binding_id,
+       lifecycle, placement, activity, lifetime, lineage_origin_kind, record_json, projected_at)
+     VALUES (?, ?, 'workspace', ?, ?, 'open', 'active', 'idle', 'persistent', 'root', ?, ?)`,
   ).run(
     runtimeId,
     sessionId,
@@ -174,10 +154,20 @@ function seedDatabase(db: DatabaseSync): void {
     JSON.stringify({
       sessionId,
       scope: { kind: "workspace", workspaceId },
-      workspaceId,
-      title: "Route proof",
-      status: "ready",
+      name: "Administrator",
+      lifecycle: "open",
+      placement: "active",
+      activity: "idle",
+      lifetime: "persistent",
+      lineage: { kind: "root" },
+      roleBinding: { kind: "explicit", roleRef: "role:builtin-administrator" },
+      incarnation: 1,
+      visibility: "public",
+      retention: "audit",
+      purpose: "workspace_administrator",
       bindings: [],
+      tags: [],
+      archiveHistory: [],
       createdAt: now,
       updatedAt: now,
     }),
@@ -300,12 +290,10 @@ async function freePort(): Promise<number> {
 
 async function stopProcess(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null) return;
-  if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGTERM");
-  else child.kill("SIGTERM");
+  if (child.pid) process.kill(-child.pid, "SIGTERM");
   await new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
-      if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
-      else child.kill("SIGKILL");
+      if (child.pid) process.kill(-child.pid, "SIGKILL");
       resolve();
     }, 5_000);
     child.once("exit", () => {

@@ -1,15 +1,18 @@
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SparkRoleSpec } from "@zendev-lab/spark-protocol/role-session";
+import { defaultSparkSessionRegistryRoot, SparkSessionRegistry } from "@zendev-lab/spark-session";
 import { SparkInvocationScheduler } from "./core/invocation-scheduler.ts";
 import { ExecutionAttemptStore } from "./execution/state.ts";
+import { quiesceLoopsForClosingSession } from "./loop-session-lifecycle.ts";
 import { createDaemonSessionRegistry } from "./session-registry.ts";
 import { SessionSupervisor } from "./session-supervisor.ts";
 import { SparkInvocationStore } from "./store/invocations.ts";
+import { SparkLoopStore } from "./store/loops.ts";
 import { migrateSparkDaemonDatabase } from "./store/schema.ts";
 import { SparkTokenUsageStore } from "./store/token-usage.ts";
 
@@ -28,7 +31,7 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor({
       registry: harness.registry,
       invocations: harness.invocations,
-      ownerExists: async () => true,
+      originExists: async () => true,
       resolveWorkspaceBindingId: () => "rtwb_22222222222222222222222222222222",
     });
 
@@ -47,17 +50,66 @@ describe("SessionSupervisor", () => {
     harness.close();
   });
 
+  it("rejects an Invocation admission that loses to Session closing", async () => {
+    const harness = await createHarness();
+    const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
+    const owned = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: root.sessionId,
+      origin: taskRunOwner("run:closing-admission", root.sessionId),
+      sessionId: "closing-admission",
+      purpose: "task_run",
+    });
+    const admissionEntered = deferred<void>();
+    const releaseAdmission = deferred<void>();
+    const closingPersisted = deferred<void>();
+    const releaseClose = deferred<void>();
+    const supervisor = new SessionSupervisor({
+      registry: {
+        ...harness.registry,
+        commitInvocationAdmission: async (sessionId, admit, now) => {
+          admissionEntered.resolve();
+          await releaseAdmission.promise;
+          return await harness.registry.commitInvocationAdmission(sessionId, admit, now);
+        },
+        markClosing: async (input) => {
+          const closing = await harness.registry.markClosing(input);
+          closingPersisted.resolve();
+          await releaseClose.promise;
+          return closing;
+        },
+      },
+      invocations: harness.invocations,
+      originExists: async () => true,
+    });
+
+    const invoking = supervisor.invoke({
+      invocationId: "inv_closing_admission",
+      sessionId: owned.sessionId,
+      prompt: "must not be admitted",
+    });
+    await admissionEntered.promise;
+    const closing = supervisor.close({ sessionId: owned.sessionId });
+    await closingPersisted.promise;
+    releaseAdmission.resolve();
+
+    await expect(invoking).rejects.toMatchObject({ code: "session_closing" });
+    expect(harness.invocations.getSummary("inv_closing_admission")).toBeUndefined();
+    releaseClose.resolve();
+    await expect(closing).resolves.toMatchObject({ lifecycle: "closed", placement: "archived" });
+    harness.close();
+  });
+
   it("keeps one persistent Administrator root and instantiates owner-bound Role Sessions", async () => {
     const harness = await createHarness();
     const first = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
     const second = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
     expect(second.sessionId).toBe(first.sessionId);
     expect(first).toMatchObject({
-      lifetime: "persistent",
       lifecycle: "open",
-      owner: { kind: "session", ref: first.sessionId },
-      roleRef: "role:builtin-administrator",
-      modelType: "coordination",
+      lineage: { kind: "root" },
+      roleBinding: { kind: "explicit", roleRef: "role:builtin-administrator" },
       purpose: "workspace_administrator",
     });
     harness.invocations.submit({
@@ -67,31 +119,30 @@ describe("SessionSupervisor", () => {
       task: { type: "session.run", sessionId: first.sessionId, prompt: "own a Role call" },
     });
 
-    const owners = [
-      { kind: "session", ref: first.sessionId },
-      { kind: "role_call", ref: "inv-role" },
-      { kind: "task_run", ref: "run:task" },
-      { kind: "task_revision", ref: "task:revision:2" },
-      { kind: "workflow_run", ref: "workflow:run" },
-      { kind: "driver", ref: "driver:loop" },
-      { kind: "driver_tick", ref: "driver:tick:1" },
+    const origins = [
+      { kind: "session" },
+      { kind: "invocation", invocationId: "inv-role" },
+      taskRunOwner("run:task", first.sessionId),
+      taskRevisionOwner("task:revision:2", first.sessionId),
+      workflowOwner("workflow:run", first.sessionId),
+      driverOwner("driver:loop", first.sessionId),
+      driverTickOwner("driver:tick:1", first.sessionId),
     ] as const;
-    for (const [index, owner] of owners.entries()) {
+    for (const [index, origin] of origins.entries()) {
       const session = await harness.supervisor.instantiate({
         workspaceId: "ws-test",
         role: executorRole,
         parentSessionId: first.sessionId,
-        owner,
+        origin,
         sessionId: `owned-${index}`,
-        purpose: owner.kind,
+        purpose: origin.kind,
       });
       expect(session).toMatchObject({
-        lifetime: "owned",
         lifecycle: "open",
-        owner,
+        lineage: { kind: "child", parentSessionId: first.sessionId, origin },
         retention: "discard_on_close",
         visibility: "internal",
-        roleRef: executorRole.ref,
+        roleBinding: { kind: "explicit", roleRef: executorRole.ref },
       });
     }
 
@@ -100,7 +151,7 @@ describe("SessionSupervisor", () => {
         workspaceId: "ws-test",
         role: administratorRole,
         parentSessionId: first.sessionId,
-        owner: { kind: "driver", ref: "driver:invalid" },
+        origin: driverOwner("driver:invalid", first.sessionId),
         purpose: "invalid persistent owner",
       }),
     ).rejects.toMatchObject({ code: "session_owner_invalid" });
@@ -109,7 +160,10 @@ describe("SessionSupervisor", () => {
         workspaceId: "ws-test",
         role: executorRole,
         parentSessionId: first.sessionId,
-        owner: { kind: "role_call", ref: "inv-missing" },
+        origin: {
+          kind: "invocation",
+          invocationId: "inv-missing",
+        },
         purpose: "invalid role-call owner",
       }),
     ).rejects.toMatchObject({ code: "session_owner_invalid" });
@@ -125,7 +179,7 @@ describe("SessionSupervisor", () => {
       workspaceId: "ws-test",
       role: executorRole,
       parentSessionId: root.sessionId,
-      owner: { kind: "task_run", ref: "run:owned" },
+      origin: taskRunOwner("run:owned", root.sessionId),
       sessionId: "owned-close",
       purpose: "task_run",
       transcriptRef: transcript,
@@ -166,7 +220,7 @@ describe("SessionSupervisor", () => {
     expect(closed).toMatchObject({
       sessionId: owned.sessionId,
       lifecycle: "closed",
-      status: "archived",
+      placement: "archived",
     });
     expect(closed.closeReceipts).toEqual([
       expect.objectContaining({
@@ -205,6 +259,151 @@ describe("SessionSupervisor", () => {
     harness.close();
   });
 
+  it("quiesces and redacts a Loop invocation routed to an uninstantiated child", async () => {
+    const harness = await createHarness();
+    const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
+    const owned = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: root.sessionId,
+      origin: taskRunOwner("run:loop-owner", root.sessionId),
+      sessionId: "loop-owner",
+      purpose: "task_run",
+    });
+    const loops = new SparkLoopStore(harness.db, harness.invocations);
+    loops.start({
+      loopId: "closing-owner-loop",
+      ownerSessionId: owned.sessionId,
+      sessionLifetime: "driver_tick",
+      cwd: harness.root,
+      prompt: "private Loop payload",
+      dueAt: "2026-08-13T00:00:00.000Z",
+    });
+    const advanced = await loops.materializeDue("2026-08-13T00:00:00.000Z");
+    const invocation = advanced?.invocation;
+    expect(invocation?.sessionId).toBeTruthy();
+    expect(await harness.registry.get(invocation!.sessionId!)).toBeUndefined();
+    const supervisor = new SessionSupervisor({
+      registry: harness.registry,
+      invocations: harness.invocations,
+      originExists: async () => true,
+      quiesceOwnedLoops: (session, reason) =>
+        quiesceLoopsForClosingSession(loops, harness.invocations, session, reason),
+    });
+
+    const closed = await supervisor.close({ sessionId: owned.sessionId });
+
+    expect(closed).toMatchObject({ lifecycle: "closed", placement: "archived" });
+    expect(loops.require("closing-owner-loop")).toMatchObject({ status: "stopped" });
+    expect(harness.invocations.require(invocation!.invocationId)).toMatchObject({
+      status: "cancelled",
+      payloadRedactedAt: expect.any(String),
+    });
+    expect(harness.invocations.require(invocation!.invocationId)).not.toHaveProperty("prompt");
+    expect(harness.invocations.require(invocation!.invocationId)).not.toHaveProperty("task");
+    harness.close();
+  });
+
+  it("redacts a superseded Loop child route after the current pointer is cleared", async () => {
+    const harness = await createHarness();
+    const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
+    const owned = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: root.sessionId,
+      origin: taskRunOwner("run:superseded-loop-owner", root.sessionId),
+      sessionId: "superseded-loop-owner",
+      purpose: "task_run",
+    });
+    const loops = new SparkLoopStore(harness.db, harness.invocations);
+    loops.start({
+      loopId: "superseded-loop",
+      ownerSessionId: owned.sessionId,
+      sessionLifetime: "driver_tick",
+      cwd: harness.root,
+      prompt: "private historical payload",
+      dueAt: "2026-08-13T00:00:00.000Z",
+    });
+    const invocation = (await loops.materializeDue("2026-08-13T00:00:00.000Z"))?.invocation;
+    if (!invocation?.sessionId) throw new Error("test Loop invocation has no Session route");
+    loops.restart("superseded-loop", "new generation", "2026-08-13T00:00:01.000Z");
+    const supervisor = new SessionSupervisor({
+      registry: harness.registry,
+      invocations: harness.invocations,
+      originExists: async () => true,
+      quiesceOwnedLoops: (session, reason) =>
+        quiesceLoopsForClosingSession(loops, harness.invocations, session, reason),
+    });
+
+    await supervisor.close({ sessionId: owned.sessionId });
+
+    const retained = harness.invocations.require(invocation.invocationId);
+    expect(retained).toMatchObject({ status: "cancelled", payloadRedactedAt: expect.any(String) });
+    expect(retained).not.toHaveProperty("prompt");
+    expect(retained).not.toHaveProperty("task");
+    harness.close();
+  });
+
+  it("repairs Loop payloads left behind by an already closed owner", async () => {
+    const harness = await createHarness();
+    const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
+    const transcript = join(harness.root, "legacy-closed-loop.jsonl");
+    await writeFile(transcript, '{"content":"legacy private transcript"}\n', "utf8");
+    const owned = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: root.sessionId,
+      origin: taskRunOwner("run:legacy-closed-loop", root.sessionId),
+      sessionId: "legacy-closed-loop",
+      purpose: "task_run",
+      transcriptRef: transcript,
+    });
+    const loops = new SparkLoopStore(harness.db, harness.invocations);
+    loops.start({
+      loopId: "legacy-closed-loop-driver",
+      ownerSessionId: owned.sessionId,
+      sessionLifetime: "driver_tick",
+      cwd: harness.root,
+      prompt: "legacy private payload",
+      dueAt: "2026-08-13T00:00:00.000Z",
+    });
+    const invocation = (await loops.materializeDue("2026-08-13T00:00:00.000Z"))?.invocation;
+    if (!invocation?.sessionId) throw new Error("test Loop invocation has no Session route");
+    await harness.registry.bindTranscriptPath({
+      sessionId: owned.sessionId,
+      sessionPath: transcript,
+    });
+    await harness.registry.markClosing({ sessionId: owned.sessionId });
+    const legacyRegistry = new SparkSessionRegistry({
+      rootDir: defaultSparkSessionRegistryRoot(harness.root),
+    });
+    await legacyRegistry.finalizeClose(owned.sessionId);
+    const restarted = new SessionSupervisor({
+      registry: harness.registry,
+      invocations: harness.invocations,
+      originExists: async () => true,
+      quiesceOwnedLoops: (session, reason) =>
+        quiesceLoopsForClosingSession(loops, harness.invocations, session, reason),
+    });
+
+    const first = await restarted.reconcile({ workspaceIds: ["ws-test"] });
+
+    expect(loops.require("legacy-closed-loop-driver")).toMatchObject({ status: "stopped" });
+    const retained = harness.invocations.require(invocation.invocationId);
+    expect(retained).toMatchObject({ status: "cancelled", payloadRedactedAt: expect.any(String) });
+    expect(retained).not.toHaveProperty("prompt");
+    expect(retained).not.toHaveProperty("task");
+    const repaired = await harness.registry.get(owned.sessionId);
+    expect(repaired?.closeReceipts).toHaveLength(1);
+    expect(repaired).not.toHaveProperty("sessionPath");
+    expect(repaired).not.toHaveProperty("transcriptRef");
+    await expect(access(transcript)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(first.closedSessionIds).not.toContain(owned.sessionId);
+    await restarted.reconcile({ workspaceIds: ["ws-test"] });
+    expect((await harness.registry.get(owned.sessionId))?.closeReceipts).toHaveLength(1);
+    harness.close();
+  });
+
   it("rejects external owners when no authoritative validator is installed", async () => {
     const harness = await createHarness();
     const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
@@ -217,7 +416,7 @@ describe("SessionSupervisor", () => {
         workspaceId: "ws-test",
         role: executorRole,
         parentSessionId: root.sessionId,
-        owner: { kind: "task_run", ref: "run:missing" },
+        origin: taskRunOwner("run:missing", root.sessionId),
         purpose: "task_run",
       }),
     ).rejects.toMatchObject({ code: "session_owner_invalid" });
@@ -231,7 +430,7 @@ describe("SessionSupervisor", () => {
       workspaceId: "ws-test",
       role: executorRole,
       parentSessionId: root.sessionId,
-      owner: { kind: "task_run", ref: "run:invalid-completion" },
+      origin: taskRunOwner("run:invalid-completion", root.sessionId),
       sessionId: "invalid-completion",
       purpose: "task_run",
     });
@@ -287,7 +486,7 @@ describe("SessionSupervisor", () => {
       workspaceId: "ws-test",
       role: executorRole,
       parentSessionId: root.sessionId,
-      owner: { kind: "task_run", ref: "run:parent" },
+      origin: taskRunOwner("run:parent", root.sessionId),
       sessionId: "owned-parent",
       purpose: "task_run",
     });
@@ -346,7 +545,7 @@ describe("SessionSupervisor", () => {
       workspaceId: "ws-test",
       role: executorRole,
       parentSessionId: root.sessionId,
-      owner: { kind: "task_run", ref: "run:persist-failure" },
+      origin: taskRunOwner("run:persist-failure", root.sessionId),
       sessionId: "persist-failure",
       purpose: "task_run",
       transcriptRef: transcript,
@@ -369,7 +568,7 @@ describe("SessionSupervisor", () => {
         },
       },
       invocations: harness.invocations,
-      ownerExists: async () => true,
+      originExists: async () => true,
     });
 
     await expect(supervisor.close({ sessionId: owned.sessionId })).rejects.toThrow(
@@ -389,12 +588,84 @@ describe("SessionSupervisor", () => {
     harness.close();
   });
 
+  it("deletes a transcript bound after close starts and before content discard", async () => {
+    const harness = await createHarness();
+    const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
+    const transcript = join(harness.root, "late-bound.jsonl");
+    const owned = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: root.sessionId,
+      origin: taskRunOwner("run:late-bound", root.sessionId),
+      sessionId: "late-bound",
+      purpose: "task_run",
+      retention: "discard_on_close",
+    });
+    const supervisor = new SessionSupervisor({
+      registry: {
+        ...harness.registry,
+        markClosing: async (input) => {
+          const closing = await harness.registry.markClosing(input);
+          await writeFile(transcript, '{"content":"late secret"}\n', "utf8");
+          await harness.registry.bindTranscriptPath({
+            sessionId: owned.sessionId,
+            sessionPath: transcript,
+          });
+          return closing;
+        },
+      },
+      invocations: harness.invocations,
+      originExists: async () => true,
+    });
+
+    const closed = await supervisor.close({ sessionId: owned.sessionId });
+
+    expect(closed).toMatchObject({
+      lifecycle: "closed",
+      placement: "archived",
+    });
+    expect(closed).not.toHaveProperty("sessionPath");
+    expect(closed).not.toHaveProperty("transcriptRef");
+    await expect(access(transcript)).rejects.toMatchObject({ code: "ENOENT" });
+    harness.close();
+  });
+
+  it("deletes both a legacy transcript ref and its relocated canonical path", async () => {
+    const harness = await createHarness();
+    const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
+    const legacyTranscript = join(harness.root, "legacy-transcript.jsonl");
+    const canonicalTranscript = join(harness.root, "canonical-transcript.jsonl");
+    await writeFile(legacyTranscript, '{"content":"legacy secret"}\n', "utf8");
+    await writeFile(canonicalTranscript, '{"content":"canonical secret"}\n', "utf8");
+    const owned = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: root.sessionId,
+      origin: taskRunOwner("run:relocated-transcript", root.sessionId),
+      sessionId: "relocated-transcript",
+      purpose: "task_run",
+      transcriptRef: legacyTranscript,
+    });
+    await harness.registry.bindTranscriptPath({
+      sessionId: owned.sessionId,
+      sessionPath: canonicalTranscript,
+    });
+
+    const closed = await harness.supervisor.close({ sessionId: owned.sessionId });
+
+    expect(closed).not.toHaveProperty("sessionPath");
+    expect(closed).not.toHaveProperty("transcriptRef");
+    await expect(access(legacyTranscript)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(canonicalTranscript)).rejects.toMatchObject({ code: "ENOENT" });
+    harness.close();
+  });
+
   it("closes a Side Thread through the Supervisor without opening public archive mutation", async () => {
     const harness = await createHarness();
     const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
     const parent = await harness.supervisor.instantiate({
       workspaceId: "ws-test",
-      role: administratorRole,
+      role: executorRole,
       parentSessionId: root.sessionId,
       sessionId: "side-parent",
       purpose: "interactive",
@@ -412,7 +683,7 @@ describe("SessionSupervisor", () => {
 
     const closed = await harness.supervisor.close({ sessionId: sideThread.sessionId });
 
-    expect(closed).toMatchObject({ lifecycle: "closed", status: "archived" });
+    expect(closed).toMatchObject({ lifecycle: "closed", placement: "archived" });
     expect(closed.transcriptRef).toBeUndefined();
     expect(closed.closeReceipts).toEqual([
       expect.objectContaining({
@@ -430,7 +701,7 @@ describe("SessionSupervisor", () => {
     const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
     const parent = await harness.supervisor.instantiate({
       workspaceId: "ws-test",
-      role: administratorRole,
+      role: executorRole,
       parentSessionId: root.sessionId,
       sessionId: "side-parent-owned",
       purpose: "interactive",
@@ -450,11 +721,11 @@ describe("SessionSupervisor", () => {
 
     const closedParent = await harness.supervisor.close({ sessionId: parent.sessionId });
 
-    expect(closedParent).toMatchObject({ lifecycle: "closed", status: "archived" });
+    expect(closedParent).toMatchObject({ lifecycle: "closed", placement: "archived" });
     const closedSideThread = await harness.registry.get(sideThread.sessionId);
     expect(closedSideThread).toMatchObject({
       lifecycle: "closed",
-      status: "archived",
+      placement: "archived",
       closeReceipts: [
         expect.objectContaining({
           source: "deterministic_fallback",
@@ -474,15 +745,164 @@ describe("SessionSupervisor", () => {
     harness.close();
   });
 
+  it("coalesces a recursive and direct close of one invocation-owned Session", async () => {
+    const harness = await createHarness();
+    const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
+    const parent = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: root.sessionId,
+      sessionId: "concurrent-close-parent",
+      purpose: "interactive",
+      retention: "retain",
+    });
+    const transcript = join(harness.root, "concurrent-close-child.jsonl");
+    await writeFile(transcript, '{"content":"private child secret"}\n', "utf8");
+    const invocationId = "inv_concurrent_close_child";
+    const child = await harness.supervisor.instantiateInvocationSession({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: parent.sessionId,
+      sessionId: "concurrent-close-child",
+      invocationId,
+      purpose: "role_call",
+      retention: "discard_on_close",
+      transcriptRef: transcript,
+    });
+    await harness.supervisor.invoke({
+      invocationId,
+      sessionId: child.sessionId,
+      prompt: "private child prompt",
+    });
+    harness.invocations.claimNext("concurrent-close-worker");
+    harness.invocations.complete(invocationId, {
+      status: "succeeded",
+      result: { assistantText: "private child result" },
+    });
+
+    const childQuiesceEntered = deferred<void>();
+    const releaseChildQuiesce = deferred<void>();
+    let childArchiveCount = 0;
+    let childQuiesceCount = 0;
+    let childReceiptCount = 0;
+    let childTranscriptDeleteCount = 0;
+    const supervisor = new SessionSupervisor({
+      registry: {
+        ...harness.registry,
+        archiveOwned: async (input) => {
+          const closed = await harness.registry.archiveOwned(input);
+          if (input.sessionId === child.sessionId) {
+            childArchiveCount += 1;
+          }
+          return closed;
+        },
+        sealCloseReceipt: async (input) => {
+          if (input.sessionId === child.sessionId) childReceiptCount += 1;
+          return await harness.registry.sealCloseReceipt(input);
+        },
+      },
+      invocations: harness.invocations,
+      originExists: async () => true,
+      quiesceOwnedLoops: async (session) => {
+        if (session.sessionId === child.sessionId) {
+          childQuiesceCount += 1;
+          childQuiesceEntered.resolve();
+          await releaseChildQuiesce.promise;
+        }
+        return { invocationSessionIds: [] };
+      },
+      deleteTranscript: async (path) => {
+        if (path === transcript) childTranscriptDeleteCount += 1;
+        await rm(path, { force: true });
+      },
+    });
+
+    const parentClose = supervisor.close({ sessionId: parent.sessionId });
+    await childQuiesceEntered.promise;
+    const directChildClose = supervisor.close({
+      sessionId: child.sessionId,
+      completion: {
+        source: "structured_outcome",
+        status: "completed",
+        code: "role_call_completed",
+        summary: "Child completed with durable evidence.",
+        evidenceRefs: ["evidence:child-close"],
+        artifactRefs: ["artifact:child-output"],
+        sourceInvocationIds: [invocationId],
+      },
+    });
+    releaseChildQuiesce.resolve();
+    const outcomes = await Promise.allSettled([parentClose, directChildClose]);
+
+    expect(outcomes).toEqual([
+      {
+        status: "fulfilled",
+        value: expect.objectContaining({
+          sessionId: parent.sessionId,
+          lifecycle: "closed",
+          placement: "archived",
+        }),
+      },
+      {
+        status: "fulfilled",
+        value: expect.objectContaining({
+          sessionId: child.sessionId,
+          lifecycle: "closed",
+          placement: "archived",
+        }),
+      },
+    ]);
+    expect({
+      childArchiveCount,
+      childQuiesceCount,
+      childReceiptCount,
+      childTranscriptDeleteCount,
+    }).toEqual({
+      childArchiveCount: 1,
+      childQuiesceCount: 1,
+      childReceiptCount: 1,
+      childTranscriptDeleteCount: 1,
+    });
+    await expect(access(transcript)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(harness.invocations.require(invocationId)).toMatchObject({
+      payloadRedactedAt: expect.any(String),
+    });
+    const registryFile = JSON.parse(
+      await readFile(join(harness.root, "session-registry", "v1", "registry.json"), "utf8"),
+    ) as { sessions: Array<Record<string, unknown>> };
+    const childRecords = registryFile.sessions.filter(
+      (record) => record.sessionId === child.sessionId,
+    );
+    expect(childRecords).toEqual([
+      expect.objectContaining({
+        recordKind: "ephemeral_tombstone",
+        lifecycle: "closed",
+        placement: "archived",
+        closeReceipts: [
+          expect.objectContaining({
+            incarnation: 1,
+            source: "structured_outcome",
+            quality: "semantic",
+            evidenceRefs: ["evidence:child-close"],
+            artifactRefs: ["artifact:child-output"],
+            sourceInvocationIds: [invocationId],
+          }),
+        ],
+      }),
+    ]);
+    await expect(supervisor.close({ sessionId: "never-created" })).rejects.toMatchObject({
+      code: "session_not_found",
+    });
+    harness.close();
+  });
+
   it("idempotently instantiates driver-owned child Sessions with explicit state binding", async () => {
     const harness = await createHarness();
     const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
     const input = {
       sessionId: "driver-session",
       parentSessionId: root.sessionId,
-      owner: { kind: "driver", ref: "loop:test" } as const,
-      authority: { kind: "driver", ref: "loop:test" } as const,
-      stateBinding: { kind: "session", ref: root.sessionId } as const,
+      origin: driverOwner("loop:test", root.sessionId),
       purpose: "driver",
     };
     const first = await harness.supervisor.instantiateOwnedContext(input);
@@ -490,10 +910,11 @@ describe("SessionSupervisor", () => {
 
     expect(second.sessionId).toBe(first.sessionId);
     expect(first).toMatchObject({
-      lifetime: "owned",
-      owner: input.owner,
-      authority: input.authority,
-      stateBinding: input.stateBinding,
+      lineage: {
+        kind: "child",
+        parentSessionId: root.sessionId,
+        origin: input.origin,
+      },
       visibility: "internal",
       retention: "discard_on_close",
     });
@@ -503,44 +924,45 @@ describe("SessionSupervisor", () => {
   it("validates a driver owner against the requested child Session identity", async () => {
     const harness = await createHarness();
     const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
-    const owner = { kind: "driver", ref: "loop:validated" } as const;
+    const origin = driverOwner("loop:validated", root.sessionId);
     const supervisor = new SessionSupervisor({
       registry: harness.registry,
       invocations: harness.invocations,
-      ownerExists: async (candidateOwner, session) =>
-        candidateOwner.kind === owner.kind &&
-        candidateOwner.ref === owner.ref &&
+      originExists: async (candidateOrigin, session) =>
+        candidateOrigin.kind === origin.kind &&
+        candidateOrigin.kind === "driver" &&
+        candidateOrigin.driverId === origin.driverId &&
         session.sessionId === "driver-session-validated" &&
-        session.workspaceId === "ws-test",
+        session.scope.kind === "workspace" &&
+        session.scope.workspaceId === "ws-test",
     });
 
     await expect(
       supervisor.instantiateOwnedContext({
         sessionId: "driver-session-validated",
         parentSessionId: root.sessionId,
-        owner,
-        authority: owner,
-        stateBinding: { kind: "session", ref: root.sessionId },
+        origin,
         purpose: "driver",
       }),
     ).resolves.toMatchObject({
       sessionId: "driver-session-validated",
-      owner,
+      lineage: { kind: "child", parentSessionId: root.sessionId, origin },
     });
     harness.close();
   });
 
-  it("restores only retained public persistent records as a new incarnation", async () => {
+  it("restores retained public scoped Sessions without replacing their transcript", async () => {
     const harness = await createHarness();
     const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
     const parent = await harness.supervisor.instantiate({
       workspaceId: "ws-test",
-      role: administratorRole,
+      role: executorRole,
       parentSessionId: root.sessionId,
       sessionId: "interactive-admin",
       purpose: "interactive",
       visibility: "public",
       retention: "retain",
+      transcriptRef: join(harness.root, "retained-transcript.jsonl"),
     });
     const child = await harness.supervisor.instantiate({
       workspaceId: "ws-test",
@@ -549,14 +971,14 @@ describe("SessionSupervisor", () => {
       sessionId: "restore-child",
       purpose: "role_call",
     });
-    expect((await harness.supervisor.close({ sessionId: parent.sessionId })).lifecycle).toBe(
-      "closed",
-    );
+    await harness.registry.archive(parent.sessionId);
+    await harness.supervisor.reconcile();
     expect((await harness.registry.get(child.sessionId))?.lifecycle).toBe("closed");
     const restored = await harness.supervisor.restore(parent.sessionId);
     expect(restored.sessionId).toBe(parent.sessionId);
-    expect(restored.incarnation).toBe(2);
+    expect(restored.incarnation).toBe(1);
     expect(restored.lifecycle).toBe("open");
+    expect(restored.transcriptRef).toBe(parent.transcriptRef);
     expect((await harness.registry.get(child.sessionId))?.lifecycle).toBe("closed");
     await expect(harness.supervisor.restore(child.sessionId)).rejects.toMatchObject({
       code: "session_restore_forbidden",
@@ -578,7 +1000,10 @@ describe("SessionSupervisor", () => {
       workspaceId: "ws-test",
       role: executorRole,
       parentSessionId: root.sessionId,
-      owner: { kind: "role_call", ref: parentInvocation.invocationId },
+      origin: {
+        kind: "invocation",
+        invocationId: parentInvocation.invocationId,
+      },
       sessionId: "orphan-role",
       purpose: "role_call",
     });
@@ -586,8 +1011,23 @@ describe("SessionSupervisor", () => {
     const first = await harness.supervisor.reconcile({ workspaceIds: ["ws-test"] });
     expect(first.closedSessionIds).toContain(orphan.sessionId);
     const second = await harness.supervisor.reconcile({ workspaceIds: ["ws-test"] });
-    expect(second.closedSessionIds).toContain(orphan.sessionId);
-    expect((await harness.registry.get(orphan.sessionId))?.archiveHistory).toHaveLength(1);
+    expect(second.closedSessionIds).not.toContain(orphan.sessionId);
+    expect(await harness.registry.get(orphan.sessionId)).toBeUndefined();
+    const registryFile = JSON.parse(
+      await readFile(join(harness.root, "session-registry", "v1", "registry.json"), "utf8"),
+    ) as { sessions: Array<Record<string, unknown>> };
+    expect(
+      registryFile.sessions.find((record) => record.sessionId === orphan.sessionId),
+    ).toMatchObject({
+      recordKind: "ephemeral_tombstone",
+      lifecycle: "closed",
+      placement: "archived",
+      lineage: {
+        kind: "child",
+        parentSessionId: root.sessionId,
+        origin: { kind: "invocation", invocationId: parentInvocation.invocationId },
+      },
+    });
     harness.close();
   });
 
@@ -602,7 +1042,7 @@ describe("SessionSupervisor", () => {
         workspaceId: "ws-test",
         role: executorRole,
         parentSessionId: root.sessionId,
-        owner: { kind: "task_run", ref: `run:${phase}` },
+        origin: taskRunOwner(`run:${phase}`, root.sessionId),
         sessionId: `interrupted-${phase}`,
         purpose: "task_run",
         transcriptRef: transcript,
@@ -648,7 +1088,7 @@ describe("SessionSupervisor", () => {
     const restarted = new SessionSupervisor({
       registry: harness.registry,
       invocations: harness.invocations,
-      ownerExists: async () => true,
+      originExists: async () => true,
     });
     const first = await restarted.reconcile({ workspaceIds: ["ws-test"] });
     expect(first.closedSessionIds).toEqual(
@@ -657,7 +1097,7 @@ describe("SessionSupervisor", () => {
     for (const { session, invocation, transcript } of interrupted) {
       expect(await harness.registry.get(session.sessionId)).toMatchObject({
         lifecycle: "closed",
-        status: "archived",
+        placement: "archived",
         closeReceipts: [expect.objectContaining({ incarnation: 1 })],
       });
       const retained = harness.invocations.require(invocation.invocationId);
@@ -721,7 +1161,10 @@ describe("SessionSupervisor", () => {
       workspaceId: "ws-test",
       role: executorRole,
       parentSessionId: administrator.sessionId,
-      owner: { kind: "role_call", ref: parent.invocationId },
+      origin: {
+        kind: "invocation",
+        invocationId: parent.invocationId,
+      },
       sessionId: "structured-child",
       purpose: "role_call",
     });
@@ -744,6 +1187,79 @@ describe("SessionSupervisor", () => {
     db.close();
   });
 
+  it("keeps a closing Session fenced until an abort-ignoring executor settles", async () => {
+    const harness = await createHarness();
+    const administrator = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
+    const owned = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: administrator.sessionId,
+      origin: taskRunOwner("run:abort-ignore", administrator.sessionId),
+      sessionId: "abort-ignore",
+      purpose: "task_run",
+    });
+    const executorStarted = deferred<void>();
+    const releaseExecutor = deferred<void>();
+    const scheduler = new SparkInvocationScheduler({
+      store: harness.invocations,
+      executionAttemptStore: new ExecutionAttemptStore(harness.db),
+      executionOwnerHandlers: inertExecutionOwners,
+      executeTask: async () => {
+        executorStarted.resolve();
+        await releaseExecutor.promise;
+        return { assistantText: "settled after cancellation" };
+      },
+    });
+    const supervisor = new SessionSupervisor({
+      registry: harness.registry,
+      invocations: harness.invocations,
+      scheduler,
+      originExists: async () => true,
+    });
+    const invocation = await supervisor.invoke({
+      sessionId: owned.sessionId,
+      prompt: "ignore abort",
+    });
+    expect(scheduler.processBatch()).toBe(true);
+    await executorStarted.promise;
+
+    const firstClose = await supervisor.close({
+      sessionId: owned.sessionId,
+      completion: {
+        source: "domain_completion",
+        status: "completed",
+        code: "task_run_completed",
+        summary: "Task completed with durable evidence before its executor tail settled.",
+        evidenceRefs: ["evidence:abort-ignore"],
+        artifactRefs: ["artifact:abort-ignore"],
+        sourceInvocationIds: [invocation.invocationId],
+      },
+      settleTimeoutMs: 0,
+    });
+
+    expect(harness.invocations.sessionActivity(owned.sessionId).active).toBe(false);
+    expect(scheduler.isSessionActive(owned.sessionId)).toBe(true);
+    expect(firstClose).toMatchObject({ lifecycle: "closing", placement: "active" });
+    releaseExecutor.resolve();
+    await scheduler.wait({ timeoutMs: 1_000 });
+    await vi.waitFor(async () => {
+      expect(await harness.registry.get(owned.sessionId)).toMatchObject({
+        lifecycle: "closed",
+        placement: "archived",
+        closeReceipts: [
+          expect.objectContaining({
+            source: "domain_completion",
+            quality: "semantic",
+            evidenceRefs: ["evidence:abort-ignore"],
+            artifactRefs: ["artifact:abort-ignore"],
+            sourceInvocationIds: [invocation.invocationId],
+          }),
+        ],
+      });
+    });
+    harness.close();
+  });
+
   it("waits for Invocation delivery before discarding an owned Session", async () => {
     const harness = await createHarness();
     const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
@@ -751,7 +1267,7 @@ describe("SessionSupervisor", () => {
       workspaceId: "ws-test",
       role: executorRole,
       parentSessionId: root.sessionId,
-      owner: { kind: "task_run", ref: "run:delivery" },
+      origin: taskRunOwner("run:delivery", root.sessionId),
       sessionId: "owned-delivery",
       purpose: "task_run",
     });
@@ -781,10 +1297,205 @@ describe("SessionSupervisor", () => {
     });
     await acknowledge;
 
-    expect(closed).toMatchObject({ lifecycle: "closed", status: "archived" });
+    expect(closed).toMatchObject({ lifecycle: "closed", placement: "archived" });
     expect(harness.invocations.require(invocation.invocationId)).toMatchObject({
       payloadRedactedAt: expect.any(String),
     });
+    harness.close();
+  });
+
+  it("retries legacy closed-content repair after Invocation delivery is acknowledged", async () => {
+    const harness = await createHarness();
+    const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
+    const transcript = join(harness.root, "legacy-delivery-blocked.jsonl");
+    await writeFile(transcript, '{"content":"temporary content"}\n', "utf8");
+    const owned = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: root.sessionId,
+      origin: taskRunOwner("run:legacy-delivery-blocked", root.sessionId),
+      sessionId: "legacy-delivery-blocked",
+      purpose: "task_run",
+      transcriptRef: transcript,
+    });
+    await harness.registry.bindTranscriptPath({
+      sessionId: owned.sessionId,
+      sessionPath: transcript,
+    });
+    const invocation = harness.invocations.submit({
+      sessionId: owned.sessionId,
+      prompt: "private payload",
+      task: {
+        type: "session.run",
+        sessionId: owned.sessionId,
+        workspaceId: "ws-test",
+        prompt: "private payload",
+      },
+    });
+    harness.invocations.claimNext("legacy-delivery-worker");
+    const event = harness.invocations.appendEvent(invocation.invocationId, "result", {
+      text: "private result",
+    });
+    harness.invocations.complete(invocation.invocationId, { status: "succeeded" });
+    expect(harness.invocations.pendingDeliveries("hub:test")).toHaveLength(1);
+    await harness.registry.markClosing({ sessionId: owned.sessionId });
+    const legacyRegistry = new SparkSessionRegistry({
+      rootDir: defaultSparkSessionRegistryRoot(harness.root),
+    });
+    await legacyRegistry.finalizeClose(owned.sessionId);
+    const restarted = new SessionSupervisor({
+      registry: harness.registry,
+      invocations: harness.invocations,
+      originExists: async () => true,
+    });
+
+    await restarted.reconcile({ workspaceIds: ["ws-test"] });
+    expect(harness.invocations.require(invocation.invocationId)).not.toHaveProperty(
+      "payloadRedactedAt",
+    );
+    await expect(access(transcript)).resolves.toBeUndefined();
+
+    harness.invocations.acknowledgeDelivery("hub:test", invocation.invocationId, event.sequence);
+    await restarted.repairClosedContentForInvocation(invocation.invocationId);
+
+    expect(harness.invocations.require(invocation.invocationId)).toMatchObject({
+      payloadRedactedAt: expect.any(String),
+    });
+    expect(await harness.registry.get(owned.sessionId)).not.toHaveProperty("sessionPath");
+    await expect(access(transcript)).rejects.toMatchObject({ code: "ENOENT" });
+    harness.close();
+  });
+
+  it("finishes a delivery-blocked closing Session after the Invocation is acknowledged", async () => {
+    const harness = await createHarness();
+    const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
+    const owned = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: root.sessionId,
+      origin: taskRunOwner("run:delivery-blocked-close", root.sessionId),
+      sessionId: "delivery-blocked-close",
+      purpose: "task_run",
+    });
+    const invocation = harness.invocations.submit({
+      sessionId: owned.sessionId,
+      prompt: "private payload",
+      task: {
+        type: "session.run",
+        sessionId: owned.sessionId,
+        workspaceId: "ws-test",
+        prompt: "private payload",
+      },
+    });
+    harness.invocations.claimNext("delivery-blocked-close-worker");
+    const event = harness.invocations.appendEvent(invocation.invocationId, "result", {
+      text: "private result",
+    });
+    harness.invocations.complete(invocation.invocationId, { status: "succeeded" });
+    expect(harness.invocations.pendingDeliveries("hub:test")).toHaveLength(1);
+
+    const closing = await harness.supervisor.close({
+      sessionId: owned.sessionId,
+      settleTimeoutMs: 0,
+    });
+    expect(closing.lifecycle).toBe("closing");
+
+    harness.invocations.acknowledgeDelivery("hub:test", invocation.invocationId, event.sequence);
+    await harness.supervisor.repairClosedContentForInvocation(invocation.invocationId);
+
+    await expect(harness.registry.get(owned.sessionId)).resolves.toMatchObject({
+      lifecycle: "closed",
+      placement: "archived",
+    });
+    expect(harness.invocations.require(invocation.invocationId)).toMatchObject({
+      payloadRedactedAt: expect.any(String),
+    });
+    harness.close();
+  });
+
+  it("resumes a closing parent after its delivery-blocked child closes", async () => {
+    const harness = await createHarness();
+    const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
+    const parent = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: root.sessionId,
+      sessionId: "delivery-parent",
+      purpose: "task_run",
+      retention: "retain",
+    });
+    const child = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: parent.sessionId,
+      sessionId: "delivery-child",
+      purpose: "role_call",
+    });
+    const invocation = harness.invocations.submit({
+      sessionId: child.sessionId,
+      prompt: "private child payload",
+      task: { type: "session.run", sessionId: child.sessionId, prompt: "private child payload" },
+    });
+    harness.invocations.claimNext("delivery-child-worker");
+    const event = harness.invocations.appendEvent(invocation.invocationId, "result", {
+      text: "private child result",
+    });
+    harness.invocations.complete(invocation.invocationId, { status: "succeeded" });
+    expect(harness.invocations.pendingDeliveries("hub:test")).toHaveLength(1);
+
+    const closing = await harness.supervisor.close({
+      sessionId: parent.sessionId,
+      settleTimeoutMs: 0,
+    });
+    expect(closing.lifecycle).toBe("closing");
+
+    harness.invocations.acknowledgeDelivery("hub:test", invocation.invocationId, event.sequence);
+    await harness.supervisor.repairClosedContentForInvocation(invocation.invocationId);
+
+    await vi.waitFor(async () => {
+      expect(await harness.registry.get(child.sessionId)).toMatchObject({ lifecycle: "closed" });
+      expect(await harness.registry.get(parent.sessionId)).toMatchObject({ lifecycle: "closed" });
+    });
+    harness.close();
+  });
+
+  it("reconciles a closing tree from a stale parent-first startup snapshot", async () => {
+    const harness = await createHarness();
+    const root = await harness.supervisor.ensureWorkspaceAdministrator("ws-test");
+    const parent = await harness.supervisor.instantiate({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: root.sessionId,
+      sessionId: "startup-closing-parent",
+      purpose: "task_run",
+      retention: "retain",
+    });
+    const invocationId = "inv_startup_closing_child";
+    const child = await harness.supervisor.instantiateInvocationSession({
+      workspaceId: "ws-test",
+      role: executorRole,
+      parentSessionId: parent.sessionId,
+      sessionId: "startup-closing-child",
+      invocationId,
+      purpose: "role_call",
+    });
+    await harness.supervisor.invoke({
+      invocationId,
+      sessionId: child.sessionId,
+      prompt: "startup repair payload",
+    });
+    harness.invocations.claimNext("startup-closing-worker");
+    harness.invocations.complete(invocationId, { status: "succeeded" });
+    const closingAt = new Date("2026-08-13T02:00:00.000Z");
+    await harness.registry.markClosing({ sessionId: child.sessionId, now: closingAt });
+    await harness.registry.markClosing({ sessionId: parent.sessionId, now: closingAt });
+
+    await expect(harness.supervisor.reconcile()).resolves.toMatchObject({
+      closingSessionIds: [],
+    });
+    await expect(harness.supervisor.reconcile()).resolves.toBeDefined();
+    expect(await harness.registry.get(parent.sessionId)).toMatchObject({ lifecycle: "closed" });
+    expect(await harness.registry.get(child.sessionId)).toBeUndefined();
     harness.close();
   });
 });
@@ -806,7 +1517,7 @@ async function createHarness() {
   const supervisor = new SessionSupervisor({
     registry,
     invocations,
-    ownerExists: async () => true,
+    originExists: async () => true,
   });
   return {
     root,
@@ -818,29 +1529,84 @@ async function createHarness() {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function taskRunOwner(runRef: string, _parentSessionId: string) {
+  return {
+    kind: "task_run" as const,
+    projectRef: "proj:test",
+    taskRef: `task:${runRef}`,
+    runRef,
+    sessionGoalId: `goal:${runRef}`,
+    roleRef: "role:builtin-executor",
+    jobId: `job:${runRef}`,
+    attempt: 1,
+  };
+}
+
+function taskRevisionOwner(revisionRef: string, _parentSessionId: string) {
+  return {
+    kind: "task_revision" as const,
+    projectRef: "proj:test",
+    taskRef: `task:${revisionRef}`,
+    revisionRef,
+    originatingRunRef: `run:${revisionRef}`,
+    sessionGoalId: `goal:${revisionRef}`,
+    roleRef: "role:builtin-executor",
+    jobId: `job:${revisionRef}`,
+    attempt: 1,
+  };
+}
+
+function workflowOwner(runRef: string, _parentSessionId: string) {
+  return {
+    kind: "workflow_run" as const,
+    workflowRef: "workflow:test",
+    runRef,
+    generation: 1,
+  };
+}
+
+function driverOwner(driverId: string, _parentSessionId: string) {
+  return { kind: "driver" as const, driverId, generation: 1 };
+}
+
+function driverTickOwner(tickInvocationId: string, _parentSessionId: string) {
+  return {
+    kind: "driver_tick" as const,
+    driverId: "driver:test",
+    generation: 1,
+    tickInvocationId,
+  };
+}
+
 const administratorRole = role({
   ref: "role:builtin-administrator",
   id: "administrator",
   modelType: "coordination",
-  instantiation: "persistent",
-  capabilities: ["read", "write", "exec", "net", "interact", "spawn"],
+  capabilities: ["read", "interact", "manage"],
 });
 
 const executorRole = role({
   ref: "role:builtin-executor",
   id: "executor",
   modelType: "implementation",
-  instantiation: "owned",
   capabilities: ["read", "write", "exec", "net"],
 });
 
 function role(
-  input: Pick<SparkRoleSpec, "ref" | "id" | "modelType" | "instantiation" | "capabilities">,
+  input: Pick<SparkRoleSpec, "ref" | "id" | "modelType" | "capabilities">,
 ): SparkRoleSpec {
   return {
     ...input,
     source: "builtin",
-    revision: 1,
+    revision: `sha256:${"a".repeat(64)}`,
     description: `${input.id} role`,
     systemPrompt: `You are ${input.id}.`,
     createdAt: "2026-08-09T00:00:00.000Z",

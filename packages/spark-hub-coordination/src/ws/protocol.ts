@@ -60,7 +60,7 @@ import {
   recordInvocationUpdate,
 } from "../projection-services.ts";
 import type { DatabaseSync } from "node:sqlite";
-import type { RawData, WebSocket } from "ws";
+import type { WebSocket } from "ws";
 
 import type {
   RuntimeWebSocketContext,
@@ -755,6 +755,10 @@ function handleWorkspaceSnapshot(
   payload: ReturnType<typeof workspaceSnapshotEnvelopeSchema.parse>["payload"],
 ): void {
   const now = new Date().toISOString();
+  const administratorProvisioning = payload.administratorProvisioning ?? {
+    state: payload.administratorSession ? ("active" as const) : ("provisioning" as const),
+    retryCount: 0,
+  };
 
   context.db.exec("BEGIN");
   try {
@@ -776,7 +780,10 @@ function handleWorkspaceSnapshot(
       .prepare(
         `UPDATE runtime_workspace_bindings
          SET display_name = ?, status = ?, last_snapshot_at = ?, updated_at = ?,
-             main_session_id = ?, main_session_generation = ?
+             administrator_session_id = ?,
+             administrator_provisioning_state = ?,
+             administrator_provisioning_error = ?,
+             administrator_provisioning_retry_count = ?
          WHERE id = ? AND runtime_id = ?`,
       )
       .run(
@@ -784,10 +791,26 @@ function handleWorkspaceSnapshot(
         payload.status,
         now,
         now,
-        payload.mainSession?.sessionId ?? null,
-        payload.mainSession?.generation ?? null,
+        payload.administratorSession?.sessionId ?? null,
+        administratorProvisioning.state,
+        administratorProvisioning.error ?? null,
+        administratorProvisioning.retryCount,
         runtimeWorkspaceBindingId,
         context.runtimeId,
+      );
+    context.db
+      .prepare(
+        `UPDATE workspaces
+         SET provisioning_state = ?, provisioning_error = ?,
+             provisioning_retry_count = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        administratorProvisioning.state,
+        administratorProvisioning.error ?? null,
+        administratorProvisioning.retryCount,
+        now,
+        workspaceId,
       );
     syncWorkspaceIdentityFromLocalPath(context.db, workspaceId, binding?.localPath, now);
 
@@ -1533,24 +1556,6 @@ export function sendError(
       payload: { code, message },
     }),
   );
-}
-
-export function parseMessage(
-  data: RawData,
-): { ok: true; value: unknown } | { ok: false; message: string } {
-  try {
-    const text =
-      typeof data === "string"
-        ? data
-        : Buffer.isBuffer(data)
-          ? data.toString("utf8")
-          : Array.isArray(data)
-            ? Buffer.concat(data).toString("utf8")
-            : Buffer.from(data).toString("utf8");
-    return { ok: true, value: JSON.parse(text) };
-  } catch {
-    return { ok: false, message: "Runtime WebSocket message must be valid JSON." };
-  }
 }
 
 function hashOptional(value: string | undefined): string | null {

@@ -6,24 +6,24 @@ import { join } from "node:path";
 import { test } from "vitest";
 
 import { defaultEvidenceStore } from "@zendev-lab/spark-artifacts";
-import type { JsonValue, RoleRef, RunRef, TaskRef, ProjectRef } from "@zendev-lab/spark-core";
+import type { JsonValue, RoleRef, RunRef, TaskRef, ProjectRef } from "@zendev-lab/spark-invocation";
 import {
   collectRoleRunEvidenceRetentionPlan,
   isRoleRunEvidenceBody,
   readRoleRunEvidencePreview,
-} from "@zendev-lab/spark-runtime";
+} from "@zendev-lab/spark-task-runtime";
 
 test("runtime role-run Evidence body guard owns compact Evidence shape", () => {
   const valid = {
     schemaVersion: 1,
     runRef: "run:guard" as RunRef,
     taskRef: "task:guard" as TaskRef,
-    roleRef: "role:builtin-worker" as RoleRef,
+    roleRef: "role:builtin-executor" as RoleRef,
     status: "succeeded",
     summary: "guarded body",
     record: {
       ref: "run:guard" as RunRef,
-      roleRef: "role:builtin-worker" as RoleRef,
+      roleRef: "role:builtin-executor" as RoleRef,
       status: "succeeded",
     },
     stdout: { bytes: 12, tail: "stdout", tailBytes: 6, truncated: false },
@@ -46,7 +46,7 @@ test("runtime role-run Evidence preview owns bounded metadata reads", async () =
   const dir = await mkdtemp(join(tmpdir(), "spark-runtime-role-run-preview-"));
   try {
     const store = defaultEvidenceStore(dir);
-    const roleRef = "role:builtin-worker" as RoleRef;
+    const roleRef = "role:builtin-executor" as RoleRef;
     const runRef = "run:preview" as RunRef;
     const taskRef = "task:preview" as TaskRef;
     const evidence = await store.put({
@@ -139,13 +139,13 @@ test("runtime role-run retention compacts historical transcript blobs without ex
       schemaVersion: 1,
       runRef: "run:runtime-retention" as RunRef,
       taskRef: "task:runtime-retention" as TaskRef,
-      roleRef: "role:builtin-worker" as RoleRef,
+      roleRef: "role:builtin-executor" as RoleRef,
       runName: "runtime-retention-worker",
       status: "succeeded",
       summary: "large historical role-run output",
       record: {
         ref: "run:runtime-retention" as RunRef,
-        roleRef: "role:builtin-worker" as RoleRef,
+        roleRef: "role:builtin-executor" as RoleRef,
         runName: "runtime-retention-worker",
         status: "succeeded",
       },
@@ -168,7 +168,7 @@ test("runtime role-run retention compacts historical transcript blobs without ex
         producer: "task",
         projectRef: "proj:runtime-retention" as ProjectRef,
         taskRef: "task:runtime-retention" as TaskRef,
-        roleRef: "role:builtin-worker" as RoleRef,
+        roleRef: "role:builtin-executor" as RoleRef,
         runRef: "run:runtime-retention" as RunRef,
       },
     });

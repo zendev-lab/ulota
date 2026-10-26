@@ -18,7 +18,7 @@ export function parseMigrationArguments(argv) {
       "daemon-tarball": { type: "string" },
       "hub-tarball": { type: "string" },
       tarball: { type: "string" },
-      "tui-tarball": { type: "string" },
+      "web-tarball": { type: "string" },
     },
     strict: true,
   });
@@ -38,7 +38,7 @@ export function parseMigrationArguments(argv) {
     ...(values["cli-tarball"] ? { cliTarball: values["cli-tarball"] } : {}),
     ...(values["daemon-tarball"] ? { daemonTarball: values["daemon-tarball"] } : {}),
     ...(values["hub-tarball"] ? { hubTarball: values["hub-tarball"] } : {}),
-    ...(values["tui-tarball"] ? { tuiTarball: values["tui-tarball"] } : {}),
+    ...(values["web-tarball"] ? { webTarball: values["web-tarball"] } : {}),
   };
 }
 
@@ -60,24 +60,27 @@ export function selectPublishedBaselineVersion(published, currentVersion, explic
   return stable.filter((version) => compareVersions(version, currentVersion) < 0).at(-1);
 }
 
+export function resolveReleaseMigrationExemption(sparkRelease, candidateVersion) {
+  const exemptions = sparkRelease?.nMinusOneMigrationExemptions;
+  if (exemptions === undefined) return undefined;
+  if (!isRecord(exemptions)) {
+    throw new Error("sparkRelease.nMinusOneMigrationExemptions must be an object.");
+  }
+  const reason = exemptions[candidateVersion];
+  if (reason === undefined) return undefined;
+  if (typeof reason !== "string" || !reason.trim()) {
+    throw new Error(`N-1 migration exemption for ${candidateVersion} must have a reason.`);
+  }
+  return { candidateVersion, reason: reason.trim() };
+}
+
 export async function resolvePublishedHubProbe(baselineRoot, dependencies = {}) {
   const pathExists = dependencies.exists ?? exists;
-  const candidates = [
-    {
-      command: join(baselineRoot, "node_modules", ".bin", "spark-hub"),
-      listArgs: ["delegation", "list"],
-    },
-    {
-      command: join(baselineRoot, "node_modules", ".bin", "spark-cockpit"),
-      listArgs: ["access", "list"],
-    },
-  ];
-  for (const candidate of candidates) {
-    if (await pathExists(candidate.command)) return candidate;
+  const command = join(baselineRoot, "node_modules", ".bin", "spark-hub");
+  if (await pathExists(command)) {
+    return { command, listArgs: ["delegation", "list"] };
   }
-  throw new Error(
-    `Published Spark baseline under ${baselineRoot} exposes neither spark-hub nor spark-cockpit.`,
-  );
+  throw new Error(`Published Spark baseline under ${baselineRoot} does not expose spark-hub.`);
 }
 
 export async function readCandidateArtifactIdentity(
@@ -258,11 +261,11 @@ async function main() {
     cliTarball,
     daemonTarball,
     hubTarball,
-    tuiTarball,
+    webTarball,
   } = parseMigrationArguments(process.argv.slice(2));
   const root = process.cwd();
   const candidatePath = resolve(root, candidateTarball);
-  const companionPaths = [cliTarball, daemonTarball, hubTarball, tuiTarball]
+  const companionPaths = [cliTarball, daemonTarball, hubTarball, webTarball]
     .filter((path) => typeof path === "string")
     .map((path) => resolve(root, path));
   await Promise.all([access(candidatePath), ...companionPaths.map((path) => access(path))]);
@@ -275,6 +278,13 @@ async function main() {
     throw new Error(`Root package version must be a stable x.y.z release: ${currentVersion}`);
   }
   await readCandidateArtifactIdentity(candidatePath, currentVersion);
+  const exemption = resolveReleaseMigrationExemption(rootManifest.sparkRelease, currentVersion);
+  if (exemption && !explicitBaseline) {
+    console.log(
+      `N-1 migration compatibility is exempt for ${exemption.candidateVersion}: ${exemption.reason}`,
+    );
+    return;
+  }
   const npmEnvironment = {
     ...process.env,
     npm_config_registry: "https://registry.npmjs.org/",
@@ -633,6 +643,10 @@ function parseJson(text, label) {
   } catch (error) {
     throw new Error(`${label} is not valid JSON`, { cause: error });
   }
+}
+
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function runCommand(command, args, { cwd, env }) {

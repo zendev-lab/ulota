@@ -1,14 +1,14 @@
 import type { DatabaseSync } from "node:sqlite";
-import { workspaceDelegationDeliverySchema } from "@zendev-lab/spark-protocol/daemon";
 import {
+  workspaceDelegationDeliverySchema,
   type SparkProtocolJsonValue,
   type WorkspaceDelegationDelivery,
 } from "@zendev-lab/spark-protocol/daemon";
-import type { SparkPaths } from "@zendev-lab/spark-system";
+import type { SparkPaths } from "@zendev-lab/spark-platform-node";
 import type { SparkDaemonModelControl } from "./model-control.ts";
 import type { DaemonSessionRegistry } from "./session-registry.ts";
 import { executeSparkDaemonSessionControl } from "./session-control.ts";
-import { ensureWorkspaceMainSession } from "./workspace-main-session.ts";
+import { ensureWorkspaceAdministratorSession } from "./workspace-administrator-session.ts";
 import { recordWorkspaceDelegationDelivery } from "./workspace-delegation.ts";
 import { getLocalWorkspaceDelegation } from "./workspace-delegation.ts";
 
@@ -38,7 +38,7 @@ export async function executeWorkspaceDelegationDelivery(
   if (input.serverWorkspaceId !== expectedRecipientWorkspaceId) {
     throw new Error(`Delegation ${delivery.kind} delivery was routed to the wrong workspace`);
   }
-  const binding = await ensureWorkspaceMainSession(
+  const binding = await ensureWorkspaceAdministratorSession(
     options.db,
     options.sessionRegistry,
     input.localWorkspaceId,
@@ -85,8 +85,7 @@ export async function executeWorkspaceDelegationDelivery(
       result: {
         delegationId: delivery.delegationId,
         messageSequence: delivery.messageSequence,
-        mainSessionId: binding.sessionId,
-        mainSessionGeneration: binding.generation,
+        administratorSessionId: binding.sessionId,
         invocationId: existing.invocationId,
         status: cancellationStatus,
         cancellationConfirmed,
@@ -139,8 +138,7 @@ export async function executeWorkspaceDelegationDelivery(
     result: {
       delegationId: delivery.delegationId,
       messageSequence: delivery.messageSequence,
-      mainSessionId: binding.sessionId,
-      mainSessionGeneration: binding.generation,
+      administratorSessionId: binding.sessionId,
       invocationId: turn.invocationId,
       status: statusAfterSubmission(delivery, input.serverWorkspaceId),
     },

@@ -1,30 +1,32 @@
 import {
+  channelAdapterAccountIdentity,
   parseChannelsConfig,
+  type ChannelAdapterConfig,
   type ChannelsConfig,
   type FeishuAdapterConfig,
   type InfoflowAdapterConfig,
   type QqbotAdapterConfig,
-} from "@zendev-lab/spark-channels";
+} from "@zendev-lab/dsh-channel-transports";
 import {
   parseSparkChannelControlSnapshot,
   parseSparkDefaultModelSetRequest,
+  sparkModelConnectivityTestRequestSchema,
   parseSparkSessionSetModelRequest,
   parseSparkSessionSetThinkingRequest,
+  projectSparkSessionState,
   sparkProtocolJsonObjectSchema,
+  type SparkAuthFlow,
+  type SparkChannelConfigurationProjection,
+  type SparkChannelControlSnapshot,
+  type SparkModelControlSnapshot,
+  type SparkProtocolJsonValue,
+  type SparkSessionState,
 } from "@zendev-lab/spark-protocol/daemon";
 import {
   type RuntimeCommandProjectionKind,
   type RuntimeEphemeralSecretRequestPayload,
   type RuntimeEphemeralSecretResultPayload,
 } from "@zendev-lab/spark-protocol/runtime";
-import {
-  type SparkAuthFlow,
-  type SparkChannelConfigurationProjection,
-  type SparkChannelControlSnapshot,
-  type SparkModelControlSnapshot,
-  type SparkProtocolJsonValue,
-  type SparkSessionRegistryRecord,
-} from "@zendev-lab/spark-protocol/daemon";
 import type { DaemonChannelIngressRuntime } from "./channels/ingress.ts";
 import { loadDaemonChannelsConfig } from "./channels/ingress.ts";
 import type { SparkDaemonModelControl } from "./model-control.ts";
@@ -34,6 +36,7 @@ export type SparkDaemonModelChannelPublicKind =
   | "session.model.set.request"
   | "session.thinking.set.request"
   | "model.catalog.request"
+  | "model.connectivity.test.request"
   | "model.default.set.request"
   | "provider.auth.logout.request"
   | "provider.auth.login.start.request"
@@ -65,6 +68,7 @@ export interface SparkDaemonModelChannelControlOptions {
     | "cancelQqbotQrAuth"
   >;
   sessionRegistry?: DaemonSessionRegistry;
+  sessionActivity?: (sessionId: string) => "idle" | "queued" | "running";
   sparkHome?: string;
 }
 
@@ -75,6 +79,7 @@ export function isSparkDaemonModelChannelPublicKind(
     kind === "session.model.set.request" ||
     kind === "session.thinking.set.request" ||
     kind === "model.catalog.request" ||
+    kind === "model.connectivity.test.request" ||
     kind === "model.default.set.request" ||
     kind === "provider.auth.logout.request" ||
     kind === "provider.auth.login.start.request" ||
@@ -105,7 +110,7 @@ export async function executeSparkDaemonModelChannelPublicControl(
         request.sessionId,
         request.model,
       );
-      return sessionResult(session);
+      return sessionResult(session, options.sessionActivity?.(session.sessionId));
     }
     case "session.thinking.set.request": {
       const request = parseSparkSessionSetThinkingRequest(input.payload);
@@ -114,7 +119,7 @@ export async function executeSparkDaemonModelChannelPublicControl(
         request.sessionId,
         request.thinkingLevel,
       );
-      return sessionResult(session);
+      return sessionResult(session, options.sessionActivity?.(session.sessionId));
     }
     case "model.catalog.request": {
       const sessionId = optionalString(input.payload.sessionId);
@@ -126,6 +131,13 @@ export async function executeSparkDaemonModelChannelPublicControl(
       return {
         result: { snapshot: data },
         projection: { kind: "model.catalog", data },
+      };
+    }
+    case "model.connectivity.test.request": {
+      const request = sparkModelConnectivityTestRequestSchema.parse(input.payload);
+      const control = requireModelControl(options);
+      return {
+        result: { test: publicObject(await control.testModel(request.model)) },
       };
     }
     case "model.default.set.request": {
@@ -179,8 +191,7 @@ export async function executeSparkDaemonModelChannelPublicControl(
       };
     }
     case "channel.status.request": {
-      const workspaceId = requireWorkspaceId(input.workspaceId, input.payload.workspaceId);
-      const snapshot = await channelSnapshot(options, workspaceId);
+      const snapshot = await channelSnapshot(options);
       const data = publicObject(snapshot);
       return {
         result: { snapshot: data },
@@ -188,9 +199,8 @@ export async function executeSparkDaemonModelChannelPublicControl(
       };
     }
     case "channel.reload.request": {
-      const workspaceId = requireWorkspaceId(input.workspaceId, input.payload.workspaceId);
-      await requireChannelIngress(options).reload(workspaceId);
-      const snapshot = await channelSnapshot(options, workspaceId);
+      await requireChannelIngress(options).reload();
+      const snapshot = await channelSnapshot(options);
       const data = publicObject(snapshot);
       return {
         result: { snapshot: data },
@@ -198,22 +208,17 @@ export async function executeSparkDaemonModelChannelPublicControl(
       };
     }
     case "channel.qqbot.auth.start.request": {
-      const workspaceId = requireWorkspaceId(input.workspaceId, input.payload.workspaceId);
-      const flow = await requireChannelIngress(options).startQqbotQrAuth(workspaceId);
+      const flow = await requireChannelIngress(options).startQqbotQrAuth();
       return { result: { flow: publicObject(flow) } };
     }
     case "channel.qqbot.auth.status.request": {
-      const workspaceId = requireWorkspaceId(input.workspaceId, input.payload.workspaceId);
       const flow = requireChannelIngress(options).qqbotQrAuthStatus(
-        workspaceId,
         requiredString(input.payload.flowId, "flowId"),
       );
       return { result: { flow: publicObject(flow) } };
     }
     case "channel.qqbot.auth.cancel.request": {
-      const workspaceId = requireWorkspaceId(input.workspaceId, input.payload.workspaceId);
       const flow = requireChannelIngress(options).cancelQqbotQrAuth(
-        workspaceId,
         requiredString(input.payload.flowId, "flowId"),
       );
       return { result: { flow: publicObject(flow) } };
@@ -251,16 +256,12 @@ export async function executeSparkDaemonEphemeralSecretControl(
           completedAt,
         };
       case "channel.configure": {
-        const config = await mergePrivateChannelConfig(
-          options,
-          request.workspaceId,
-          request.config,
-        );
-        await requireChannelIngress(options).configure(request.workspaceId, config);
+        const config = await mergePrivateChannelConfig(options, request.config);
+        await requireChannelIngress(options).configure(config);
         return {
           operation: request.operation,
           status: "succeeded",
-          result: await channelSnapshot(options, request.workspaceId),
+          result: await channelSnapshot(options),
           completedAt,
         };
       }
@@ -278,14 +279,12 @@ export async function executeSparkDaemonEphemeralSecretControl(
 
 export async function channelSnapshot(
   options: SparkDaemonModelChannelControlOptions,
-  workspaceId: string,
 ): Promise<SparkChannelControlSnapshot> {
-  const runtime = requireChannelIngress(options).status(workspaceId);
+  const runtime = requireChannelIngress(options).status();
   const loaded = options.sparkHome
-    ? await loadDaemonChannelsConfig(options.sparkHome, workspaceId)
+    ? await loadDaemonChannelsConfig(options.sparkHome)
     : { config: null };
   return parseSparkChannelControlSnapshot({
-    workspaceId,
     available: true,
     configured: runtime.configured,
     ingressEnabled: runtime.ingressEnabled,
@@ -302,16 +301,16 @@ export async function channelSnapshot(
     lastReloadedAt: runtime.lastReloadedAt,
     observedAt: runtime.observedAt,
     ...(runtime.error ? { error: "Channel runtime reported an error." } : {}),
-    text: `channels workspace=${workspaceId} ${runtime.state} adapters=${runtime.adapters.length} routes=${runtime.routes.length} ingress=${runtime.ingressEnabled ? "on" : "off"}\n`,
+    text: `channels daemon ${runtime.state} adapters=${runtime.adapters.length} routes=${runtime.routes.length} ingress=${runtime.ingressEnabled ? "on" : "off"}\n`,
   });
 }
 
 export function channelConfigurationProjection(
   config: ChannelsConfig | null,
 ): SparkChannelConfigurationProjection {
-  const feishu = adapterOfType(config, "feishu");
-  const infoflow = adapterOfType(config, "infoflow");
-  const qqbot = adapterOfType(config, "qqbot");
+  const feishu = uniqueAdapterOfType(config, "feishu");
+  const infoflow = uniqueAdapterOfType(config, "infoflow");
+  const qqbot = uniqueAdapterOfType(config, "qqbot");
   return {
     ...(feishu
       ? {
@@ -361,27 +360,30 @@ export function channelConfigurationProjection(
 
 async function mergePrivateChannelConfig(
   options: SparkDaemonModelChannelControlOptions,
-  workspaceId: string,
   value: Record<string, SparkProtocolJsonValue>,
 ): Promise<ChannelsConfig> {
   const incoming = parseChannelsConfig(value);
   const previous = options.sparkHome
-    ? (await loadDaemonChannelsConfig(options.sparkHome, workspaceId)).config
+    ? (await loadDaemonChannelsConfig(options.sparkHome)).config
     : null;
-  const previousByType = {
-    feishu: adapterOfType(previous, "feishu"),
-    infoflow: adapterOfType(previous, "infoflow"),
-    qqbot: adapterOfType(previous, "qqbot"),
-  };
   const adapters: ChannelsConfig["adapters"] = {};
   for (const [id, adapter] of Object.entries(incoming.adapters)) {
+    const needsPrevious =
+      adapter.type === "feishu"
+        ? !adapter.app_secret?.trim()
+        : adapter.type === "infoflow"
+          ? !adapter.app_key?.trim() || !adapter.app_secret?.trim()
+          : !adapter.client_secret?.trim();
+    const previousAdapter = needsPrevious
+      ? previousAdapterForIncoming(previous, id, adapter)
+      : undefined;
     if (adapter.type === "feishu") {
       adapters[id] = {
         ...adapter,
         ...(adapter.app_secret?.trim()
           ? {}
-          : previousByType.feishu?.app_secret
-            ? { app_secret: previousByType.feishu.app_secret }
+          : previousAdapter?.type === "feishu" && previousAdapter.app_secret
+            ? { app_secret: previousAdapter.app_secret }
             : {}),
       };
     } else if (adapter.type === "infoflow") {
@@ -389,13 +391,13 @@ async function mergePrivateChannelConfig(
         ...adapter,
         ...(adapter.app_key?.trim()
           ? {}
-          : previousByType.infoflow?.app_key
-            ? { app_key: previousByType.infoflow.app_key }
+          : previousAdapter?.type === "infoflow" && previousAdapter.app_key
+            ? { app_key: previousAdapter.app_key }
             : {}),
         ...(adapter.app_secret?.trim()
           ? {}
-          : previousByType.infoflow?.app_secret
-            ? { app_secret: previousByType.infoflow.app_secret }
+          : previousAdapter?.type === "infoflow" && previousAdapter.app_secret
+            ? { app_secret: previousAdapter.app_secret }
             : {}),
       };
     } else {
@@ -403,8 +405,8 @@ async function mergePrivateChannelConfig(
         ...adapter,
         ...(adapter.client_secret?.trim()
           ? {}
-          : previousByType.qqbot?.client_secret
-            ? { client_secret: previousByType.qqbot.client_secret }
+          : previousAdapter?.type === "qqbot" && previousAdapter.client_secret
+            ? { client_secret: previousAdapter.client_secret }
             : {}),
       };
     }
@@ -412,8 +414,11 @@ async function mergePrivateChannelConfig(
   return parseChannelsConfig({ ...incoming, adapters });
 }
 
-function sessionResult(session: SparkSessionRegistryRecord): SparkDaemonModelChannelPublicResult {
-  const projected = publicObject(session);
+function sessionResult(
+  session: SparkSessionState,
+  activity: "idle" | "queued" | "running" = "idle",
+): SparkDaemonModelChannelPublicResult {
+  const projected = publicObject(projectSparkSessionState(session, activity));
   return {
     result: { session: projected },
     projection: { kind: "session.detail", data: { session: projected } },
@@ -436,7 +441,7 @@ function publicModelSnapshot(snapshot: SparkModelControlSnapshot): SparkModelCon
   return {
     providers: snapshot.providers,
     ...(snapshot.defaultModel ? { defaultModel: snapshot.defaultModel } : {}),
-    ...(snapshot.scopedModels ? { scopedModels: snapshot.scopedModels } : {}),
+    enabledModels: snapshot.enabledModels,
     ...(snapshot.session ? { session: snapshot.session } : {}),
     diagnostics:
       snapshot.diagnostics.length > 0 ? ["Provider diagnostics are available on the daemon."] : [],
@@ -511,15 +516,6 @@ function requireChannelIngress(
   return options.channelIngress;
 }
 
-function requireWorkspaceId(routeValue: string | undefined, payloadValue: unknown): string {
-  const route = routeValue?.trim();
-  const payload = optionalString(payloadValue);
-  if (!route || (payload && payload !== route)) {
-    throw new Error("Channel control requires one matching workspace route.");
-  }
-  return route;
-}
-
 function requiredString(value: unknown, name: string): string {
   const parsed = optionalString(value);
   if (!parsed) throw new Error(`${name} is required.`);
@@ -530,27 +526,59 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function adapterOfType(
+function uniqueAdapterOfType(
   config: ChannelsConfig | null,
   type: "feishu",
 ): FeishuAdapterConfig | undefined;
-function adapterOfType(
+function uniqueAdapterOfType(
   config: ChannelsConfig | null,
   type: "infoflow",
 ): InfoflowAdapterConfig | undefined;
-function adapterOfType(
+function uniqueAdapterOfType(
   config: ChannelsConfig | null,
   type: "qqbot",
 ): QqbotAdapterConfig | undefined;
-function adapterOfType(
+function uniqueAdapterOfType(
   config: ChannelsConfig | null,
   type: "feishu" | "infoflow" | "qqbot",
 ): FeishuAdapterConfig | InfoflowAdapterConfig | QqbotAdapterConfig | undefined {
-  return Object.values(config?.adapters ?? {}).find((adapter) => adapter.type === type) as
+  const adapters = Object.values(config?.adapters ?? {}).filter((adapter) => adapter.type === type);
+  if (adapters.length !== 1) return undefined;
+  return adapters[0] as
     | FeishuAdapterConfig
     | InfoflowAdapterConfig
     | QqbotAdapterConfig
     | undefined;
+}
+
+/**
+ * Resolve the one stored account whose private fields may be retained.
+ * Adapter ids are operator-owned and renameable, so stable account identity is
+ * the second choice. Falling back by type is safe only for a single account.
+ */
+function previousAdapterForIncoming(
+  previous: ChannelsConfig | null,
+  adapterId: string,
+  incoming: ChannelAdapterConfig,
+): ChannelAdapterConfig | undefined {
+  const exact = previous?.adapters[adapterId];
+  if (exact?.type === incoming.type) return exact;
+
+  const sameType = Object.values(previous?.adapters ?? {}).filter(
+    (adapter) => adapter.type === incoming.type,
+  );
+  const identity = channelAdapterAccountIdentity(incoming);
+  const identityMatches = sameType.filter(
+    (adapter) => channelAdapterAccountIdentity(adapter) === identity,
+  );
+  if (identityMatches.length === 1) return identityMatches[0];
+  if (identityMatches.length > 1) {
+    throw new Error(`Stored Channel account identity is duplicated for ${adapterId}.`);
+  }
+  if (sameType.length <= 1) return sameType[0];
+  throw new Error(
+    `Cannot retain private Channel fields for ${adapterId}: multiple ${incoming.type} accounts match by type.`,
+  );
 }
 
 function publicFailureMessage(

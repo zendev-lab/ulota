@@ -1,6 +1,6 @@
 import { createWorkspaceWithLease } from "@zendev-lab/spark-hub-coordination/projection-services";
 import { RuntimeControlCommandError } from "@zendev-lab/spark-hub-coordination/runtime-control";
-import { migrate, openMemoryDatabase } from "@zendev-lab/spark-hub-db";
+import { migrate, openMemoryDatabase } from "@zendev-lab/spark-hub-storage-sqlite";
 import { createId, runtimeProtocolVersion } from "@zendev-lab/spark-protocol";
 import { describe, expect, it } from "vitest";
 import {
@@ -11,6 +11,7 @@ import {
   getProjectedManagedSessionForHub,
   getProjectedManagedSessionSnapshotForHub,
 } from "./managed-sessions";
+import { workspaceSessionRecord } from "../../../../../test/support/session-fixtures.ts";
 
 describe("hub runtime session cache", () => {
   it("retains control only for explicit response timeouts with a stale projection", () => {
@@ -55,24 +56,23 @@ describe("hub runtime session cache", () => {
       runtimeWorkspaceBindingId: bindingId,
       createdAt: now,
     });
-    const session = {
+    const session = workspaceSessionRecord({
       sessionId: createId("sess"),
-      scope: { kind: "workspace" as const, workspaceId: workspace.id },
       workspaceId: workspace.id,
-      title: "Cached conversation",
-      status: "ready" as const,
-      bindings: [],
+      supervisorSessionId: "sess_administrator",
+      name: "Cached conversation",
+      activity: "idle",
       createdAt: now,
       updatedAt: now,
-    };
+    });
     const snapshot = {
-      version: 1 as const,
+      version: 4 as const,
       sessionId: session.sessionId,
-      title: session.title,
+      title: session.name,
       status: "idle" as const,
       messages: [
         {
-          version: 1 as const,
+          version: 4 as const,
           id: "msg_cached",
           role: "assistant" as const,
           text: "Cached response",
@@ -89,10 +89,12 @@ describe("hub runtime session cache", () => {
     };
     db.prepare(
       `INSERT INTO runtime_session_projections
-        (runtime_id, session_id, scope, workspace_id, runtime_workspace_binding_id, status,
+        (runtime_id, session_id, scope, workspace_id, runtime_workspace_binding_id,
+         lifecycle, placement, activity, lifetime, lineage_origin_kind,
          record_json, snapshot_json, snapshot_total_messages, snapshot_loaded_messages,
          snapshot_hidden_messages, projected_at)
-       VALUES (?, ?, 'workspace', ?, ?, 'ready', ?, ?, 1, 1, 0, ?)`,
+       VALUES (?, ?, 'workspace', ?, ?, 'open', 'active', 'idle', 'scoped', 'session',
+               ?, ?, 1, 1, 0, ?)`,
     ).run(
       runtimeId,
       session.sessionId,
@@ -107,7 +109,6 @@ describe("hub runtime session cache", () => {
       const client = createHubRuntimeSessionClient(db);
       const request = {
         scope: { kind: "workspace" as const, workspaceId: workspace.id },
-        workspaceId: workspace.id,
       };
 
       await expect(client.listWithControlState(request)).resolves.toEqual({
@@ -127,6 +128,59 @@ describe("hub runtime session cache", () => {
           hasEarlierMessages: false,
         },
       });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("returns daemon Channel projections only for the explicitly selected offline runtime", async () => {
+    const db = openMemoryDatabase();
+    migrate(db);
+    const now = "2026-08-21T00:00:00.000Z";
+    const runtimeId = createId("rt");
+    const session = {
+      sessionId: createId("sess"),
+      scope: { kind: "daemon" as const, daemonId: "offline-channel-daemon" },
+      lifecycle: "open" as const,
+      placement: "active" as const,
+      activity: "idle" as const,
+      lifetime: "persistent" as const,
+      roleBinding: { kind: "none" as const },
+      lineage: { kind: "root" as const },
+      incarnation: 1,
+      visibility: "public" as const,
+      retention: "retain" as const,
+      purpose: "channel",
+      cwd: "/daemon/channels/sessions/session/workspace",
+      bindings: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.prepare(
+      `INSERT INTO runtime_connections
+        (id, installation_id, name, status, protocol_version, capabilities_json, labels_json,
+         created_at, updated_at)
+       VALUES (?, 'offline-channel-daemon', 'Offline Channel daemon', 'offline', ?, '{}', '{}', ?, ?)`,
+    ).run(runtimeId, runtimeProtocolVersion, now, now);
+    db.prepare(
+      `INSERT INTO runtime_session_projections
+        (runtime_id, session_id, scope, lifecycle, placement, activity, lifetime,
+         lineage_origin_kind, record_json, projected_at)
+       VALUES (?, ?, 'daemon', 'open', 'active', 'idle', 'persistent', 'root', ?, ?)`,
+    ).run(runtimeId, session.sessionId, JSON.stringify(session), now);
+
+    try {
+      const client = createHubRuntimeSessionClient(db);
+      await expect(
+        client.listWithControlState({
+          runtimeId,
+          scope: { kind: "daemon" },
+          includeArchived: true,
+        }),
+      ).resolves.toEqual({ sessions: [session], controlAvailable: false });
+      await expect(client.list({ scope: { kind: "daemon" } })).rejects.toThrow(
+        /selected Spark runtime/u,
+      );
     } finally {
       db.close();
     }
@@ -157,26 +211,32 @@ describe("hub runtime session cache", () => {
       createdAt: now,
     });
     const child = {
-      sessionId: createId("sess"),
-      scope: { kind: "workspace" as const, workspaceId: workspace.id },
-      workspaceId: workspace.id,
-      title: "Context Side Thread",
-      status: "ready" as const,
-      bindings: [],
-      relation: {
-        kind: "side_thread" as const,
+      ...workspaceSessionRecord({
+        sessionId: createId("sess"),
+        workspaceId: workspace.id,
+        supervisorSessionId: "sess_administrator",
+        name: "Context Side Thread",
+        activity: "idle",
+        createdAt: now,
+        updatedAt: now,
+      }),
+      roleBinding: { kind: "inherit" as const },
+      lineage: {
+        kind: "child" as const,
         parentSessionId: "sess_parent",
-        generation: 1,
-        mode: "contextual" as const,
+        origin: { kind: "side_thread" as const, generation: 1 },
       },
-      createdAt: now,
-      updatedAt: now,
+      visibility: "internal" as const,
+      retention: "discard_on_close" as const,
+      purpose: "side_thread",
+      sideThreadMode: "contextual" as const,
     };
     db.prepare(
       `INSERT INTO runtime_session_projections
-        (runtime_id, session_id, scope, workspace_id, runtime_workspace_binding_id, status,
+        (runtime_id, session_id, scope, workspace_id, runtime_workspace_binding_id,
+         lifecycle, placement, activity, lifetime, lineage_origin_kind,
          record_json, projected_at)
-       VALUES (?, ?, 'workspace', ?, ?, 'ready', ?, ?)`,
+       VALUES (?, ?, 'workspace', ?, ?, 'open', 'active', 'idle', 'scoped', 'side_thread', ?, ?)`,
     ).run(runtimeId, child.sessionId, workspace.id, bindingId, JSON.stringify(child), now);
 
     try {

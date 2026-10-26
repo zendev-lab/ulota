@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import WebSocket, { type RawData } from "ws";
+import { createId } from "@zendev-lab/spark-protocol/domain";
 import {
   humanResponseDeliverEnvelopeSchema,
   runtimeCommandResultEnvelopeSchema,
@@ -12,9 +13,6 @@ import {
   serverCommandEnvelopeSchema,
   serverHeartbeatAckEnvelopeSchema,
   serverHelloAckEnvelopeSchema,
-} from "@zendev-lab/spark-protocol/runtime";
-import { createId } from "@zendev-lab/spark-protocol/domain";
-import {
   type RuntimeFeature,
   type RuntimeWorkspaceBindingSummary,
 } from "@zendev-lab/spark-protocol/runtime";
@@ -23,7 +21,7 @@ import {
   type SparkDaemonEvent,
   type SparkJsonObject,
 } from "@zendev-lab/spark-protocol/presentation";
-import { readSparkBuildInfo } from "@zendev-lab/spark-update";
+import { readSparkBuildInfo } from "@zendev-lab/spark-deployment";
 import { type SparkDaemonConfig } from "./config.js";
 import {
   SparkDaemonHumanWaitRegistry,
@@ -52,11 +50,7 @@ import {
   recordRuntimeCommandTerminal,
 } from "./runtime-command-receipts.ts";
 import { runtimeCommandFailure } from "./runtime-command-error.ts";
-import {
-  SparkInvocationStore,
-  type SparkInvocationEvent,
-  type SparkInvocationPendingDelivery,
-} from "./store/invocations.ts";
+import { SparkInvocationStore, type SparkInvocationEvent } from "./store/invocations.ts";
 import {
   applyHubWorkspaceBindingAssignments,
   getWorkspaceById,
@@ -155,10 +149,14 @@ export function createDaemonHumanWait(
   return registration;
 }
 
+interface ServerMessageContext extends MessageContext {
+  onWorkspaceBindingsChanged?(): void;
+}
+
 export async function handleServerMessage(
   ws: ServerSocket,
   raw: string,
-  context: MessageContext,
+  context: ServerMessageContext,
 ): Promise<void> {
   const value = parseHubRuntimeMessage(raw);
 
@@ -171,6 +169,7 @@ export async function handleServerMessage(
         helloAck.data.payload.workspaceBindingAssignments,
       );
     }
+    context.onWorkspaceBindingsChanged?.();
     context.setRuntimeSessionId(helloAck.data.payload.runtimeSessionId);
     context.ensureHeartbeat(helloAck.data.payload.heartbeatIntervalMs);
     context.onRuntimeReady?.();
@@ -186,6 +185,7 @@ export async function handleServerMessage(
         heartbeatAck.data.payload.workspaceBindingAssignments,
       );
     }
+    context.onWorkspaceBindingsChanged?.();
     return;
   }
 
@@ -336,27 +336,9 @@ async function handleEphemeralSecretRequest(
     sendEphemeralSecretFailure(ws, request, "SECRET_REQUEST_EXPIRED");
     return;
   }
-  let channelWorkspaceId: string | undefined;
-  if (request.payload.operation === "channel.configure") {
-    const workspace = request.workspaceBindingId
-      ? getWorkspaceById(context.db, request.workspaceBindingId)
-      : null;
-    if (
-      !workspace ||
-      !context.serverUrl ||
-      !workspaceBindingBelongsToServer(context.db, workspace.id, context.serverUrl) ||
-      !daemonWorkspaceRouteMatches(
-        context.db,
-        workspace.id,
-        request.workspaceId,
-        request.workspaceBindingId,
-      ) ||
-      request.payload.workspaceId !== request.workspaceId
-    ) {
-      sendEphemeralSecretFailure(ws, request, "SECRET_ROUTE_INVALID");
-      return;
-    }
-    channelWorkspaceId = workspace.id;
+  if (request.workspaceId || request.workspaceBindingId) {
+    sendEphemeralSecretFailure(ws, request, "SECRET_ROUTE_INVALID");
+    return;
   }
 
   const result = await executeSparkDaemonEphemeralSecretControl(
@@ -365,17 +347,8 @@ async function handleEphemeralSecretRequest(
       channelIngress: context.channelIngress,
       sparkHome: context.sparkHome,
     },
-    channelWorkspaceId && request.payload.operation === "channel.configure"
-      ? { ...request.payload, workspaceId: channelWorkspaceId }
-      : request.payload,
+    request.payload,
   );
-  const projectedResult =
-    request.payload.operation === "channel.configure" &&
-    result.operation === "channel.configure" &&
-    result.result &&
-    request.workspaceId
-      ? { ...result, result: { ...result.result, workspaceId: request.workspaceId } }
-      : result;
   sendJson(
     ws,
     runtimeEphemeralSecretResultEnvelopeSchema.parse({
@@ -387,7 +360,7 @@ async function handleEphemeralSecretRequest(
       ...(request.workspaceId ? { workspaceId: request.workspaceId } : {}),
       ...(request.workspaceBindingId ? { workspaceBindingId: request.workspaceBindingId } : {}),
       ephemeralRequestId: request.ephemeralRequestId,
-      payload: projectedResult,
+      payload: result,
     }),
   );
 }
@@ -511,7 +484,7 @@ export async function handleCommand(
 }
 
 export function runtimeEnvelopeForInvocationEvent(
-  pending: SparkInvocationPendingDelivery,
+  pending: { event: SparkInvocationEvent; workspaceBindingId?: string },
   context: {
     store: SparkInvocationStore;
     db: DatabaseSync;
@@ -525,13 +498,8 @@ export function runtimeEnvelopeForInvocationEvent(
   } catch {
     return null;
   }
-  const route = routeForDaemonEvent(event, context);
-  if (!route) {
-    console.error(
-      `[spark-daemon] dropping unroutable invocation event ${pending.event.kind}; no workspace route was available`,
-    );
-    return null;
-  }
+  const route = routeForDaemonEvent(event, context, pending.workspaceBindingId);
+  if (!route) return null;
   const messageId = invocationEventMessageId(pending.event);
   if (event.type === "daemon.artifact.projected") {
     if (!route.workspaceId) return null;
@@ -608,7 +576,7 @@ function assistantDeltaFromInvocationEvent(
   if (!current) return undefined;
   let beforeSequence = persisted.sequence;
   while (beforeSequence > 1) {
-    const previous = store.previousEvent(
+    const previous = store.previousKnownEvent(
       persisted.invocationId,
       beforeSequence,
       "daemon.view_event",
@@ -638,9 +606,11 @@ function assistantMessage(event: SparkDaemonEvent): { id: string; text: string }
 function routeForDaemonEvent(
   event: SparkDaemonEvent,
   context: { db: DatabaseSync; runtimeId: string; serverUrl: string | null },
+  authoritativeWorkspaceBindingId?: string,
 ): RouteContext | null {
   const metadata = event.metadata;
-  let workspaceBindingId = stringMetadata(metadata, "workspaceBindingId");
+  let workspaceBindingId =
+    authoritativeWorkspaceBindingId ?? stringMetadata(metadata, "workspaceBindingId");
   let workspaceId = event.workspaceId ?? stringMetadata(metadata, "workspaceId");
   if (
     workspaceBindingId &&
@@ -958,7 +928,7 @@ export function toWebSocketUrl(value: string): string {
 export function requireConfig(value: string | undefined, name: string): string {
   if (!value) {
     throw new Error(
-      `Spark daemon config is missing ${name}. Run spark daemon workspace register first.`,
+      `Spark daemon config is missing ${name}. Run spark daemon login --server-url <url>.`,
     );
   }
   return value;

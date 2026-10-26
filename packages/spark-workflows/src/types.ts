@@ -1,4 +1,4 @@
-import type { EvidenceRef } from "@zendev-lab/spark-core";
+import type { EvidenceRef } from "@zendev-lab/spark-invocation";
 
 export interface WorkflowStage {
   title: string;
@@ -47,6 +47,8 @@ export type WorkflowPhaseRun = WorkflowStageRun;
 
 export interface WorkflowAgentOptions {
   label?: string;
+  /** Role selector resolved by the Spark host to one exact ref and revision. */
+  role?: string;
   /** Explicit reusable Spark Role for this workflow child; the host validates the ref. */
   roleRef?: string;
   stage?: string;

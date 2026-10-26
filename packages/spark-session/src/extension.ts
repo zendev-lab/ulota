@@ -1,6 +1,6 @@
 import { Type } from "typebox";
-import type { ToolConfig, ToolRenderComponent } from "@zendev-lab/spark-core";
-import { truncateToWidth } from "@zendev-lab/spark-text";
+import type { ToolConfig, ToolRenderComponent } from "@zendev-lab/spark-invocation";
+import { truncateToWidth } from "@zendev-lab/spark-text-rendering";
 import {
   executeSparkSessionAction,
   type SparkSessionAction,
@@ -24,44 +24,42 @@ export function registerSparkSessionTool(
     name: "session",
     label: "Session",
     description:
-      "Canonical persistent session capability for long-lived staff roles (daemon-local session registry). This is NOT the Hub conversation list at /{workspace}/sessions — do not archive or create registry sessions to tidy Hub UI conversations. Reuse sessions by stable division of labour, manage lifecycle and bindings, submit tasks, or send durable requests and notifications.",
+      "Canonical scoped Session capability. Create a static Role first, spawn or fork a Role-bound Session, then send a request to trigger execution.",
     promptGuidelines: [
-      "A persistent session represents a long-lived division of labour, never one task. Before create, you MUST list same-workspace local sessions and compare roles semantically; reuse the closest owner with session call/send even when task wording, technology, or language differs.",
-      "Hub workspace conversations (browser UI under /{workspace}/sessions) are a separate projection. session list/archive only touches the Spark session registry; they will not remove or rename Hub chat rows. To clean Hub chats, use the page archive control or the runtime session-control API with that page's session IDs.",
-      "Use session create only when no existing division of labour owns the responsibility. role must be one concise stable responsibility label in the user's language and existing naming style, such as 运行维护, 前端体验, 质量验证, or Messaging Platforms. Put the concrete task only in session call/send; never use a task slug, implementation name, model name, deliverable, or temporary phase as the role.",
-      "session list is paginated and labels each surface as local or channel plus activity as idle or running; use surface, activity, adapter, query, and tags filters, then continue with offset when total exceeds the returned page. Archived sessions remain searchable with includeArchived=true and can be restored without losing their lifecycle tags.",
-      "session send kind=notification persists without triggering the target session; it is the default and cannot wait for completion.",
-      "session send kind=request persists and submits one turn to an idle or running local target. wait=accepted is asynchronous and is the default; when the target finishes, the daemon wakes the sender session with a completion summary turn so it can synthesize immediately. wait=completed polls the durable invocation through restart and returns its terminal response without a second wake. After a completed wait times out, call send again with kind=request, wait=completed, and only invocationId/timeoutMs to continue waiting without resubmitting or writing mail.",
-      "Message-platform sessions may use only list/get/send/inbox/read/ack. Their list/get/send targets are restricted to the current workspace, and sends require local targets.",
+      "Use session spawn with an exact RoleRef to create an empty child of the current Session. Use session fork to create a child with an independent copy of the current Session's stable transcript prefix. Neither action sends a message or creates an Invocation.",
+      "After spawn or fork, use session send with kind=request and toSessionId to trigger the existing mail, wake, Invocation, and idempotency flow.",
+      "The Workspace Administrator is persistent and protected. Never attempt to archive, close, or replace it. Administrator delegates execution; it is not an executor.",
+      "session list is paginated and labels lifecycle, placement, owner-derived lifetime, Role binding, surface, and Invocation-derived activity. Archived Sessions remain searchable with includeArchived=true and can be restored; closed Sessions are terminal.",
+      "session send is one-way. kind=notification persists without triggering the target. kind=request submits immediately only when the local target is idle. If the target is active and onActive is omitted, the send fails without persisting mail; onActive=queue durably FIFO-admits up to three pending requests, and onActive=interrupt cancels current work before submitting. wake=true is optional and legal only for request; the daemon then wakes the sender with a completion summary. Do not wait on send.",
+      'Use session({ action: "wait", invocationId, timeoutMs? }) to poll a durable invocation for a terminal result. Timeout stops only the wait. Ask replies are a separate reply-wait, not session wait.',
+      'Use session({ action: "lookup", sessionId }) for a bounded peer projection (lifecycle, activity, optional latestInvocation and pendingAsk). lookup does not wait and does not return a Hub snapshot.',
+      "Message-platform sessions may use only list/get/send/lookup/wait/inbox/read/ack. Peer reads and waits are restricted to the current immutable channel identity; sends to another channel identity are forbidden.",
       "inbox/read/ack are current-session-only; inbox supports offset/limit pagination.",
     ],
-    policy: sessionToolPolicy("external_write", ["plan", "execute", "fleet"]),
+    policy: sessionToolPolicy("external_write"),
     resolvePolicy(args) {
       const action = typeof args.action === "string" ? args.action : "";
-      return action === "list" || action === "get" || action === "inbox"
-        ? sessionToolPolicy("read", ["plan", "execute", "fleet"])
-        : sessionToolPolicy("external_write", ["plan", "execute"]);
+      return action === "list" ||
+        action === "get" ||
+        action === "inbox" ||
+        action === "lookup" ||
+        action === "wait"
+        ? sessionToolPolicy("read")
+        : sessionToolPolicy("external_write");
     },
     parameters: Type.Object({
       action: Type.String({
         description:
-          "list | get | create | call | bind | unbind | archive | restore | send | inbox | read | ack",
+          "list | get | spawn | fork | bind | unbind | archive | restore | close | send | lookup | wait | inbox | read | ack",
       }),
       sessionId: Type.Optional(
         Type.String({
-          description:
-            "Persistent target for get/call/bind/unbind/archive/restore/inbox/read/ack, or requested id for create.",
+          description: "Target for get/bind/unbind/archive/restore/close/lookup/inbox/read/ack.",
         }),
-      ),
-      instruction: Type.Optional(
-        Type.String({ description: "Instruction for an explicit persistent session call." }),
-      ),
-      reset: Type.Optional(
-        Type.Boolean({ description: "Persistent call only; reset before submitting the turn." }),
       ),
       workspaceId: Type.Optional(
         Type.String({
-          description: "Workspace override for create/list; defaults to the current workspace.",
+          description: "Workspace override for list; defaults to the current workspace.",
         }),
       ),
       includeArchived: Type.Optional(Type.Boolean()),
@@ -89,24 +87,13 @@ export function registerSparkSessionTool(
       ),
       limit: Type.Optional(Type.Number({ description: "Maximum rows. Defaults to 20." })),
       offset: Type.Optional(Type.Number({ description: "List offset. Defaults to 0." })),
-      role: Type.Optional(
-        Type.String({
-          description:
-            "Deprecated create alias for roleRef. Builtin names resolve to role:builtin-<name>.",
-        }),
-      ),
+      name: Type.Optional(Type.String({ description: "Display name for spawn or fork." })),
       roleRef: Type.Optional(
-        Type.String({
-          description:
-            "RoleSpec ref for create. Defaults to role:builtin-administrator for an ordinary conversation.",
-        }),
+        Type.String({ description: "Exact static RoleRef required for spawn or fork." }),
       ),
-      cwd: Type.Optional(Type.String({ description: "Optional working directory for create." })),
-      purpose: Type.Optional(
-        Type.String({ description: "Optional bounded purpose for the created Session." }),
-      ),
+      cwd: Type.Optional(Type.String({ description: "Working directory for spawn or fork." })),
       cwdArtifactRef: Type.Optional(
-        Type.String({ description: "Optional GitChange root for create cwd." }),
+        Type.String({ description: "Optional GitChange root for spawn or fork cwd." }),
       ),
       externalKey: Type.Optional(Type.String()),
       toSessionId: Type.Optional(Type.String({ description: "Target session for send." })),
@@ -116,21 +103,31 @@ export function registerSparkSessionTool(
             "request | notification. Defaults to notification; only request triggers target execution.",
         }),
       ),
+      onActive: Type.Optional(
+        Type.Union([Type.Literal("queue"), Type.Literal("interrupt")], {
+          description:
+            "Active-target policy for request sends. Omit to fail closed; queue persists up to three FIFO requests, while interrupt cancels current work before submitting.",
+        }),
+      ),
+      wake: Type.Optional(
+        Type.Boolean({
+          description:
+            "Request-only. When true, the daemon wakes the sender with a completion summary after the target invocation finishes. Defaults to false.",
+        }),
+      ),
       wait: Type.Optional(
         Type.String({
-          description:
-            "accepted | completed. Defaults to accepted; completed is valid only for request.",
+          description: "Retired on send. Use action=wait for invocation polling.",
         }),
       ),
       invocationId: Type.Optional(
         Type.String({
-          description:
-            "Accepted invocation to continue waiting for with action=send, kind=request, wait=completed; continuation skips mail and turn submission.",
+          description: "Required for action=wait. Durable invocation to poll.",
         }),
       ),
       timeoutMs: Type.Optional(
         Type.Number({
-          description: "Completed request wait timeout in milliseconds (1000-300000).",
+          description: "Wait timeout in milliseconds (1000-300000). Valid only for action=wait.",
         }),
       ),
       intent: Type.Optional(Type.String()),
@@ -152,7 +149,9 @@ export function registerSparkSessionTool(
               ? args.sessionId
               : undefined,
           typeof args.kind === "string" ? `kind=${args.kind}` : undefined,
-          typeof args.wait === "string" ? `wait=${args.wait}` : undefined,
+          typeof args.onActive === "string" ? `onActive=${args.onActive}` : undefined,
+          typeof args.wake === "boolean" ? `wake=${String(args.wake)}` : undefined,
+          typeof args.invocationId === "string" ? `invocation=${args.invocationId}` : undefined,
           typeof args.invocationId === "string" ? `invocation=${args.invocationId}` : undefined,
           typeof args.surface === "string" ? `surface=${args.surface}` : undefined,
           typeof args.activity === "string" ? `activity=${args.activity}` : undefined,
@@ -177,15 +176,11 @@ export function registerSparkSessionTool(
   });
 }
 
-function sessionToolPolicy(
-  effect: "read" | "external_write",
-  modes: readonly string[],
-): NonNullable<ToolConfig["policy"]> {
+function sessionToolPolicy(effect: "read" | "external_write"): NonNullable<ToolConfig["policy"]> {
   return {
     effect,
     executionMode: effect === "read" ? "parallel" : "sequential",
     domains: ["sessions"],
-    modes,
     approval: "none",
   };
 }
@@ -210,20 +205,23 @@ function normalizeSessionAction(value: unknown): SparkSessionAction {
   if (
     value === "list" ||
     value === "get" ||
-    value === "create" ||
-    value === "call" ||
+    value === "spawn" ||
+    value === "fork" ||
     value === "bind" ||
     value === "unbind" ||
     value === "archive" ||
     value === "restore" ||
+    value === "close" ||
     value === "send" ||
+    value === "lookup" ||
+    value === "wait" ||
     value === "inbox" ||
     value === "read" ||
     value === "ack"
   )
     return value;
   throw new Error(
-    "session.action must be list, get, create, call, bind, unbind, archive, restore, send, inbox, read, or ack",
+    "session.action must be list, get, spawn, fork, bind, unbind, archive, restore, close, send, lookup, wait, inbox, read, or ack",
   );
 }
 

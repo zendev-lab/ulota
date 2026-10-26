@@ -1,11 +1,11 @@
 import { Worker } from "node:worker_threads";
 
-import type { ExtensionRoleRunRequest, ExtensionRoleRunResult } from "@zendev-lab/spark-core";
+import type { ExtensionRoleRunRequest, ExtensionRoleRunResult } from "@zendev-lab/spark-invocation";
 import {
   DEFAULT_SPARK_HEADLESS_EXECUTOR_MODULE,
   SPARK_HEADLESS_EXECUTOR_MODULE_ENV,
   resolveSparkHeadlessExecutorSpecifier,
-} from "@zendev-lab/spark-host/headless-loader";
+} from "@zendev-lab/spark-platform-node/headless-module";
 
 export const ISOLATED_NATIVE_EXECUTOR_FAILURE_MESSAGE =
   "host-provided native role executor was incompatible; Spark headless fallback failed";
@@ -19,15 +19,13 @@ interface IsolatedExecutorRequest {
   record: ExtensionRoleRunRequest["record"];
   cwd: string;
   timeoutMs: number;
-  mode?: ExtensionRoleRunRequest["mode"];
   requireStructuredOutcome?: boolean;
   sessionDir?: string;
   runName?: string;
   launch?: ExtensionRoleRunRequest["launch"];
   forkFromSession?: string;
   model?: string;
-  noSession?: boolean;
-  sessionPersistence?: ExtensionRoleRunRequest["sessionPersistence"];
+  thinking?: ExtensionRoleRunRequest["thinking"];
   nativeCompatibilityRecovery?: "reviewer";
 }
 
@@ -180,8 +178,12 @@ export function serializeIsolatedExecutorRequest(
     role: {
       ref: request.role.ref,
       id: request.role.id,
+      revision: request.role.revision,
       systemPrompt: request.role.systemPrompt,
       allowedTools: request.role.allowedTools ? [...request.role.allowedTools] : undefined,
+      allowedToolEffects: request.role.allowedToolEffects
+        ? [...request.role.allowedToolEffects]
+        : undefined,
     },
     instruction: {
       roleRef: request.instruction.roleRef,
@@ -191,15 +193,13 @@ export function serializeIsolatedExecutorRequest(
     record: { ...request.record },
     cwd: request.cwd,
     timeoutMs: request.timeoutMs,
-    mode: request.mode,
     requireStructuredOutcome: request.requireStructuredOutcome,
     sessionDir: request.sessionDir,
     runName: request.runName,
     launch: request.launch,
     forkFromSession: request.forkFromSession,
     model: request.model,
-    noSession: request.noSession,
-    sessionPersistence: request.sessionPersistence,
+    thinking: request.thinking,
     nativeCompatibilityRecovery: request.nativeCompatibilityRecovery,
   };
 }
@@ -258,6 +258,10 @@ function isRoleRunRecord(value: unknown): value is ExtensionRoleRunResult["recor
     !hasOnlyKeys(value, [
       "ref",
       "roleRef",
+      "roleRevision",
+      "definitionRevision",
+      "compositionRevision",
+      "skillDigests",
       "runName",
       "instruction",
       "status",
@@ -267,14 +271,29 @@ function isRoleRunRecord(value: unknown): value is ExtensionRoleRunResult["recor
       "model",
       "sessionDir",
       "forkFromSession",
-      "noSession",
-      "sessionPersistence",
       "outcome",
     ])
   )
     return false;
   if (typeof value.ref !== "string" || !value.ref.startsWith("run:")) return false;
   if (typeof value.roleRef !== "string" || !value.roleRef.startsWith("role:")) return false;
+  if (typeof value.roleRevision !== "string" || !value.roleRevision.trim()) return false;
+  for (const field of ["definitionRevision", "compositionRevision"] as const) {
+    if (value[field] !== undefined && typeof value[field] !== "string") return false;
+  }
+  if (
+    value.skillDigests !== undefined &&
+    (!Array.isArray(value.skillDigests) ||
+      !value.skillDigests.every(
+        (entry) =>
+          isRecord(entry) &&
+          hasOnlyKeys(entry, ["name", "digest"]) &&
+          typeof entry.name === "string" &&
+          typeof entry.digest === "string",
+      ))
+  ) {
+    return false;
+  }
   if (typeof value.instruction !== "string" || !isRoleRunStatus(value.status)) return false;
   for (const field of [
     "runName",
@@ -289,13 +308,6 @@ function isRoleRunRecord(value: unknown): value is ExtensionRoleRunResult["recor
   if (value.launch !== undefined && value.launch !== "fresh" && value.launch !== "forked") {
     return false;
   }
-  if (value.noSession !== undefined && typeof value.noSession !== "boolean") return false;
-  if (
-    value.sessionPersistence !== undefined &&
-    value.sessionPersistence !== "anonymous" &&
-    value.sessionPersistence !== "persistent"
-  )
-    return false;
   return value.outcome === undefined || isRoleRunOutcome(value.outcome);
 }
 

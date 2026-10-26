@@ -1,15 +1,13 @@
+import { nowIso, stableId, type TaskRef } from "@zendev-lab/spark-invocation";
 import {
-  nowIso,
-  stableId,
   type Task,
   type TaskExecutionPolicy,
   type TaskGpuResource,
-  type TaskRef,
   type TaskResourceAllocation,
   type TaskResourceAllocationGroup,
   type TaskResourceInventory,
   type TaskRun,
-} from "@zendev-lab/spark-core";
+} from "@zendev-lab/spark-tasks";
 
 export type TaskResourceDeferralReason =
   | "attempt_limit"
@@ -43,7 +41,9 @@ export function taskAttemptLimitDeferrals(
 ): DeferredTaskResource[] {
   return tasks.flatMap((task) => {
     const policy = effectiveTaskExecutionPolicy(task);
-    const attempts = runs.filter((run) => run.taskRef === task.ref && !run.dryRun).length;
+    const attempts = runs.filter(
+      (run) => run.taskRef === task.ref && !run.dryRun && run.attemptConsumed !== false,
+    ).length;
     return attempts >= policy.maxAttempts
       ? [
           {
@@ -102,7 +102,9 @@ export function packTaskResourceFrontier(input: {
       continue;
     }
     const policy = effectiveTaskExecutionPolicy(task);
-    const attempts = input.runs.filter((run) => run.taskRef === task.ref && !run.dryRun).length;
+    const attempts = input.runs.filter(
+      (run) => run.taskRef === task.ref && !run.dryRun && run.attemptConsumed !== false,
+    ).length;
 
     const conflictingKey = policy.concurrencyKeys.find((key) => usedConcurrencyKeys.has(key));
     if (conflictingKey) {

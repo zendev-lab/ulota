@@ -3,7 +3,7 @@ title: 配置与路径
 description: 查看 Spark 配置、凭据、运行状态和 workspace 自有文件。
 ---
 
-不要根据旧安装推断当前路径，应直接询问分发器：
+不要根据旧安装推断当前路径，应直接询问 native 根路由：
 
 ```bash
 spark paths
@@ -49,41 +49,73 @@ $XDG_RUNTIME_DIR/spark
 
 某个 XDG 变量没有设置时使用对应的平台默认值。
 
-## Cockpit 到 Hub 的升级迁移
+## Daemon 全局 Channel 路径
 
-首次使用默认 Hub 数据库时，Spark 会自动把已退役的 `cockpit.toml`、
-Cockpit XDG 应用目录和 `cockpit.sqlite` 迁移到上面的 Hub 路径。升级前应停止旧
-Cockpit 与 Hub 进程。迁移可重复执行并采用 fail-closed 策略：检测到仍活动的旧
-数据库锁，或源路径与目标路径同时存在时，启动会停止，不会覆盖任一目录。
+Channel 状态使用 `spark paths --json` 报告的 daemon 当前平台根目录：
 
-请把已有 `SPARK_COCKPIT_*` 值复制到对应的 `SPARK_HUB_*` 名称。升级窗口内
-仍会读取旧别名，但新旧名称的值发生冲突时会拒绝启动。新状态只写入 Hub 名称。
-已经注册的 daemon 会保留稳定 deployment ID；旧 Cockpit snapshot-v1 备份仍可
-检查与恢复。
+```text
+<paths.configDir>/channels.json
+<paths.dataDir>/channels/sessions/<sessionId>/workspace
+<paths.runtimeDir>/channels/
+```
+
+`channels.json` 包含 daemon 全局 adapter 账号、route 与 secret，以 `0600` 权限写入。每个 Channel Session workspace 使用私有 `0700` 权限；路径只包含经过校验的 Spark Session ID。Provider user、group 和 conversation 标识绝不会成为文件系统名称。Spark 会在每次执行前检查绝对 real path 与预期 data root 边界。关闭或归档 Channel Session 不会删除其目录。配置与恢复见 [Daemon 全局 Channel](/zh/guides/channels/)。
+
+## Daemon invocation 并发
+
+Daemon 默认最多同时接纳来自不同 session 的 4 个 root invocation。可以把启动值设置为 `1` 到 `64`，随后重启 daemon 使其生效：
+
+```bash
+spark daemon configure --invocation-concurrency 8
+spark daemon restart --yes
+spark daemon status --json
+```
+
+有效运行值位于 `execution.rootConcurrency`；status 还会显示 `in_process` backend 以及为阻塞式问题保留的 1 个 overflow slot。该设置只控制 root invocation 的接纳，不会创建操作系统 worker 进程；同一 session 内的工作仍然串行执行。
 
 ## Managed installation 路径
 
-Managed installation 使用 XDG data、configuration、state 与 cache 根目录，
-不与 `SPARK_HOME` 混为同一状态所有者：
+Managed installation 使用 XDG data、configuration、state 与 cache 根目录，不与 `SPARK_HOME` 混为同一状态所有者：
 
 ```text
 $XDG_DATA_HOME/spark/versions/<version>/
 $XDG_DATA_HOME/spark/versions/current
 $XDG_CONFIG_HOME/spark/update.toml
 $XDG_STATE_HOME/spark/update/
+$XDG_STATE_HOME/spark/update-backups/<timestamp>/
 $XDG_CACHE_HOME/spark/update/
+<install-prefix>/bin/spark
 ```
 
-可用 `SPARK_UPDATE_POLICY` 与 `SPARK_UPDATE_CHANNEL` 临时覆盖策略。运行
-`spark update status --json` 查看有效策略与 transaction 状态。持久化的
-`checkIntervalHours` 默认为 `24`，可通过
-`spark update configure --interval-hours <hours>` 修改。
+默认安装 prefix 是 `~/.local`。显式 `--prefix` 的优先级高于 `SPARK_INSTALL_PREFIX`；两者都不会改变拥有 updater 配置与 deployment 状态的 XDG 根目录。
+
+Native managed state 使用 schema v2 与显式 generation。普通 `spark update` 把 legacy state 当作只读状态，并提示重新安装。显式执行 `spark install --managed` cutover 时会获取旧锁、保留有效的 `update.toml`，并把旧 versions、state 与稳定 launcher 原子移动到带时间戳的备份目录。如果候选版本健康检查失败，Spark 会恢复所有旧路径。成功 cutover 后仍保留备份并报告位置； Spark 不会自动删除备份。
+
+可用 `SPARK_UPDATE_POLICY` 与 `SPARK_UPDATE_CHANNEL` 临时覆盖策略。运行 `spark update status --json` 查看有效策略与 transaction 状态。持久化的 `checkIntervalHours` 默认为 `24`，可通过 `spark update configure --interval-hours <hours>` 修改。
 
 ## Workspace 与 agent 定义
 
+Role、Workflow 和 Skill 共用以下加载优先级（后面的同名资源覆盖前面的）：
+
+```text
+builtin -> user -> workspace -> cwd -> configured -> repository
+```
+
 - `.spark/` 保存 workspace 自有的 Spark 运行状态。
 - `~/.agents/{roles,skills,workflows}` 保存用户级可复用定义。
-- `.agents/{roles,skills,workflows}` 保存项目级定义。
-- `.spark/skills` 保存 workspace 专用的 Spark skills。
+- `.agents/{roles,skills,workflows}` 保存仓库和 cwd 定义；先扫描仓库祖先，再扫描 cwd 根目录。
+- 显式配置的 user 根目录会替换默认 user 根目录。
+- 显式配置的 Skill 目录在 cwd 之后扫描。
+- 仓库 Skill 由请求匹配或显式 Skill Agent 渐进式聚焦，不会注入启动 catalog。
+
+Workflow 和 Role selector 保持现有 source 名称，其项目根目录共用上述优先级。 `.spark/skills` 保存 workspace 专用的 Spark skills。
 
 不存在 `$SPARK_HOME/skills` 或 `$SPARK_HOME/workflows` 目录。
+
+## 模型发现与启用规则
+
+在 Spark Web **设置 → 模型策略** 中每行填写一条启用规则，例如 `baidu-oneapi/gpt-*`。保存规则会在 `config.json` 中保留通配符，之后发现的匹配模型自动启用。保存逐个勾选的模型会将规则替换为固定 ID；空策略禁用全部模型。已有自定义规则保持不变，旧版内置默认规则迁移为包含 GPT-6 的 GPT 系列通配规则。
+
+Baidu OneAPI 通过携带认证的 `/v1/models` 请求发现 GPT 模型，使用五分钟进程缓存，失败时保留缓存或内置目录。打开目录或开始调用时刷新过期缓存。其他模型系列继续使用已有的传输定义。`gpt-6-astra` 是内置 `gpt-6-astra-尝鲜` 的别名；如果网关发布同名的正式模型 ID，优先使用该条目。
+
+模型列表接口不提供价格或能力上限。新发现的 GPT 模型使用文本输入、保守的 128k 上下文和 16,384 token 输出预算；这些是运行默认值，并非实测模型上限。其费用尚未定价（记录为零），费用汇总可能低估实际收费。已有内置模型保留原有元数据。

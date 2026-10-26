@@ -1,12 +1,15 @@
 import { ORPCError } from "@orpc/client";
-import { sparkLocalRpcProcedureSchemas } from "@zendev-lab/spark-protocol/local-rpc-orpc-contract";
+import {
+  sparkLocalRpcOrpcOnlyMethods,
+  sparkLocalRpcProcedureSchemas,
+} from "@zendev-lab/spark-protocol/local-rpc-orpc-contract";
 import type {
   SparkLocalRpcInput,
   SparkLocalRpcMethod,
   SparkLocalRpcOutput,
 } from "@zendev-lab/spark-protocol/local-rpc-orpc-contract";
 import { SPARK_PROTOCOL_VERSION } from "@zendev-lab/spark-protocol/version";
-import type { SparkPaths } from "@zendev-lab/spark-system";
+import type { SparkPaths } from "@zendev-lab/spark-platform-node";
 import {
   requestSparkDaemonLocalRpc,
   SparkDaemonLocalRpcError,
@@ -51,10 +54,11 @@ const DAEMON_ONLY_TOOL_METHODS = new Set<SparkLocalRpcMethod>([
   "git.execute",
   "lens.execute",
 ]);
+const ORPC_ONLY_METHODS = new Set<SparkLocalRpcMethod>(sparkLocalRpcOrpcOnlyMethods);
 
 /**
- * The typed daemon socket could not be reached before a tool procedure was
- * dispatched. Callers may start the daemon and retry this specific failure.
+ * The typed daemon socket could not be reached before an oRPC-only procedure
+ * was dispatched. Callers may start the daemon and retry this specific failure.
  */
 export class SparkDaemonPreDispatchUnavailableError extends SparkDaemonLocalRpcError {
   override readonly name = "SparkDaemonPreDispatchUnavailableError";
@@ -79,6 +83,20 @@ export class SparkDaemonProtocolMismatchError extends SparkDaemonLocalRpcError {
       `Spark daemon response for ${method} did not match client protocol ${SPARK_PROTOCOL_VERSION}. Restart or update the daemon so client and daemon versions agree, then retry. ${detail}`,
       { cause },
     );
+    this.method = method;
+  }
+}
+
+/**
+ * The typed socket failed after a procedure was dispatched. Callers must not
+ * replay mutations, but read-only lifecycle waiters may reconnect and retry.
+ */
+export class SparkDaemonConnectedTransportError extends SparkDaemonLocalRpcError {
+  override readonly name = "SparkDaemonConnectedTransportError";
+  readonly method: SparkLocalRpcMethod;
+
+  constructor(method: SparkLocalRpcMethod, message: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
     this.method = method;
   }
 }
@@ -136,7 +154,7 @@ export async function requestSparkDaemon<M extends SparkLocalRpcMethod>(
     });
   } catch (error) {
     if (options.signal?.aborted || isAbortError(error)) throw error;
-    if (DAEMON_ONLY_TOOL_METHODS.has(method)) {
+    if (DAEMON_ONLY_TOOL_METHODS.has(method) || ORPC_ONLY_METHODS.has(method)) {
       throw new SparkDaemonPreDispatchUnavailableError(method, error);
     }
     const result = await requestSparkDaemonLocalRpc<unknown>(method, input, legacyOptions(options));
@@ -179,7 +197,8 @@ async function invokeConnected<M extends SparkLocalRpcMethod>(
       return;
     }
     responseTimer = setTimeout(() => {
-      const error = new SparkDaemonLocalRpcError(
+      const error = new SparkDaemonConnectedTransportError(
+        method,
         `Timed out waiting for daemon oRPC response after ${responseTimeoutMs} ms.`,
       );
       reject(error);
@@ -254,9 +273,11 @@ function normalizeConnectedError(
   }
 
   const detail = boundedErrorDetail(error);
-  return new SparkDaemonLocalRpcError(`Spark daemon oRPC transport failed: ${detail}`, {
-    cause: error,
-  });
+  return new SparkDaemonConnectedTransportError(
+    method,
+    `Spark daemon oRPC transport failed: ${detail}`,
+    error,
+  );
 }
 
 function isProtocolSchemaError(error: unknown): boolean {

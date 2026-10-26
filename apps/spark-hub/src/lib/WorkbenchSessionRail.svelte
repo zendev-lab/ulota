@@ -1,13 +1,13 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import type { SparkSessionRelation } from "@zendev-lab/spark-protocol/daemon";
   import { Icon } from "@zendev-lab/spark-ui";
-  import ChannelSessionIcon from "$lib/ChannelSessionIcon.svelte";
+  import type { SparkSessionLineage } from "@zendev-lab/spark-protocol/session-assignment";
+  import { ChannelSessionIcon } from "@zendev-lab/spark-ui";
   import {
     channelSessionPresentation,
     sessionHasChannelBinding,
     type ChannelSessionLabels,
-  } from "$lib/channel-session-title";
+  } from "@zendev-lab/spark-ui/channel-session";
   import { visibleConversationActivityStatus } from "$lib/conversation-status";
   import { formatRelativeTime, statusLabel as getStatusLabel } from "$lib/i18n";
   import {
@@ -18,6 +18,7 @@
     buildSessionRailTree,
     isSessionVisibleInWorkbenchRail,
     workbenchSessionScope,
+    type WorkbenchSessionRailRow,
   } from "$lib/workbench-session-scope";
   import { workspaceSessionPath, workspaceSessionsPath } from "$lib/workspace-routes";
 
@@ -27,12 +28,19 @@
     scope?:
       | { kind: "workspace"; workspaceId: string }
       | { kind: "daemon"; daemonId?: string; daemonLabel?: string };
-    title?: string;
-    status: string;
-    activityStatus?: string;
+    name?: string;
+    lifecycle: "open" | "closing" | "closed";
+    placement: "active" | "archived";
+    activity?: "idle" | "queued" | "running";
+    descendantActivity?: {
+      activity: "idle" | "queued" | "running";
+      descendantCount: number;
+      activeCount: number;
+      truncated?: boolean;
+    };
     activityUpdatedAt?: string;
     bindings?: Array<{ kind: string; adapter?: string; externalKey?: string }>;
-    relation?: SparkSessionRelation;
+    lineage: SparkSessionLineage;
     createdAt: string;
     updatedAt: string;
   };
@@ -50,6 +58,7 @@
     selectedSessionId = null,
     sessionsAvailable = true,
     sessionControlAvailable = sessionsAvailable,
+    showUnavailableNotice = true,
     showArchived = false,
     archivedToggleHref = "?archived=1",
     locale,
@@ -62,6 +71,7 @@
     selectedSessionId?: string | null;
     sessionsAvailable?: boolean;
     sessionControlAvailable?: boolean;
+    showUnavailableNotice?: boolean;
     showArchived?: boolean;
     archivedToggleHref?: string;
     locale: string;
@@ -80,6 +90,7 @@
       channelLabels: ChannelSessionLabels;
       sessionTypes: Record<WorkbenchSessionType, string>;
       archiveSubmit: string;
+      closeSubmit: string;
       showArchived: string;
       hideArchived: string;
       archivedLabel: string;
@@ -101,7 +112,7 @@
     sessions.filter((session) => isSessionVisibleInWorkbenchRail(session, activeWorkspaceId)),
   );
   let archivedCount = $derived(
-    workspaceSessions.filter((session) => session.status === "archived").length,
+    workspaceSessions.filter((session) => session.placement === "archived").length,
   );
   let railRows = $derived(
     buildSessionRailTree(workspaceSessions, { includeArchived: archivedVisible }),
@@ -114,21 +125,21 @@
         .filter(({ session }) => sessionMatches(session, query))
         .map(({ session }) => session.sessionId),
     );
-    return railRows.filter(
-      (row) =>
-        matched.has(row.session.sessionId) ||
-        (row.parentSessionId ? matched.has(row.parentSessionId) : false) ||
-        (row.ariaLevel === 1 &&
-          railRows.some(
-            (child) =>
-              child.parentSessionId === row.session.sessionId &&
-              matched.has(child.session.sessionId),
-          )),
-    );
+    const byId = new Map(railRows.map((row) => [row.session.sessionId, row]));
+    for (const sessionId of [...matched]) {
+      let current = byId.get(sessionId);
+      const visited = new Set<string>();
+      while (current?.parentSessionId && !visited.has(current.parentSessionId)) {
+        visited.add(current.parentSessionId);
+        matched.add(current.parentSessionId);
+        current = byId.get(current.parentSessionId);
+      }
+    }
+    return railRows.filter((row) => matched.has(row.session.sessionId));
   });
   let grouped = $derived.by(() => {
     const roots = filteredRows
-      .filter((row) => row.ariaLevel === 1)
+      .filter((row) => row.ariaLevel === 1 && !row.orphaned)
       .map(({ session }) => session);
     const groups = groupWorkbenchSessionsByType(roots, {
       channelLabels: messages.channelLabels,
@@ -136,13 +147,7 @@
       labels: messages.sessionTypes,
     }).map((group) => ({
       ...group,
-      rows: group.sessions.flatMap((parent) =>
-        filteredRows.filter(
-          (row) =>
-            row.session.sessionId === parent.sessionId ||
-            row.parentSessionId === parent.sessionId,
-        ),
-      ),
+      rows: group.sessions.flatMap((parent) => subtreeRows(filteredRows, parent.sessionId)),
     }));
     const orphans = filteredRows.filter((row) => row.orphaned);
     return orphans.length > 0
@@ -180,7 +185,7 @@
   }
 
   function activityStatus(session: SessionRecord) {
-    return session.activityStatus ?? session.status;
+    return session.activity ?? "idle";
   }
 
   function displayedActivityStatus(session: SessionRecord) {
@@ -203,21 +208,36 @@
     const presentation = sessionPresentation(session);
     return (
       session.sessionId.toLowerCase().includes(query) ||
-      (session.title ?? "").toLowerCase().includes(query) ||
+      (session.name ?? "").toLowerCase().includes(query) ||
       presentation.title.toLowerCase().includes(query) ||
       (presentation.channel?.label.toLowerCase().includes(query) ?? false) ||
       scopeLabel.includes(query)
     );
   }
 
-  function sideThreadRelation(session: SessionRecord) {
-    return session.relation?.kind === "side_thread" ? session.relation : null;
+  function childRelation(session: SessionRecord) {
+    return session.lineage.kind === "child"
+      ? { ...session.lineage.origin, parentSessionId: session.lineage.parentSessionId }
+      : null;
   }
 
-  function sideThreadLabel(session: SessionRecord) {
-    const relation = sideThreadRelation(session);
+  function childSessionLabel(session: SessionRecord) {
+    const relation = childRelation(session);
     if (!relation) return "";
-    return `${messages.sideThreadRailLabel} • parent=${relation.parentSessionId} • mode=${relation.mode} • generation=${relation.generation} • status=${session.status}`;
+    const generation = "generation" in relation ? ` • generation=${relation.generation}` : "";
+    return `Subsession • origin=${relation.kind} • parent=${relation.parentSessionId}${generation} • lifecycle=${session.lifecycle} • activity=${session.activity ?? "idle"}`;
+  }
+
+  function subtreeRows(
+    rows: WorkbenchSessionRailRow<SessionRecord>[],
+    rootSessionId: string,
+  ) {
+    const start = rows.findIndex((row) => row.session.sessionId === rootSessionId);
+    if (start < 0) return [];
+    const rootLevel = rows[start]!.ariaLevel;
+    let end = start + 1;
+    while (end < rows.length && rows[end]!.ariaLevel > rootLevel) end += 1;
+    return rows.slice(start, end);
   }
 
   function toggleArchived(event: MouseEvent) {
@@ -284,7 +304,7 @@
     {/if}
   </div>
 
-  {#if activeWorkspaceId && !sessionControlAvailable}
+  {#if showUnavailableNotice && activeWorkspaceId && !sessionControlAvailable}
     <div class="session-unavailable" role="status">
       <Icon name="warning" size={15} stroke={2.1} />
       <div>
@@ -320,17 +340,23 @@
           <div class="session-group-items" role="list">
             {#each group.rows as row (row.session.sessionId)}
               {@const session = row.session}
-              {@const relation = sideThreadRelation(session)}
+              {@const relation = childRelation(session)}
               {@const displayedStatus = displayedActivityStatus(session)}
               {@const isSelected = session.sessionId === selectedSessionId}
               {@const presentation = sessionPresentation(session)}
-              {@const destinationSessionId = relation?.parentSessionId ?? session.sessionId}
+              {@const destinationSessionId = session.sessionId}
               {@const canArchive =
                 sessionControlAvailable &&
                 isSelected &&
-                !relation &&
-                session.status !== "archived" &&
+                session.lineage.kind !== "root" &&
+                session.lifecycle === "open" &&
+                session.placement !== "archived" &&
                 !sessionHasChannelBinding(session)}
+              {@const canClose =
+                sessionControlAvailable &&
+                isSelected &&
+                session.lineage.kind !== "root" &&
+                session.lifecycle === "open"}
               <div
                 class="session-item-row"
                 role="listitem"
@@ -340,6 +366,7 @@
                 {#if row.orphaned}
                   <div
                     class="session-item child orphan"
+                    style={`--session-depth: ${Math.max(0, row.ariaLevel - 1)}`}
                     aria-disabled="true"
                     data-parent-session-id={row.parentSessionId}
                   >
@@ -347,17 +374,18 @@
                       <strong>{presentation.title}</strong>
                     </span>
                     <small class="side-thread-meta">
-                      {messages.orphanedSideThreads} • parent={row.parentSessionId} • mode={relation?.mode}
-                      • generation={relation?.generation} • status={session.status}
+                      {messages.orphanedSideThreads} • parent={row.parentSessionId} •
+                      origin={relation?.kind} • lifecycle={session.lifecycle}
                     </small>
                   </div>
                 {:else}
                   <a
                     class="session-item"
                     class:active={isSelected}
-                    class:child={row.ariaLevel === 2}
-                    class:has-action={canArchive}
-                    aria-label={relation ? sideThreadLabel(session) : undefined}
+                    class:child={row.ariaLevel > 1}
+                    class:has-action={canArchive || canClose}
+                    style={`--session-depth: ${Math.max(0, row.ariaLevel - 1)}`}
+                    aria-label={relation ? childSessionLabel(session) : undefined}
                     aria-current={isSelected ? "page" : undefined}
                     href={activeWorkspace
                       ? workspaceSessionPath(activeWorkspace, destinationSessionId)
@@ -374,7 +402,7 @@
                         />
                       {/if}
                       <strong>
-                        {presentation.title}{session.status === "archived"
+                        {presentation.title}{session.placement === "archived"
                           ? ` [${messages.archivedLabel}]`
                           : ""}
                       </strong>
@@ -389,34 +417,49 @@
                       {/if}
                     </span>
                     {#if relation}
-                      <small class="side-thread-meta">{sideThreadLabel(session)}</small>
+                      <small class="side-thread-meta">{childSessionLabel(session)}</small>
                     {:else}
                       <small>{relative(session.activityUpdatedAt ?? session.updatedAt)}</small>
                     {/if}
                   </a>
-                  {#if canArchive}
-                    <form
-                      class="session-archive-form"
-                      method="POST"
-                      action={`${sessionsHref}?/archiveSession`}
-                      use:enhance={() => {
-                        archivingId = session.sessionId;
-                        return async ({ update }) => {
-                          archivingId = null;
-                          await update();
-                        };
-                      }}
-                    >
-                      <input type="hidden" name="sessionId" value={session.sessionId} />
-                      <button
-                        type="submit"
-                        disabled={archivingId === session.sessionId}
-                        aria-label={`${messages.archiveSubmit}: ${sessionTitle(session)}`}
-                        title={messages.archiveSubmit}
-                      >
-                        <Icon name="archive" size={15} stroke={2.1} />
-                      </button>
-                    </form>
+                  {#if canArchive || canClose}
+                    <div class="session-actions">
+                      {#if canArchive}
+                        <form
+                          method="POST"
+                          action={`${sessionsHref}?/archiveSession`}
+                          use:enhance={() => {
+                            archivingId = session.sessionId;
+                            return async ({ update }) => {
+                              archivingId = null;
+                              await update();
+                            };
+                          }}
+                        >
+                          <input type="hidden" name="sessionId" value={session.sessionId} />
+                          <button
+                            type="submit"
+                            disabled={archivingId === session.sessionId}
+                            aria-label={`${messages.archiveSubmit}: ${sessionTitle(session)}`}
+                            title={messages.archiveSubmit}
+                          >
+                            <Icon name="archive" size={15} stroke={2.1} />
+                          </button>
+                        </form>
+                      {/if}
+                      {#if canClose}
+                        <form method="POST" action={`${sessionsHref}?/closeSession`}>
+                          <input type="hidden" name="sessionId" value={session.sessionId} />
+                          <button
+                            type="submit"
+                            aria-label={`${messages.closeSubmit}: ${sessionTitle(session)}`}
+                            title={messages.closeSubmit}
+                          >
+                            <Icon name="close" size={15} stroke={2.1} />
+                          </button>
+                        </form>
+                      {/if}
+                    </div>
                   {/if}
                 {/if}
               </div>
@@ -707,7 +750,7 @@
   }
 
   .session-item.child {
-    margin-left: 18px;
+    margin-left: calc(var(--session-depth, 1) * 18px);
     padding-left: 12px;
   }
 
@@ -726,16 +769,22 @@
   }
 
   .session-item.has-action {
-    padding-right: 42px;
+    padding-right: 76px;
   }
 
-  .session-archive-form {
+  .session-actions {
+    display: flex;
+    gap: 4px;
     position: absolute;
     right: 7px;
     top: 7px;
   }
 
-  .session-archive-form button {
+  .session-actions form {
+    margin: 0;
+  }
+
+  .session-actions button {
     align-items: center;
     background: color-mix(in srgb, var(--color-surface) 82%, transparent);
     border: 1px solid var(--color-border-soft);
@@ -753,15 +802,21 @@
     width: 28px;
   }
 
-  .session-archive-form button:hover {
+  .session-actions button:hover {
     background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface));
     border-color: color-mix(in srgb, var(--color-danger) 28%, var(--color-border));
     color: var(--color-danger);
   }
 
-  .session-archive-form button:focus-visible {
+  .session-actions button:focus-visible {
     box-shadow: var(--shadow-focus);
     outline: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .group-disclosure {
+      transition: none;
+    }
   }
 
   .session-item:hover {

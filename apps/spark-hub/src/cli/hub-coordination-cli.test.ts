@@ -11,6 +11,7 @@ import { test } from "vitest";
 import { TaskGraph } from "@zendev-lab/spark-tasks";
 
 import type { HubCoordinationDaemonClientOptions } from "./coordination-daemon.ts";
+import { workspaceSessionRecord } from "../../../../test/support/session-fixtures.ts";
 import {
   handleSparkHubCliCommand,
   parseSparkHubCliArgs,
@@ -54,6 +55,46 @@ test("parseSparkHubCliArgs routes Hub coordination resources", () => {
   });
 });
 
+test("parseSparkHubCliArgs preserves aliases, delimiters, and parser errors", () => {
+  assert.deepEqual(
+    parseSparkHubCliArgs([
+      "assign",
+      "create",
+      "positional-session",
+      "--goal",
+      " delegated work ",
+      "-s",
+      " managed-session ",
+      "--json",
+    ]),
+    {
+      resource: "assign",
+      verb: "create",
+      json: true,
+      sessionId: "managed-session",
+      goal: "delegated work",
+      title: undefined,
+      role: undefined,
+      workspaceId: undefined,
+    },
+  );
+  assert.deepEqual(parseSparkHubCliArgs(["project", "status", "--", "--help"]), {
+    resource: "project",
+    verb: "status",
+    json: false,
+    limit: undefined,
+    selector: "--help",
+  });
+  assert.throws(
+    () => parseSparkHubCliArgs(["status", "--limit", "not-a-number"]),
+    /--limit must be a number/u,
+  );
+  assert.throws(
+    () => parseSparkHubCliArgs(["status", "--unknown"]),
+    /Unexpected option or subcommand: `--unknown`/u,
+  );
+});
+
 test("spark hub help documents only the Web presentation lifecycle", () => {
   const help = sparkHubHelpText();
   assert.match(help, /spark hub - Spark Hub Web presentation host/u);
@@ -68,69 +109,42 @@ test("spark hub help documents only the Web presentation lifecycle", () => {
   assert.doesNotMatch(help, /spark hub events watch/u);
 });
 
-test("parseSparkHubCliArgs routes workspace access under workspace access", () => {
+test("parseSparkHubCliArgs routes hub access with daemon grants", () => {
   assert.deepEqual(
     parseSparkHubCliArgs([
-      "workspace",
       "access",
       "create",
-      "--workspace",
-      "ws_11111111111141111111111111111111",
+      "--daemon",
+      "rt_1",
+      "--daemon",
+      "rt_2, rt_3",
+      "--user",
+      "reviewer",
       "--label",
       "browser",
       "--json",
     ]),
     {
-      resource: "workspace-access",
+      resource: "access",
       verb: "create",
       json: true,
-      workspaceRef: "ws_11111111111141111111111111111111",
       databasePath: undefined,
       label: "browser",
       tokenId: undefined,
+      daemons: ["rt_1", "rt_2", "rt_3"],
+      user: "reviewer",
     },
   );
-  assert.deepEqual(
-    parseSparkHubCliArgs([
-      "workspace",
-      "access",
-      "revoke",
-      "ws_11111111111141111111111111111111",
-      "watok_1",
-      "--json",
-    ]),
-    {
-      resource: "workspace-access",
-      verb: "revoke",
-      json: true,
-      workspaceRef: "ws_11111111111141111111111111111111",
-      databasePath: undefined,
-      label: undefined,
-      tokenId: "watok_1",
-    },
-  );
+  assert.deepEqual(parseSparkHubCliArgs(["access", "revoke", "hatok_1", "--json"]), {
+    resource: "access",
+    verb: "revoke",
+    json: true,
+    databasePath: undefined,
+    label: undefined,
+    tokenId: "hatok_1",
+    user: undefined,
+  });
 });
-
-test("spark-hub thin bin routes through the TypeScript surface entry", async () => {
-  const bin = fileURLToPath(new URL("../../bin/spark-hub", import.meta.url));
-  const help = await runBin(bin, ["--help"]);
-  assert.equal(help.code, 0);
-  assert.match(help.stdout, /spark-hub web <start\|status\|stop\|logs>/u);
-  assert.match(help.stdout, /"spark hub \.\.\." dispatcher form forwards/u);
-  assert.doesNotMatch(help.stdout, /spark hub access create/u);
-
-  const unknown = await runBin(bin, ["access", "not-a-real-op", "--json"]);
-  assert.notEqual(unknown.code, 0);
-  assert.doesNotMatch(unknown.stderr, /Unknown spark hub command: access/u);
-  assert.match(
-    `${unknown.stdout}${unknown.stderr}`,
-    /unknown spark hub access operation|create, list, or revoke/iu,
-  );
-
-  const missingWeb = await runBin(bin, ["web", "not-a-real-op"]);
-  assert.notEqual(missingWeb.code, 0);
-  assert.match(`${missingWeb.stdout}${missingWeb.stderr}`, /Unknown spark hub web command/u);
-}, 60_000);
 
 test("spark hub status/project/task/goal/artifact/review/workflow expose stable JSON", async () => {
   const fixture = fixtureHubOptions();
@@ -457,16 +471,14 @@ test("spark hub assign submits through the daemon RPC without a side assignment 
   const runtimeDir = join(root, "runtime");
   const submissions: unknown[] = [];
   const now = "2026-07-09T00:00:00.000Z";
-  const session = {
+  const session = workspaceSessionRecord({
     sessionId: "sess_cli_assign",
-    scope: { kind: "workspace" as const, workspaceId: "ws_cli" },
     workspaceId: "ws_cli",
-    title: "CLI assign",
-    status: "ready" as const,
-    bindings: [],
+    supervisorSessionId: "sess_administrator",
+    name: "CLI assign",
     createdAt: now,
     updatedAt: now,
-  };
+  });
   const daemonClient: HubCoordinationDaemonClientOptions = {
     runtimeDir,
     request: async (method, params) => {
@@ -487,7 +499,7 @@ test("spark hub assign submits through the daemon RPC without a side assignment 
       sessionId: session.sessionId,
       goal: "ship the assign path",
       title: "Ship assign",
-      role: "role:reviewer",
+      role: "role:builtin-reviewer",
       workspaceId: "ws_override",
     },
     { graph: new TaskGraph(), daemonClient },
@@ -503,7 +515,7 @@ test("spark hub assign submits through the daemon RPC without a side assignment 
         goal: "ship the assign path",
         target: {
           sessionId: "sess_cli_assign",
-          role: "role:reviewer",
+          role: "role:builtin-reviewer",
           workspaceId: "ws_override",
         },
         constraints: [],
@@ -528,27 +540,6 @@ type AcceptanceInvocation = {
   prompt?: string;
   task?: unknown;
 };
-
-async function runBin(
-  bin: string,
-  args: string[],
-): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  return await new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout?.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      resolve({ code, stdout, stderr });
-    });
-  });
-}
 
 function startHubAcceptanceDaemon(root: string): ChildProcess {
   return spawn(

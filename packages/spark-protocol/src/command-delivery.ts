@@ -16,6 +16,7 @@ import { runtimeProtocolVersion } from "./runtime-v1/envelope.ts";
 import { sparkAssignmentSchema } from "./session-assignment.ts";
 import { assertSparkRuntimeProtocolVersion } from "./version.ts";
 
+export type { ServerCommandPayload };
 export type ServerCommandEnvelope = ReturnType<typeof serverCommandEnvelopeSchema.parse>;
 
 export interface ServerCommandRouting {

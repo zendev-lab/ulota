@@ -1,8 +1,13 @@
-import type { SparkSessionRegistryRecord } from "@zendev-lab/spark-protocol/daemon";
+import {
+  sparkSessionLifetimeForLineage,
+  type SparkSessionState,
+} from "@zendev-lab/spark-protocol/daemon";
 
 import type { DaemonSessionRegistry } from "./session-registry.ts";
 import type { SparkLoopStore } from "./store/loops.ts";
 import type { SparkInvocationStore } from "./store/invocations.ts";
+
+import { errorMessage } from "./text.ts";
 
 export const INACTIVE_UNASSIGNED_SESSION_RETENTION_DAYS = 30;
 export const INACTIVE_UNASSIGNED_SESSION_RETENTION_MS =
@@ -68,7 +73,7 @@ export async function reconcileInactiveSessionRetention(input: {
           requireUnassigned: true,
           now,
         });
-        return { sessionId: session.sessionId, archived: archived.status === "archived" };
+        return { sessionId: session.sessionId, archived: archived.placement === "archived" };
       }),
   );
   const archived: string[] = [];
@@ -94,16 +99,12 @@ export async function reconcileInactiveSessionRetention(input: {
   };
 }
 
-function isUnassignedRetentionCandidate(session: SparkSessionRegistryRecord): boolean {
+function isUnassignedRetentionCandidate(session: SparkSessionState): boolean {
   return (
-    session.status === "ready" &&
-    !session.role?.trim() &&
-    !session.title?.trim() &&
-    !session.relation &&
+    session.lifecycle === "open" &&
+    session.placement === "active" &&
+    sparkSessionLifetimeForLineage(session.lineage) === "scoped" &&
+    session.roleBinding.kind === "none" &&
     session.bindings.length === 0
   );
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

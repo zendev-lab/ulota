@@ -6,8 +6,10 @@ Human contributor setup, development commands, validation, documentation
 ownership, and pull-request conventions are maintained in
 [`CONTRIBUTING.md`](./CONTRIBUTING.md). Do not duplicate them here. Read
 [`README.md`](./README.md) for the public product overview and
-[`SPARK.md`](./SPARK.md) for project intent, goals, non-goals, and current
-direction.
+[`EVOLUTION.md`](./EVOLUTION.md) for project intent, goals, non-goals, and current
+direction. This file is self-contained standing orders. Project Roles, Skills,
+Workflows, and Notes may add task methods, but they must not supply prerequisites
+for interpreting this file.
 
 ## Scope and precedence
 
@@ -15,23 +17,21 @@ direction.
 - A more specific `AGENTS.md`, when present in a subtree, augments or overrides
   this file for that subtree.
 - Follow the user's explicit task and preserve unrelated work.
+- Do not edit implementation or code in the main/default-branch worktree; use a
+  dedicated worktree for changes.
 - Before changing behavior, read the nearest tests and the specification owned
   by that domain.
 - Machine-readable inventories and enforced contracts are authoritative over
   copied prose.
+- Keep facts in one authoritative home and link to them instead of copying.
 
 ## Sources of truth
 
-- Package layer, owner, stability, dependency, and state-writer metadata:
+- Package layer, owner, stability, state-writer metadata, dependency exceptions,
+  Pi ownership, and package budget:
   [`architecture/packages.json`](./architecture/packages.json).
-- Package creation and dependency direction:
-  [`docs/specs/package-architecture.md`](./docs/specs/package-architecture.md).
-- Command placement and state ownership:
-  [`docs/specs/command-planes.md`](./docs/specs/command-planes.md).
 - Public behavior and current commands: [`apps/spark-docs`](./apps/spark-docs).
-- Internal contracts and operator procedures:
-  [`docs/README.md`](./docs/README.md).
-- Project intent and open design direction: [`SPARK.md`](./SPARK.md).
+- Project intent and open design direction: [`EVOLUTION.md`](./EVOLUTION.md).
 
 ## Repository-wide invariants
 
@@ -42,16 +42,18 @@ direction.
 - Hub owns cross-workspace registry, delegation, delivery, idempotency, audit,
   and bounded receipts. It does not own target execution, repositories, local
   artifacts, or internal evidence.
-- TUI, the Hub Web UI, channels, ACP, RPC, and compatibility transports are
-  presentations or adapters. They must translate through owner APIs and must
-  not infer execution state from prompts, transcript text, elapsed time, or
+- Local web presents every workspace bound to this daemon. Hub proxies many
+  daemons and adds auth, registry, audit, and remote access. Channels, ACP, RPC,
+  and other transports are adapters. They must translate through owner APIs and
+  must not infer execution state from prompts, transcript text, elapsed time, or
   frontend timers.
 - Dependencies point inward: applications may depend on composition, clients,
   capabilities, runtimes, contracts, and foundations; lower layers must not
   import application internals or product-private adapters.
-- `packages/spark-extension` is the single Spark product composition root.
-  Retain the Pi SDK kernel behind Spark boundaries; do not recreate a separate
-  Pi product facade or duplicate extension implementation.
+- The daemon's internal product modules are the single Spark product
+  composition root. Retain the Pi SDK kernel behind Spark boundaries; do not
+  create a second composition package, a Spark extension discovery path, or a
+  Spark-owned `package.json#pi` discovery path.
 - Cross-surface schemas and semantics belong in `spark-protocol`. Transports
   validate and translate them; they do not define competing behavior.
 - Public tools use canonical `tool({ action })` surfaces when actions share one
@@ -63,28 +65,29 @@ direction.
   stack; individual stack entries are not separate Artifact refs.
 - Serialized state and compatibility markers change only through an explicit,
   idempotent migration with compatibility tests.
-- Do not commit secrets, `.env` files, `.spark/`, `.spark/memory/`, or legacy
-  `.learnings/` runtime state.
+- Do not commit secrets, `.env` files, `.spark/`, `.spark/memory/`,
+  `.agents/worktrees/`, or legacy `.learnings/` runtime state.
 - Workspace runtime state belongs under `.spark/`. User-level paths resolve
   through explicit `SPARK_HOME` or the standard XDG roots; public agent assets
   remain under `$HOME/.agents/`, and project assets under `.agents/`.
+  Version `.agents/{roles,skills,workflows}`; leave `.agents/worktrees/` local.
 
 ## Change protocol
 
-1. Identify the authoritative owner before editing.
-2. Inspect the relevant specification, package README, nearby tests, and
-   machine-readable inventory.
-3. Make the smallest change that preserves dependency and state ownership.
-4. Move shared validation or semantics into the existing owner or protocol
-   before adding another surface adapter.
-5. Add focused tests for behavior, failure, compatibility, and every newly
-   reachable state.
-6. Update the public guide, normative specification, or operation that owns any
-   changed behavior. Link instead of copying.
-7. Follow the validation matrix in
-   [`CONTRIBUTING.md`](./CONTRIBUTING.md#validation) and report exactly what ran.
-8. Review the final diff for unrelated edits, generated output, secrets,
-   runtime state, and accidental package-boundary changes.
+Use the workflow and validation matrix in
+[`CONTRIBUTING.md`](./CONTRIBUTING.md#change-workflow). Resolve routine details
+from the owning code and contracts, and continue work within the user's scope.
+Ask only when a missing decision materially changes behavior, authority, or
+irreversible cost; continue independent work while that decision is pending.
+
+Test observable behavior and boundaries. Do not assert source, prompt, or prose
+wording through substrings, snapshots, or hashes unless the exact representation
+is an intentional serialization, rendering, identity, or integrity contract.
+Run applicable required checks; repeat or broaden them only for new changes,
+failures, or unresolved risks. Report what ran and what remains unverified.
+
+For a PR, use an English title in the repository's required format and follow
+[`CONTRIBUTING.md`](./CONTRIBUTING.md#pull-requests) for the body template.
 
 ## Architecture discipline
 
@@ -93,12 +96,6 @@ or experimental-lifecycle boundary. Otherwise add a module to the existing
 owner. Any workspace addition, removal, rename, or ownership change must update
 `architecture/packages.json`.
 
-Hub-private packages use physical `spark-hub-*` names. They may be used by Hub
-but not by the daemon or shared Spark packages. Compatibility reads for retired
-Cockpit state remain inside the current Hub owner and receive no new behavior.
-Shared packages must not import concrete internals from `apps/spark-cli`,
-`apps/spark-tui`, `apps/spark-daemon`, or `apps/spark-hub`.
-
 Compatibility adapters require explicit exit criteria and receive no new
 product behavior. Do not introduce an overlapping framework or service unless
 an isolated, default-disabled experiment proves the current owner cannot meet a
@@ -106,15 +103,11 @@ measured requirement.
 
 ## Documentation discipline
 
-Use the ownership table in
-[`CONTRIBUTING.md`](./CONTRIBUTING.md#documentation-ownership). In particular:
-
-- keep `README.md` stable and user-oriented;
-- keep exhaustive commands and workflows in `apps/spark-docs`;
-- keep normative behavior in `docs/specs`;
-- keep operator procedures in `docs/operations`;
-- keep temporary migration status and open design direction in `SPARK.md`;
-- keep this file limited to stable coding-agent constraints.
+Follow the documentation ownership table in
+[`CONTRIBUTING.md`](./CONTRIBUTING.md#documentation-ownership).
+Keep this file limited to stable, self-contained standing orders; reusable
+methods belong in their Role, Skill, Workflow, or Note owner without making
+standing orders depend on those assets.
 
 When changing public documentation, update English and Chinese pages together.
 Do not modify archived versions unless the task explicitly targets an archive.

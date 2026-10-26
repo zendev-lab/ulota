@@ -2,17 +2,16 @@ import {
   parseSparkAuthFlow,
   parseSparkAuthImportReport,
   parseSparkModelControlSnapshot,
+  requireSparkEnabledModelsWriteIntent,
   sparkThinkingLevelOptions,
   type SparkAuthFlow,
   type SparkAuthImportReport,
+  type SparkEnabledModelsWriteIntent,
   type SparkModelControlSnapshot,
   type SparkModelRef,
   type SparkThinkingLevel,
 } from "./model-control.ts";
-import {
-  parseSparkSessionRegistryRecord,
-  type SparkSessionRegistryRecord,
-} from "./session-assignment.ts";
+import { parseSparkSessionProjection, type SparkSessionProjection } from "./session-assignment.ts";
 
 /**
  * Transport-agnostic model/auth control client. Surfaces inject local RPC or
@@ -23,9 +22,13 @@ export type SparkModelControlTransport = (method: string, params?: unknown) => P
 export interface SparkModelControlClient {
   readonly sessionId?: string;
   snapshot(params?: Record<string, string>): Promise<SparkModelControlSnapshot>;
-  setSessionModel(model: SparkModelRef): Promise<SparkSessionRegistryRecord>;
-  setSessionThinkingLevel(thinkingLevel: SparkThinkingLevel): Promise<SparkSessionRegistryRecord>;
+  setSessionModel(model: SparkModelRef): Promise<SparkSessionProjection>;
+  setSessionThinkingLevel(thinkingLevel: SparkThinkingLevel): Promise<SparkSessionProjection>;
   setDefaultModel(model: SparkModelRef): Promise<SparkModelControlSnapshot>;
+  setEnabledModels(
+    models: readonly SparkModelRef[],
+    intent?: SparkEnabledModelsWriteIntent,
+  ): Promise<SparkModelControlSnapshot>;
   setApiKey(
     providerName: string,
     apiKey: string,
@@ -75,19 +78,26 @@ export function createSparkModelControlClient(
     setSessionModel: async (model) => {
       if (!sessionId) throw new Error("Session-scoped model control requires a session id.");
       await ensureSession();
-      return parseSparkSessionRegistryRecord(
+      return parseSparkSessionProjection(
         await transport("session.model.set", { sessionId, model }),
       );
     },
     setSessionThinkingLevel: async (thinkingLevel) => {
       if (!sessionId) throw new Error("Session-scoped thinking control requires a session id.");
       await ensureSession();
-      return parseSparkSessionRegistryRecord(
+      return parseSparkSessionProjection(
         await transport("session.thinking.set", { sessionId, thinkingLevel }),
       );
     },
     setDefaultModel: async (model) =>
       parseSparkModelControlSnapshot(await transport("model.default.set", { model })),
+    setEnabledModels: async (models, intent) =>
+      parseSparkModelControlSnapshot(
+        await transport("model.enabled.set", {
+          models,
+          intent: requireSparkEnabledModelsWriteIntent(intent),
+        }),
+      ),
     setApiKey: async (providerName, apiKey, extra) =>
       parseSparkModelControlSnapshot(
         await transport("provider.auth.api-key.set", { providerName, apiKey, ...extra }),

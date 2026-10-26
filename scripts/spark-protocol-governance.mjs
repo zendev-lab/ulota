@@ -4,6 +4,14 @@ import { extname } from "node:path";
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
 
+export const SPARK_PROTOCOL_SUBPATHS = [
+  "domain",
+  "daemon",
+  "runtime",
+  "interaction",
+  "presentation",
+];
+
 export const SPARK_PROTOCOL_ROOT_SPECIFIER = "@zendev-lab/spark-protocol";
 
 const PRODUCTION_SOURCE_EXTENSIONS = new Set([

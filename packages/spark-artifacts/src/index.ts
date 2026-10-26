@@ -1,8 +1,14 @@
 import { randomUUID, createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import { writeJsonFileAtomic, writeTextFileAtomic } from "@zendev-lab/spark-core";
-import { isArtifactKind } from "./artifact/types.ts";
+import {
+  writeJsonFileAtomic,
+  writeTextFileAtomic,
+} from "@zendev-lab/spark-platform-node/json-files";
+import {
+  sparkWorkspaceStatePath,
+  type SparkStateRootContext,
+} from "@zendev-lab/spark-platform-node/paths";
 
 export { writeJsonFileAtomic, writeTextFileAtomic };
 
@@ -558,8 +564,8 @@ function evidenceListDiagnostic(filePath: string, error: unknown): EvidenceListD
  * `.spark/evidence`. Artifact issue/git_change/document live under `.spark/artifacts`
  * and are never scanned by this store.
  */
-export function defaultEvidenceStore(cwd: string): EvidenceStore {
-  return new EvidenceStore({ rootDir: join(cwd, ".spark", "evidence") });
+export function defaultEvidenceStore(cwd: string, ctx?: SparkStateRootContext): EvidenceStore {
+  return new EvidenceStore({ rootDir: sparkWorkspaceStatePath(cwd, ["evidence"], ctx) });
 }
 
 export async function readEvidenceMetadataFile(filePath: string): Promise<EvidenceRecord> {
@@ -981,8 +987,20 @@ function previewBody(serializedBody: string, previewChars: number): string {
 }
 
 function serializeEvidenceBody(format: EvidenceFormat, body: JsonValue | string): string {
+  if (format === "json") {
+    // JSON Evidence is content-addressed and must always contain valid JSON.
+    // Accept legacy callers that passed pre-serialized JSON, while converting
+    // ordinary strings into a valid JSON string instead of writing raw bytes.
+    if (typeof body === "string") {
+      try {
+        return JSON.stringify(JSON.parse(body), null, 2);
+      } catch {
+        return JSON.stringify(body, null, 2);
+      }
+    }
+    return JSON.stringify(body, null, 2);
+  }
   if (typeof body === "string") return body;
-  if (format === "json") return JSON.stringify(body, null, 2);
   return JSON.stringify(body, null, 2);
 }
 
@@ -1086,6 +1104,7 @@ export {
   ARTIFACT_KINDS,
   ARTIFACT_FORMATS,
   ARTIFACT_PROJECTION_MAX_INLINE_BYTES,
+  GIT_CHECKS_VERDICTS,
   ArtifactStore,
   ArtifactValidationError,
   applyWorktreeToPrBody,
@@ -1123,9 +1142,13 @@ export {
   type GitChangeArtifactBody,
   type GitChangeEntry,
   type GitChangeLifecycle,
+  type GitRevisionMaterializationAction,
+  type GitRevisionMaterializationState,
   type GitChangeRepository,
   type GitChangeStack,
   type GitChangeWorktreeStatus,
+  type GitChecksVerdict,
+  type GitPullRequestCheck,
   type GitPullRequestSnapshot,
   type ForgeIssueSnapshot,
   type ForgePrSnapshot,
@@ -1177,9 +1200,11 @@ export {
 } from "./artifact/file-sync.ts";
 
 export {
+  GIT_SUBMIT_REQUIRED_CHECKS_TIMEOUT_MS,
   GitLifecycleError,
   GitLifecycleService,
   defaultGitCommandRunner,
+  gitHubRepositoryFromRemote,
   type AdoptGitChangeInput,
   type CheckoutGitChangeInput,
   type CommitGitChangeInput,
@@ -1196,3 +1221,12 @@ export {
 } from "./git/extension.ts";
 
 export { requireCurrentLensPass } from "./git/verification-gate.ts";
+
+export {
+  GitRevisionMaterializationService,
+  type ApplyCandidateRevisionInput,
+  type CreateCandidateRevisionInput,
+  type GitRevisionMaterializationInput,
+  type GitRevisionMaterializationResult,
+  type GitRevisionMaterializationServiceOptions,
+} from "./git/revision-materialization.ts";

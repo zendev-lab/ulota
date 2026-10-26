@@ -2,6 +2,7 @@ export {
   DEFAULT_INVOCATION_ABORT_DRAIN_MS,
   DEFAULT_INVOCATION_SCHEDULER_CONCURRENCY,
   DEFAULT_INVOCATION_TASK_TIMEOUT_MS,
+  INVOCATION_SCHEDULER_QUESTION_OVERFLOW,
   InvocationCancelledError,
   InvocationTimeoutError,
   SparkInvocationScheduler,
@@ -14,19 +15,24 @@ export type {
   SparkDaemonLifecycleState,
   SparkDaemonDrainProgress,
   SparkDaemonDrainStage,
+  SparkDaemonDrainPauseState,
   SparkDaemonDrainWork,
   SparkDaemonProcessIdentity,
   SparkDaemonRestartRequestResult,
 } from "./lifecycle.ts";
 export { SparkDaemonInvocationRegistry } from "./invocations.ts";
 export type { SparkDaemonInvocationHandle, SparkDaemonInvocationRecord } from "./invocations.ts";
-export { SparkDaemonHumanInteractionBroker } from "./human-interactions.ts";
+export {
+  SparkDaemonHumanInteractionBroker,
+  renderSparkDaemonSessionAskDeliveryBody,
+} from "./human-interactions.ts";
 export type {
   SparkDaemonHumanInteractionBrokerOptions,
   SparkDaemonHumanInteractionContext,
   SparkDaemonHumanInteractionOpened,
   SparkDaemonHumanInteractionResponder,
   SparkDaemonHumanInteractionResponseInput,
+  SparkDaemonSessionAskDelivery,
 } from "./human-interactions.ts";
 export { acquireSparkDaemonLock, readSparkDaemonLock } from "./lock.ts";
 export type {
@@ -43,12 +49,17 @@ export {
 export type { SparkDaemonPathOptions } from "./paths.ts";
 export { createSparkDaemonSignals } from "./signals.ts";
 export type { SparkDaemonSignals } from "./signals.ts";
-export { getSparkDaemonTaskSessionId, validateSparkDaemonTask } from "./types.ts";
+export {
+  getSparkDaemonTaskSessionId,
+  SPARK_SESSION_COMPACT_PROMPT,
+  validateSparkDaemonTask,
+} from "./types.ts";
 export type {
   SparkDaemonEventSink,
   SparkDaemonLoopEvaluationResult,
   SparkDaemonLoopEvaluationTask,
   SparkDaemonLoopTickTask,
+  SparkDaemonSessionCompactTask,
   SparkDaemonSessionRunTask,
   SparkDaemonTask,
   SparkDaemonTaskExecutionContext,

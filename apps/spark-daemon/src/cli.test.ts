@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { runtimeProtocolVersion } from "@zendev-lab/spark-protocol";
-import { gitCommand, resolveSparkPaths } from "@zendev-lab/spark-system";
+import { gitCommand, resolveSparkPaths } from "@zendev-lab/spark-platform-node";
 import { main, sparkDaemonServiceExitCode, type CliIo } from "./cli.js";
 import { sparkDaemonEntrypointFingerprint } from "./build-reload.ts";
 import { readSparkDaemonConfig, writeSparkDaemonConfig } from "./config.js";
@@ -14,6 +14,7 @@ import { RegistrationGrantRefusedError } from "./registration.js";
 import { getSparkDaemonServerProfile, upsertSparkDaemonServerProfile } from "./server-profiles.js";
 import { publishSparkDaemonProcessOwnership } from "./service.js";
 import { openSparkDaemonDatabase } from "./store/schema.js";
+import { gitEnvironmentWithoutRepository, gitRepositoryArguments } from "./test-support/git.ts";
 import {
   addWorkspace,
   applyWorkspaceLifecycleMutation,
@@ -235,6 +236,16 @@ describe("Spark daemon CLI", () => {
     expect(capture.stderr()).toBe("");
   });
 
+  it("rejects unknown top-level commands with exit 2", async () => {
+    const capture = createCliIo();
+
+    await expect(main(["not-a-daemon-command"], capture.io)).resolves.toBe(2);
+
+    expect(capture.stderr()).toContain("error [UNKNOWN_COMMAND]");
+    expect(capture.stderr()).toContain("spark daemon --help");
+    expect(capture.stdout()).toBe("");
+  });
+
   it("lists pending daemon human interactions through the public CLI", async () => {
     const humanInteractionListFromService = vi.fn(
       async (
@@ -377,7 +388,7 @@ describe("Spark daemon CLI", () => {
   it("doctor reports daemon, credential, workspace, and hub checks", async () => {
     const capture = createCliIo();
 
-    const code = await withTempSparkEnv(async () => await main(["doctor"], capture.io));
+    const code = await withTempSparkEnv(async () => await main(["doctor", "--json"], capture.io));
 
     expect(code).toBe(0);
     const payload = JSON.parse(capture.stdout()) as {
@@ -390,7 +401,38 @@ describe("Spark daemon CLI", () => {
     expect(capture.stderr()).toBe("");
   });
 
-  it("requires an explicit server URL for scripted workspace registration", async () => {
+  it("doctor prints concise readable checks by default", async () => {
+    const capture = createCliIo();
+
+    const code = await withTempSparkEnv(async () => await main(["doctor"], capture.io));
+
+    expect(code).toBe(0);
+    const output = capture.stdout();
+    expect(output).toMatch(/^Spark \d/);
+    expect(output).toContain("daemon: ");
+    expect(output).toContain("credentials: ");
+    expect(output).toContain("workspace: ");
+    expect(output).toContain("hub: ");
+    expect(output).toContain("config: ");
+    expect(output).not.toMatch(/^\s*[{[]/);
+    expect(capture.stderr()).toBe("");
+  });
+
+  it("status prints a concise readable summary by default", async () => {
+    const capture = createCliIo();
+
+    const code = await withTempSparkEnv(async () => await main(["status"], capture.io));
+
+    expect(code).toBe(0);
+    const output = capture.stdout();
+    expect(output).toContain("daemon: not running");
+    expect(output).toMatch(/servers: \d+ enrolled, \d+ connected/);
+    expect(output).toMatch(/workspaces: \d+/);
+    expect(output).not.toMatch(/^\s*[{[]/);
+    expect(capture.stderr()).toBe("");
+  });
+
+  it("requires daemon login before a Hub workspace token", async () => {
     const capture = createCliIo();
 
     const code = await withTempSparkEnv(async (root) => {
@@ -400,7 +442,36 @@ describe("Spark daemon CLI", () => {
     });
 
     expect(code).toBe(1);
-    expect(capture.stderr()).toContain("Missing server URL");
+    expect(capture.stderr()).toContain("spark daemon login --server-url");
+  });
+
+  it("registers a local daemon workspace without a Hub origin", async () => {
+    const capture = createCliIo();
+
+    await withTempSparkEnv(async (root) => {
+      const checkout = join(root, "checkout");
+      mkdirSync(checkout);
+      process.env.INIT_CWD = root;
+      await expect(
+        main(["ws", "register", "checkout", "--name", "Local", "--no-service"], capture.io),
+      ).resolves.toBe(0);
+      expect(capture.stdout()).toContain("✓ workspace 'Local' registered");
+      expect(capture.stdout()).toContain("server   —");
+      expect(capture.stdout()).toContain("Local daemon workspace");
+
+      const listCapture = createCliIo();
+      await expect(main(["ws", "ls", "--json", "--no-service"], listCapture.io)).resolves.toBe(0);
+      const [workspace] = JSON.parse(listCapture.stdout()) as Array<{
+        name: string;
+        serverUrl: string;
+        path: string;
+      }>;
+      expect(workspace).toMatchObject({
+        name: "Local",
+        serverUrl: "",
+        path: realpathSync(checkout),
+      });
+    });
   });
 
   it("accepts the workspace registration token environment variable", async () => {
@@ -1120,17 +1191,18 @@ describe("Spark daemon CLI", () => {
     });
   });
 
-  it("prompts for the full workspace registration form interactively", async () => {
+  it("prompts for the local workspace registration form interactively", async () => {
     await withTempSparkEnv(async (root) => {
       process.env.INIT_CWD = root;
       const capture = createCliIo({
-        stdin: interactiveStdin(["", "http://127.0.0.1:5173", "spark_wsreg_interactive", "Spore"]),
+        stdin: interactiveStdin(["", "Spore"]),
       });
 
       await expect(main(["ws", "register"], capture.io)).resolves.toBe(0);
 
       expect(capture.stdout()).toContain("✓ workspace 'Spore' registered");
-      expect(capture.stdout()).toContain("server   http://127.0.0.1:5173/");
+      expect(capture.stdout()).toContain("server   —");
+      expect(capture.stdout()).toContain("Local daemon workspace");
 
       const listCapture = createCliIo();
       await expect(main(["ws", "ls", "--json"], listCapture.io)).resolves.toBe(0);
@@ -1138,11 +1210,13 @@ describe("Spark daemon CLI", () => {
         name: string;
         slug: string;
         path: string;
+        serverUrl: string;
       }>;
       expect(workspace).toMatchObject({
         name: "Spore",
         slug: "spore",
         path: realpathSync(root),
+        serverUrl: "",
       });
     });
   });
@@ -1648,7 +1722,7 @@ describe("Spark daemon CLI", () => {
     await withTempSparkEnv(async (root) => {
       const workspacePath = join(root, "checkout");
       mkdirSync(workspacePath, { recursive: true });
-      const profile = createGitProfile(workspacePath);
+      const profile = createCommittedGitProfile(workspacePath);
       process.env.INIT_CWD = root;
       writeSparkDaemonConfig(resolveSparkPaths({ app: "daemon" }), testSparkDaemonConfig());
 
@@ -1694,13 +1768,13 @@ describe("Spark daemon CLI", () => {
 
   it("asks before importing a detected workspace profile in interactive registration", async () => {
     const capture = createCliIo({
-      stdin: interactiveStdin(["checkout", "", "spark_wsreg_interactive", "", "y"]),
+      stdin: interactiveStdin(["checkout", "", "y"]),
     });
 
     await withTempSparkEnv(async (root) => {
       const workspacePath = join(root, "checkout");
       mkdirSync(workspacePath, { recursive: true });
-      const profile = createGitProfile(workspacePath);
+      createProfileFiles(workspacePath);
       process.env.INIT_CWD = root;
       writeSparkDaemonConfig(resolveSparkPaths({ app: "daemon" }), testSparkDaemonConfig());
 
@@ -1713,12 +1787,10 @@ describe("Spark daemon CLI", () => {
       const detail = JSON.parse(showCapture.stdout()) as {
         profile?: {
           ref: string;
-          commit: string;
         };
       };
       expect(detail.profile).toMatchObject({
         ref: "./spark-profile",
-        commit: profile.commit,
       });
     });
   });
@@ -1729,7 +1801,7 @@ describe("Spark daemon CLI", () => {
     await withTempSparkEnv(async (root) => {
       const workspacePath = join(root, "checkout");
       mkdirSync(workspacePath, { recursive: true });
-      createGitProfile(workspacePath);
+      createProfileFiles(workspacePath);
       process.env.INIT_CWD = root;
       writeSparkDaemonConfig(resolveSparkPaths({ app: "daemon" }), testSparkDaemonConfig());
 
@@ -1863,7 +1935,7 @@ describe("Spark daemon CLI", () => {
     }
   });
 
-  it("requires a one-time token before every workspace registration", async () => {
+  it("requires a workspace token to announce a Hub projection", async () => {
     const capture = createCliIo();
 
     await withTempSparkEnv(async (root) => {
@@ -1877,9 +1949,21 @@ describe("Spark daemon CLI", () => {
       });
 
       await expect(
-        main(["ws", "register", "checkout", "--name", "Spark Dev", "--no-service"], capture.io),
+        main(
+          [
+            "ws",
+            "register",
+            "checkout",
+            "--name",
+            "Spark Dev",
+            "--server-url",
+            "http://127.0.0.1:5173",
+            "--no-service",
+          ],
+          capture.io,
+        ),
       ).resolves.toBe(1);
-      expect(capture.stderr()).toContain("requires a new one-time workspace token");
+      expect(capture.stderr()).toContain("Pass --token to announce a Hub projection");
 
       const listCapture = createCliIo();
       await expect(main(["ws", "ls", "--json", "--no-service"], listCapture.io)).resolves.toBe(0);
@@ -1887,7 +1971,7 @@ describe("Spark daemon CLI", () => {
     });
   });
 
-  it("reuses machine connectivity only after receiving a new workspace token", async () => {
+  it("passes the workspace enrollment token through to service registration", async () => {
     const registerWorkspaceInService = vi.fn(
       async (
         _paths: ReturnType<typeof resolveSparkPaths>,
@@ -1901,12 +1985,6 @@ describe("Spark daemon CLI", () => {
         status: "available" as const,
         capabilities: {},
         diagnostics: {},
-        workspaceAuthorization: {
-          workspaceId: "ws_11111111111141111111111111111111",
-          workspaceSlug: "profile-workspace",
-          oneTimeToken: "spark_workspace_auth_11111111111111111111111111111111",
-          expiresAt: "2026-07-13T00:10:00.000Z",
-        },
         updatedAt: "2026-07-13T00:00:00.000Z",
       }),
     );
@@ -1946,8 +2024,6 @@ describe("Spark daemon CLI", () => {
           registrationToken: "spark_wsreg_profile_workspace",
         }),
       );
-      expect(capture.stdout()).toContain("http://127.0.0.1:5173/profile-workspace/login");
-      expect(capture.stdout()).toContain("spark_workspace_auth_11111111111111111111111111111111");
     });
   });
 
@@ -2535,6 +2611,33 @@ describe("Spark daemon CLI", () => {
     });
   });
 
+  it("atomically raises startup-only root invocation concurrency without losing config", async () => {
+    await withTempSparkEnv(async () => {
+      const paths = resolveSparkPaths({ app: "daemon" });
+      writeSparkDaemonConfig(
+        paths,
+        testSparkDaemonConfig({ invocationConcurrency: 5, runtimeToken: "secret-to-preserve" }),
+      );
+      const capture = createCliIo();
+
+      await expect(
+        main(["daemon", "configure", "--invocation-concurrency", "8", "--json"], capture.io),
+      ).resolves.toBe(0);
+
+      expect(JSON.parse(capture.stdout())).toEqual({
+        action: "configure",
+        invocationConcurrency: 8,
+        appliesOn: "next_start",
+        restartRequired: false,
+      });
+      expect(readSparkDaemonConfig(paths)).toMatchObject({
+        invocationConcurrency: 8,
+        runtimeToken: "secret-to-preserve",
+      });
+      expect(capture.stderr()).toBe("");
+    });
+  });
+
   it("projects an armed durable restart while the daemon pid is temporarily absent", async () => {
     await withTempSparkEnv(async () => {
       const paths = resolveSparkPaths({ app: "daemon" });
@@ -2551,7 +2654,7 @@ describe("Spark daemon CLI", () => {
           previousProcessStartToken: "test:old",
           targetInstanceId: "new-instance",
           targetGeneration: "new-generation",
-          protocolVersion: 1,
+          protocolVersion: 4,
           requestedAt: "2026-07-17T00:01:00.000Z",
         }),
       );
@@ -2594,7 +2697,7 @@ describe("Spark daemon CLI", () => {
           previousProcessStartToken: "test:old",
           targetInstanceId: "new-instance",
           targetGeneration: "new-generation",
-          protocolVersion: 1,
+          protocolVersion: 4,
           requestedAt: "2026-07-17T00:01:00.000Z",
         }),
       );
@@ -2637,6 +2740,11 @@ describe("Spark daemon CLI", () => {
         ],
         invocations: { queued: 0, running: 0, succeeded: 0, failed: 0, cancelled: 0 },
         invocationHealth: {},
+        execution: {
+          backend: "in_process" as const,
+          rootConcurrency: 8,
+          questionOverflow: 1 as const,
+        },
         lifecycle: { state: "running" as const },
       }));
 
@@ -2647,6 +2755,7 @@ describe("Spark daemon CLI", () => {
         pid: number;
         stateDbPath: string;
         servers: Array<{ url: string; workspaceCount: number; wsConnected: boolean }>;
+        execution: { backend: string; rootConcurrency: number; questionOverflow: number };
       };
       expect(status).toMatchObject({
         running: true,
@@ -2659,11 +2768,15 @@ describe("Spark daemon CLI", () => {
             wsConnected: false,
           },
         ],
+        execution: { backend: "in_process", rootConcurrency: 8, questionOverflow: 1 },
       });
 
       const textCapture = createCliIo({ daemonStatusFromService });
       await expect(main(["daemon", "status"], textCapture.io)).resolves.toBe(0);
       expect(textCapture.stdout()).toContain("running");
+      expect(textCapture.stdout()).toContain(
+        "in_process · 8 root concurrency · 1 question overflow",
+      );
       expect(textCapture.stdout()).toContain("registered       1 workspaces across 1 servers");
     });
   });
@@ -2747,7 +2860,7 @@ describe("Spark daemon CLI", () => {
       }));
 
       const capture = createCliIo({ daemonStatusFromService });
-      await expect(main(["status"], capture.io)).resolves.toBe(0);
+      await expect(main(["status", "--json"], capture.io)).resolves.toBe(0);
 
       expect(daemonStatusFromService).toHaveBeenCalledOnce();
       expect(JSON.parse(capture.stdout())).toMatchObject({
@@ -2788,7 +2901,7 @@ describe("Spark daemon CLI", () => {
       }));
 
       const capture = createCliIo({ daemonStatusFromService });
-      await expect(main(["status"], capture.io)).resolves.toBe(0);
+      await expect(main(["status", "--json"], capture.io)).resolves.toBe(0);
 
       const status = JSON.parse(capture.stdout()) as Record<string, unknown>;
       expect(status).not.toHaveProperty("runtimeId");
@@ -3061,7 +3174,7 @@ describe("Spark daemon CLI", () => {
     }
   });
 
-  it("schedules a drain restart without waiting by default", async () => {
+  it("schedules a drain restart without waiting when --no-wait is set", async () => {
     await withTempSparkEnv(async () => {
       const paths = resolveSparkPaths({ app: "daemon" });
       mkdirSync(paths.runtimeDir, { recursive: true });
@@ -3093,13 +3206,60 @@ describe("Spark daemon CLI", () => {
         daemonStatusFromService,
       });
 
-      await expect(main(["daemon", "restart", "--yes"], capture.io)).resolves.toBe(0);
+      await expect(main(["daemon", "restart", "--yes", "--no-wait"], capture.io)).resolves.toBe(0);
 
       expect(daemonRestartFromService).toHaveBeenCalledOnce();
       expect(daemonStopFromService).not.toHaveBeenCalled();
       expect(daemonStatusFromService).not.toHaveBeenCalled();
       expect(capture.stdout()).toContain("draining active invocations");
       expect(capture.stdout()).toContain("Replacement will start after active work finishes");
+      expect(capture.stderr()).toBe("");
+    });
+  });
+
+  it("waits for a stable successor by default on restart --yes", async () => {
+    await withTempSparkEnv(async () => {
+      const paths = resolveSparkPaths({ app: "daemon" });
+      mkdirSync(paths.runtimeDir, { recursive: true });
+      writeFileSync(paths.pidFile, `${process.pid}\n`);
+      const daemonRestartFromService = vi.fn(async () => {
+        writeFileSync(paths.pidFile, `${process.ppid}\n`);
+        return {
+          accepted: true as const,
+          state: "draining" as const,
+          restartId: "restart-default-wait",
+          processInstanceId: "old-instance",
+          processGeneration: "old-generation",
+          targetInstanceId: "new-instance",
+          targetGeneration: "new-generation",
+          requestedAt: "2026-07-15T00:00:00.000Z",
+        };
+      });
+      const daemonStatusFromService = vi.fn(async () => ({
+        servers: [],
+        invocations: { queued: 0, running: 0, succeeded: 0, failed: 0, cancelled: 0 },
+        invocationHealth: {},
+        lifecycle: {
+          state: "running" as const,
+          process: {
+            pid: process.ppid,
+            instanceId: "new-instance",
+            generation: "new-generation",
+            protocolVersion: 4 as const,
+            startedAt: "2026-07-15T00:00:01.000Z",
+            acceptedRestartId: "restart-default-wait",
+          },
+        },
+        observedAt: "2026-07-15T00:00:01.000Z",
+      }));
+      const capture = createCliIo({ daemonRestartFromService, daemonStatusFromService });
+
+      await expect(main(["daemon", "restart", "--yes"], capture.io)).resolves.toBe(0);
+
+      expect(daemonRestartFromService).toHaveBeenCalledOnce();
+      expect(daemonStatusFromService).toHaveBeenCalledOnce();
+      expect(capture.stdout()).toContain(`Spark daemon restarted as process ${process.ppid}.`);
+      expect(capture.stdout()).not.toContain("Replacement will start after active work finishes");
       expect(capture.stderr()).toBe("");
     });
   });
@@ -3132,24 +3292,51 @@ describe("Spark daemon CLI", () => {
       const paths = resolveSparkPaths({ app: "daemon" });
       mkdirSync(paths.runtimeDir, { recursive: true });
       writeFileSync(paths.pidFile, `${process.pid}\n`);
-      const daemonRestartFromService = vi.fn(async () => ({
-        accepted: true as const,
-        state: "draining" as const,
-        restartId: "restart-build-sync",
-        processInstanceId: "old-instance",
-        processGeneration: "old-generation",
-        targetInstanceId: "new-instance",
-        targetGeneration: "new-generation",
-        requestedAt: "2026-07-24T00:00:00.000Z",
-      }));
-      const daemonStatusFromService = vi.fn(async () => ({
-        servers: [],
-        invocations: { queued: 0, running: 0, succeeded: 0, failed: 0, cancelled: 0 },
-        invocationHealth: {},
-        lifecycle: { state: "running" as const },
-        buildFingerprint: "sha256:older",
-        observedAt: "2026-07-24T00:00:00.000Z",
-      }));
+      const daemonRestartFromService = vi.fn(async () => {
+        writeFileSync(paths.pidFile, `${process.ppid}\n`);
+        return {
+          accepted: true as const,
+          state: "draining" as const,
+          restartId: "restart-build-sync",
+          processInstanceId: "old-instance",
+          processGeneration: "old-generation",
+          targetInstanceId: "new-instance",
+          targetGeneration: "new-generation",
+          requestedAt: "2026-07-24T00:00:00.000Z",
+        };
+      });
+      let statusChecks = 0;
+      const daemonStatusFromService = vi.fn(async () => {
+        statusChecks += 1;
+        if (statusChecks === 1) {
+          return {
+            servers: [],
+            invocations: { queued: 0, running: 0, succeeded: 0, failed: 0, cancelled: 0 },
+            invocationHealth: {},
+            lifecycle: { state: "running" as const },
+            buildFingerprint: "sha256:older",
+            observedAt: "2026-07-24T00:00:00.000Z",
+          };
+        }
+        return {
+          servers: [],
+          invocations: { queued: 0, running: 0, succeeded: 0, failed: 0, cancelled: 0 },
+          invocationHealth: {},
+          lifecycle: {
+            state: "running" as const,
+            process: {
+              pid: process.ppid,
+              instanceId: "new-instance",
+              generation: "new-generation",
+              protocolVersion: 4 as const,
+              startedAt: "2026-07-24T00:00:01.000Z",
+              acceptedRestartId: "restart-build-sync",
+            },
+          },
+          buildFingerprint: sparkDaemonEntrypointFingerprint(),
+          observedAt: "2026-07-24T00:00:01.000Z",
+        };
+      });
       const capture = createCliIo({ daemonRestartFromService, daemonStatusFromService });
 
       await expect(main(["daemon", "sync"], capture.io)).resolves.toBe(0);
@@ -3157,6 +3344,7 @@ describe("Spark daemon CLI", () => {
       expect(daemonRestartFromService).toHaveBeenCalledOnce();
       expect(capture.stdout()).toContain("build changed");
       expect(capture.stdout()).toContain("draining active invocations");
+      expect(capture.stdout()).toContain(`Spark daemon restarted as process ${process.ppid}.`);
     });
   });
 
@@ -3197,7 +3385,7 @@ describe("Spark daemon CLI", () => {
     });
   });
 
-  it("waits for replacement readiness only when explicitly requested", async () => {
+  it("waits for replacement readiness when --wait is set", async () => {
     await withTempSparkEnv(async () => {
       const paths = resolveSparkPaths({ app: "daemon" });
       mkdirSync(paths.runtimeDir, { recursive: true });
@@ -3225,7 +3413,7 @@ describe("Spark daemon CLI", () => {
             pid: process.ppid,
             instanceId: "new-instance",
             generation: "new-generation",
-            protocolVersion: 1 as const,
+            protocolVersion: 4 as const,
             startedAt: "2026-07-15T00:00:01.000Z",
             acceptedRestartId: "restart-1",
           },
@@ -3277,7 +3465,7 @@ describe("Spark daemon CLI", () => {
               pid: process.ppid,
               instanceId: "new-instance",
               generation: "new-generation",
-              protocolVersion: 1 as const,
+              protocolVersion: 4 as const,
               startedAt: "2026-07-15T00:00:01.000Z",
               acceptedRestartId: "restart-socket-handoff",
             },
@@ -3327,7 +3515,7 @@ describe("Spark daemon CLI", () => {
               pid: process.ppid,
               instanceId: "new-instance",
               generation: "new-generation",
-              protocolVersion: 1 as const,
+              protocolVersion: 4 as const,
               startedAt: "2026-07-17T00:00:01.000Z",
               acceptedRestartId: "restart-progress",
             },
@@ -3401,7 +3589,7 @@ describe("Spark daemon CLI", () => {
             previousProcessStartToken: "test:old",
             targetInstanceId: "new-instance",
             targetGeneration: "new-generation",
-            protocolVersion: 1,
+            protocolVersion: 4,
             requestedAt: "2026-07-15T00:00:00.000Z",
           }),
         );
@@ -3427,7 +3615,7 @@ describe("Spark daemon CLI", () => {
             pid: process.ppid,
             instanceId: "new-instance",
             generation: "new-generation",
-            protocolVersion: 1 as const,
+            protocolVersion: 4 as const,
             startedAt: "2026-07-15T00:00:01.000Z",
             acceptedRestartId: "restart-projection-race",
           },
@@ -3462,7 +3650,7 @@ describe("Spark daemon CLI", () => {
             previousProcessStartToken: "test:old",
             targetInstanceId: "new-instance",
             targetGeneration: "new-generation",
-            protocolVersion: 1,
+            protocolVersion: 4,
             requestedAt: "2026-07-15T00:00:00.000Z",
           }),
         );
@@ -3576,7 +3764,7 @@ function interactiveStdin(lines: string[]): NodeJS.ReadStream {
   return stdin;
 }
 
-function createGitProfile(workspacePath: string): { ref: string; commit: string } {
+function createProfileFiles(workspacePath: string): { ref: string; profilePath: string } {
   const ref = "spark-profile";
   const profilePath = join(workspacePath, ref);
   mkdirSync(profilePath, { recursive: true });
@@ -3589,34 +3777,21 @@ id = "spark-dev"
 name = "Spark Dev"
 `,
   );
+  return { ref, profilePath };
+}
+
+function createCommittedGitProfile(workspacePath: string): { ref: string; commit: string } {
+  const { ref, profilePath } = createProfileFiles(workspacePath);
   const git = gitCommand();
-  const gitEnv = { ...process.env };
-  for (const name of [
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_CONFIG",
-    "GIT_CONFIG_PARAMETERS",
-    "GIT_CONFIG_COUNT",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_IMPLICIT_WORK_TREE",
-    "GIT_GRAFT_FILE",
-    "GIT_INDEX_FILE",
-    "GIT_NO_REPLACE_OBJECTS",
-    "GIT_REPLACE_REF_BASE",
-    "GIT_PREFIX",
-    "GIT_INTERNAL_SUPER_PREFIX",
-    "GIT_SHALLOW_FILE",
-    "GIT_COMMON_DIR",
-  ]) {
-    delete gitEnv[name];
-  }
+  const gitEnv = gitEnvironmentWithoutRepository();
+  const repositoryArgs = gitRepositoryArguments(profilePath);
   const gitOptions = { cwd: profilePath, env: gitEnv, stdio: "ignore" as const };
-  execFileSync(git, ["init"], gitOptions);
-  execFileSync(git, ["add", "settings.toml"], gitOptions);
+  execFileSync(git, [...repositoryArgs, "init"], gitOptions);
+  execFileSync(git, [...repositoryArgs, "add", "settings.toml"], gitOptions);
   execFileSync(
     git,
     [
+      ...repositoryArgs,
       "-c",
       "user.email=spark@example.test",
       "-c",
@@ -3627,7 +3802,7 @@ name = "Spark Dev"
     ],
     gitOptions,
   );
-  const commit = execFileSync(git, ["rev-parse", "HEAD"], {
+  const commit = execFileSync(git, [...repositoryArgs, "rev-parse", "HEAD"], {
     cwd: profilePath,
     env: gitEnv,
     encoding: "utf8",

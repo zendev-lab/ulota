@@ -9,11 +9,36 @@ import * as migrationGate from "../scripts/test-release-migration.mjs";
 const {
   parseMigrationArguments,
   readCandidateArtifactIdentity,
+  resolveReleaseMigrationExemption,
   resolvePublishedHubProbe,
   runMixedVersionHubMigrationMatrix,
   runMixedVersionIpcMatrix,
   selectPublishedBaselineVersion,
 } = migrationGate;
+
+test("0.4.0 alone carries the declared one-time N-1 migration exemption", () => {
+  const sparkRelease = {
+    nMinusOneMigrationExemptions: {
+      "0.4.0": " coordinated view-model v2 hard cut ",
+    },
+  };
+
+  assert.deepEqual(resolveReleaseMigrationExemption(sparkRelease, "0.4.0"), {
+    candidateVersion: "0.4.0",
+    reason: "coordinated view-model v2 hard cut",
+  });
+  assert.equal(resolveReleaseMigrationExemption(sparkRelease, "0.4.1"), undefined);
+  assert.equal(resolveReleaseMigrationExemption({}, "0.4.0"), undefined);
+  assert.throws(
+    () => resolveReleaseMigrationExemption({ nMinusOneMigrationExemptions: [] }, "0.4.0"),
+    /must be an object/u,
+  );
+  assert.throws(
+    () =>
+      resolveReleaseMigrationExemption({ nMinusOneMigrationExemptions: { "0.4.0": "" } }, "0.4.0"),
+    /must have a reason/u,
+  );
+});
 
 test("release migration arguments support automatic and explicit published baselines", () => {
   assert.deepEqual(parseMigrationArguments(["--tarball", "dist/release/spark-v0.1.1.tgz"]), {
@@ -30,8 +55,8 @@ test("release migration arguments support automatic and explicit published basel
       "dist/release/spark-daemon-v0.1.1.tgz",
       "--hub-tarball",
       "dist/release/spark-hub-v0.1.1.tgz",
-      "--tui-tarball",
-      "dist/release/spark-tui-v0.1.1.tgz",
+      "--web-tarball",
+      "dist/release/spark-web-v0.1.1.tgz",
       "--baseline-version",
       "0.1.0",
     ]),
@@ -41,7 +66,7 @@ test("release migration arguments support automatic and explicit published basel
       cliTarball: "dist/release/spark-cli-v0.1.1.tgz",
       daemonTarball: "dist/release/spark-daemon-v0.1.1.tgz",
       hubTarball: "dist/release/spark-hub-v0.1.1.tgz",
-      tuiTarball: "dist/release/spark-tui-v0.1.1.tgz",
+      webTarball: "dist/release/spark-web-v0.1.1.tgz",
     },
   );
   assert.equal(selectPublishedBaselineVersion(["0.0.9", "0.1.0"], "0.1.1", "0.1.0"), "0.1.0");
@@ -64,26 +89,19 @@ test("release migration arguments support automatic and explicit published basel
   );
 });
 
-test("published Hub probe prefers the current command and falls back to the legacy command", async () => {
+test("published Hub probe requires the current spark-hub command", async () => {
   const baselineRoot = "/fixture/published";
   const currentHub = join(baselineRoot, "node_modules", ".bin", "spark-hub");
-  const legacyHub = join(baselineRoot, "node_modules", ".bin", "spark-cockpit");
 
   assert.deepEqual(
     await resolvePublishedHubProbe(baselineRoot, {
-      exists: async (path: string) => path === currentHub || path === legacyHub,
+      exists: async (path: string) => path === currentHub,
     }),
     { command: currentHub, listArgs: ["delegation", "list"] },
   );
-  assert.deepEqual(
-    await resolvePublishedHubProbe(baselineRoot, {
-      exists: async (path: string) => path === legacyHub,
-    }),
-    { command: legacyHub, listArgs: ["access", "list"] },
-  );
   await assert.rejects(
     resolvePublishedHubProbe(baselineRoot, { exists: async () => false }),
-    /neither spark-hub nor spark-cockpit/u,
+    /does not expose spark-hub/u,
   );
 });
 

@@ -4,9 +4,7 @@ import type {
   SparkSessionBindRequest,
   SparkSessionMediaReadRequest,
   SparkSessionMediaReadResult,
-  SparkSessionRegistryRecord,
-  SparkSessionMode,
-  SparkSessionModeResult,
+  SparkSessionProjection,
   SparkSideThreadSnapshot,
 } from "@zendev-lab/spark-protocol/daemon";
 import {
@@ -33,8 +31,8 @@ export interface HubManagedSessionsClient {
   listWithControlState?(
     options?: HubRuntimeSessionListRequest,
   ): Promise<HubRuntimeSessionListResult>;
-  list(options?: HubRuntimeSessionListRequest): Promise<SparkSessionRegistryRecord[]>;
-  get(sessionId: string): Promise<SparkSessionRegistryRecord>;
+  list(options?: HubRuntimeSessionListRequest): Promise<SparkSessionProjection[]>;
+  get(sessionId: string): Promise<SparkSessionProjection>;
   snapshot(
     sessionId: string,
     options?: HubRuntimeSessionSnapshotRequest,
@@ -76,11 +74,11 @@ export interface HubManagedSessionsClient {
     instructions?: string;
     idempotencyKey: string;
   }): Promise<unknown>;
-  create(input: HubRuntimeSessionCreateRequest): Promise<SparkSessionRegistryRecord>;
-  bind(input: SparkSessionBindRequest): Promise<SparkSessionRegistryRecord>;
-  unbind(input: SparkSessionBindRequest): Promise<SparkSessionRegistryRecord>;
-  archive(sessionId: string): Promise<SparkSessionRegistryRecord>;
-  setMode?(input: { sessionId: string; mode: SparkSessionMode }): Promise<SparkSessionModeResult>;
+  create(input: HubRuntimeSessionCreateRequest): Promise<SparkSessionProjection>;
+  bind(input: SparkSessionBindRequest): Promise<SparkSessionProjection>;
+  unbind(input: SparkSessionBindRequest): Promise<SparkSessionProjection>;
+  archive(sessionId: string): Promise<SparkSessionProjection>;
+  close(sessionId: string): Promise<SparkSessionProjection>;
 }
 
 const runtimeManagedSessionsClient = createHubRuntimeSessionClient();
@@ -88,7 +86,7 @@ const runtimeManagedSessionsClient = createHubRuntimeSessionClient();
 export type HubManagedSessionsList = {
   available: boolean;
   controlAvailable: boolean;
-  sessions: SparkSessionRegistryRecord[];
+  sessions: SparkSessionProjection[];
   error?: string;
 };
 
@@ -152,7 +150,7 @@ export async function listManagedSessionsForHub(
 export async function getManagedSessionForHub(
   sessionId: string,
   client: HubManagedSessionsClient = runtimeManagedSessionsClient,
-): Promise<SparkSessionRegistryRecord | null> {
+): Promise<SparkSessionProjection | null> {
   try {
     return await getLiveManagedSessionForHub(sessionId, client);
   } catch (error) {
@@ -178,7 +176,7 @@ export async function getManagedSessionForHub(
 export async function getLiveManagedSessionForHub(
   sessionId: string,
   client: HubManagedSessionsClient = runtimeManagedSessionsClient,
-): Promise<SparkSessionRegistryRecord | null> {
+): Promise<SparkSessionProjection | null> {
   try {
     const session = await client.get(sessionId);
     return isHubWorkspaceSession(session) ? session : null;
@@ -197,7 +195,7 @@ export async function getLiveManagedSessionForHub(
 export function getProjectedManagedSessionForHub(
   sessionId: string,
   database: DatabaseSync = getDatabase(),
-): SparkSessionRegistryRecord | null {
+): SparkSessionProjection | null {
   const normalizedSessionId = sessionId.trim();
   if (!normalizedSessionId) return null;
   const session = getRuntimeSessionProjection(database, normalizedSessionId)?.session ?? null;
@@ -370,7 +368,7 @@ export async function controlManagedSideThreadForHub<T>(
 export async function createManagedSessionForHub(
   input: HubRuntimeSessionCreateRequest,
   client: HubManagedSessionsClient = runtimeManagedSessionsClient,
-): Promise<SparkSessionRegistryRecord> {
+): Promise<SparkSessionProjection> {
   if (input.scope?.kind !== "workspace") {
     throw new Error("Hub can create workspace-scoped sessions only.");
   }
@@ -380,47 +378,44 @@ export async function createManagedSessionForHub(
 export async function bindManagedSessionForHub(
   input: SparkSessionBindRequest,
   client: HubManagedSessionsClient = runtimeManagedSessionsClient,
-): Promise<SparkSessionRegistryRecord> {
+): Promise<SparkSessionProjection> {
   return await client.bind(input);
 }
 
 export async function unbindManagedSessionForHub(
   input: SparkSessionBindRequest,
   client: HubManagedSessionsClient = runtimeManagedSessionsClient,
-): Promise<SparkSessionRegistryRecord> {
+): Promise<SparkSessionProjection> {
   return await client.unbind(input);
 }
 
 export async function archiveManagedSessionForHub(
   sessionId: string,
   client: HubManagedSessionsClient = runtimeManagedSessionsClient,
-): Promise<SparkSessionRegistryRecord> {
+): Promise<SparkSessionProjection> {
   return await client.archive(sessionId);
 }
 
-export async function setManagedSessionModeForHub(
-  input: { sessionId: string; mode: SparkSessionMode },
+export async function closeManagedSessionForHub(
+  sessionId: string,
   client: HubManagedSessionsClient = runtimeManagedSessionsClient,
-): Promise<SparkSessionModeResult> {
-  if (!client.setMode) {
-    throw new HubRuntimeSessionUnavailableError("Session mode control is unavailable.");
-  }
-  return await client.setMode(input);
+): Promise<SparkSessionProjection> {
+  return await client.close(sessionId);
 }
 
 function isHubWorkspaceSession(
-  session: SparkSessionRegistryRecord,
+  session: SparkSessionProjection,
   options: {
     includeArchived?: boolean;
     related?: boolean;
     scope?: HubRuntimeSessionListRequest["scope"];
     workspaceId?: string;
   } = {},
-): session is SparkSessionRegistryRecord & { scope: { kind: "workspace"; workspaceId: string } } {
+): session is SparkSessionProjection & { scope: { kind: "workspace"; workspaceId: string } } {
   if (session.scope.kind !== "workspace") return false;
   const requestedWorkspaceId =
     options.scope?.kind === "workspace" ? options.scope.workspaceId : options.workspaceId;
   if (requestedWorkspaceId && session.scope.workspaceId !== requestedWorkspaceId) return false;
-  if (!options.includeArchived && session.status === "archived") return false;
-  return options.related === true || session.relation?.kind !== "side_thread";
+  if (!options.includeArchived && session.placement === "archived") return false;
+  return true;
 }

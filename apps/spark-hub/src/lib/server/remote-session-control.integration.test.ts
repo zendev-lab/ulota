@@ -14,7 +14,7 @@ import {
   type ServerCommandEnvelope,
   type SparkAssignment,
 } from "@zendev-lab/spark-protocol";
-import { resolveSparkPaths } from "@zendev-lab/spark-system";
+import { channelSessionWorkspacePath, resolveSparkPaths } from "@zendev-lab/spark-platform-node";
 
 import {
   handleCommand,
@@ -35,7 +35,11 @@ import {
   createWorkspaceWithLease,
   type RuntimeWebSocketConnection,
 } from "@zendev-lab/spark-hub-coordination";
-import { migrate, openMemoryDatabase } from "@zendev-lab/spark-hub-db";
+import {
+  runRuntimeSessionControlCommand,
+  runtimeSessionRouteForRuntime,
+} from "@zendev-lab/spark-hub-coordination/runtime-session-control";
+import { migrate, openMemoryDatabase } from "@zendev-lab/spark-hub-storage-sqlite";
 import { createHubRuntimeSessionClient } from "./hub-runtime-session-client.ts";
 import { listProjectedManagedSessionsForHub } from "./managed-sessions.ts";
 
@@ -101,12 +105,19 @@ test("remote Hub controls workspace sessions without a daemon socket", async () 
       daemonId: installationId,
       daemonCwd: root,
       resolveWorkspaceCwd: (workspaceId) => (workspaceId === hubWorkspace.id ? root : undefined),
+      resolveChannelSessionCwd: async (sessionId) => {
+        const cwd = channelSessionWorkspacePath(paths, sessionId);
+        await mkdir(cwd, { recursive: true, mode: 0o700 });
+        return cwd;
+      },
     });
+    const administrator = await registry.ensureWorkspaceAdministrator(hubWorkspace.id);
     const context: MessageContext = {
       paths,
       config: { installationId, displayName: "Remote session daemon", runtimeId },
       db: daemonDb,
       runtimeId,
+      sparkHome: join(root, "spark-home"),
       runtimeSessionId: undefined,
       setRuntimeSessionId(value) {
         this.runtimeSessionId = value;
@@ -129,13 +140,32 @@ test("remote Hub controls workspace sessions without a daemon socket", async () 
     let bridge = connectRuntime(hubDb, context, bindingId);
     const bridges = [bridge];
     const client = createHubRuntimeSessionClient(hubDb);
+    const channelSession = await registry.resolveChannelSession({
+      externalKey: "infoflow:user:remote-channel",
+      adapterId: "infoflow-primary",
+      adapterAccountIdentity: "channel-account:infoflow:remote",
+      name: "Remote Channel",
+    });
+    const daemonSessions = await client.list({
+      runtimeId,
+      scope: { kind: "daemon" },
+      includeArchived: true,
+    });
+    assert.deepEqual(
+      daemonSessions.map(({ sessionId }) => sessionId),
+      [channelSession.sessionId],
+    );
+    assert.deepEqual(daemonSessions[0]?.scope, {
+      kind: "daemon",
+      daemonId: installationId,
+    });
     const workspaceSessionId = createId("sess");
     const secondSessionId = createId("sess");
     const workspaceCreate = {
       sessionId: workspaceSessionId,
       scope: { kind: "workspace", workspaceId: hubWorkspace.id },
-      workspaceId: hubWorkspace.id,
-      title: "Workspace round",
+      supervisorSessionId: administrator.sessionId,
+      name: "Workspace round",
       idempotencyKey: createId("idem"),
     } as const;
     const workspaceSession = await client.create(workspaceCreate);
@@ -143,8 +173,8 @@ test("remote Hub controls workspace sessions without a daemon socket", async () 
     const secondSession = await client.create({
       sessionId: secondSessionId,
       scope: { kind: "workspace", workspaceId: hubWorkspace.id },
-      workspaceId: hubWorkspace.id,
-      title: "Workspace round two",
+      supervisorSessionId: administrator.sessionId,
+      name: "Workspace round two",
     });
     assert.equal(workspaceSession.scope.kind, "workspace");
     assert.deepEqual(workspaceSessionReplay, workspaceSession);
@@ -154,12 +184,11 @@ test("remote Hub controls workspace sessions without a daemon socket", async () 
     });
     await assert.rejects(
       client.create({
-        runtimeId,
         sessionId: createId("sess"),
         scope: { kind: "daemon" },
         cwd: "/tmp/remote-path-injection",
       } as never),
-      /workspace-scoped sessions only/u,
+      /workspace/u,
     );
 
     const bound = await client.bind({
@@ -175,7 +204,7 @@ test("remote Hub controls workspace sessions without a daemon socket", async () 
     const listed = await client.list({ includeArchived: true });
     assert.deepEqual(
       listed.map(({ sessionId }) => sessionId).sort(),
-      [workspaceSessionId, secondSessionId].sort(),
+      [administrator.sessionId, workspaceSessionId, secondSessionId].sort(),
     );
     const sideThread = await client.ensureSideThread({
       parentSessionId: workspaceSessionId,
@@ -183,17 +212,16 @@ test("remote Hub controls workspace sessions without a daemon socket", async () 
     });
     const related = await client.list({
       scope: { kind: "workspace", workspaceId: hubWorkspace.id },
-      workspaceId: hubWorkspace.id,
       related: true,
     });
-    assert.deepEqual(
-      related.find(({ sessionId }) => sessionId === sideThread.sessionId)?.relation,
-      {
-        kind: "side_thread",
-        parentSessionId: workspaceSessionId,
-        generation: sideThread.generation,
-        mode: sideThread.mode,
-      },
+    assert.deepEqual(related.find(({ sessionId }) => sessionId === sideThread.sessionId)?.lineage, {
+      kind: "child",
+      parentSessionId: workspaceSessionId,
+      origin: { kind: "side_thread", generation: sideThread.generation },
+    });
+    assert.equal(
+      related.find(({ sessionId }) => sessionId === sideThread.sessionId)?.sideThreadMode,
+      sideThread.mode,
     );
     assert.deepEqual(
       listProjectedManagedSessionsForHub(
@@ -202,12 +230,11 @@ test("remote Hub controls workspace sessions without a daemon socket", async () 
           related: true,
         },
         hubDb,
-      ).sessions.find(({ sessionId }) => sessionId === sideThread.sessionId)?.relation,
+      ).sessions.find(({ sessionId }) => sessionId === sideThread.sessionId)?.lineage,
       {
-        kind: "side_thread",
+        kind: "child",
         parentSessionId: workspaceSessionId,
-        generation: sideThread.generation,
-        mode: sideThread.mode,
+        origin: { kind: "side_thread", generation: sideThread.generation },
       },
     );
     await assert.rejects(
@@ -232,17 +259,16 @@ test("remote Hub controls workspace sessions without a daemon socket", async () 
         registry.create({
           sessionId: createId("sess"),
           scope: { kind: "workspace", workspaceId: hubWorkspace.id },
-          workspaceId: hubWorkspace.id,
-          title: `Paged workspace session ${index} ${"x".repeat(400)}`,
+          supervisorSessionId: administrator.sessionId,
+          name: `Paged workspace session ${index} ${"x".repeat(400)}`,
         }),
       ),
     );
     const pagedWorkspaceSessions = await client.list({
       scope: { kind: "workspace", workspaceId: hubWorkspace.id },
-      workspaceId: hubWorkspace.id,
       includeArchived: true,
     });
-    assert.equal(pagedWorkspaceSessions.length, 103);
+    assert.equal(pagedWorkspaceSessions.length, 104);
     assert.ok(
       additionalWorkspaceSessions.every(({ sessionId }) =>
         pagedWorkspaceSessions.some((session) => session.sessionId === sessionId),
@@ -266,6 +292,19 @@ test("remote Hub controls workspace sessions without a daemon socket", async () 
     assert.equal(
       invocationStore.claimNext("remote-e2e", "2026-07-15T00:00:01.000Z")?.invocationId,
       workspaceTurn.invocationId,
+    );
+    const invocationDiagnostics = await runRuntimeSessionControlCommand(hubDb, {
+      route: runtimeSessionRouteForRuntime(runtimeId),
+      payload: {
+        kind: "invocation.list.request",
+        payload: { sessionId: workspaceSessionId, limit: 50, offset: 0 },
+      },
+    });
+    assert.deepEqual(
+      (invocationDiagnostics.invocations as Array<{ invocationId: string }>).map(
+        ({ invocationId }) => invocationId,
+      ),
+      [workspaceTurn.invocationId],
     );
     insertInvocationEvents(daemonDb, workspaceTurn.invocationId, 10_000);
 
@@ -417,6 +456,7 @@ test("remote Hub controls workspace sessions without a daemon socket", async () 
           listPaged: true,
           bindUnbindArchived: true,
           turnSubmitted: true,
+          invocationDiagnosticsLoaded: true,
           turnCancelled: true,
           terminalResultRecoveredAfterReconnect: true,
           transcriptSnapshotLoaded: true,
@@ -611,7 +651,7 @@ async function writeTranscript(
 ): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
   const entries = [
-    { type: "session", version: 3, id: sessionId, timestamp: now, cwd },
+    { type: "session", version: 4, id: sessionId, timestamp: now, cwd },
     {
       type: "message",
       id: `${sessionId}-user`,

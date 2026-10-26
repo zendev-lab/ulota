@@ -21,6 +21,7 @@ vi.mock("./daemon-local-rpc-orpc.js", () => ({
 import {
   createSparkDaemonClient,
   requestSparkDaemon,
+  SparkDaemonConnectedTransportError,
   SparkDaemonPreDispatchUnavailableError,
   SparkDaemonProtocolMismatchError,
   SparkDaemonRemoteError,
@@ -126,6 +127,29 @@ describe("protocol-aware Spark daemon client", () => {
     expect(transportMocks.requestLegacy).not.toHaveBeenCalled();
   });
 
+  it("never routes oRPC-only prompt history through the legacy transport", async () => {
+    transportMocks.createOrpc.mockRejectedValueOnce(new Error("ENOENT"));
+
+    await expect(
+      requestSparkDaemon("session.prompt-history", {
+        sessionId: "session-1",
+        limit: 100,
+      }),
+    ).rejects.toBeInstanceOf(SparkDaemonPreDispatchUnavailableError);
+    expect(transportMocks.requestLegacy).not.toHaveBeenCalled();
+  });
+
+  it("never routes the oRPC-only Session retry target through the legacy transport", async () => {
+    transportMocks.createOrpc.mockRejectedValueOnce(new Error("ENOENT"));
+
+    await expect(
+      requestSparkDaemon("session.retry-target", {
+        sessionId: "session-1",
+      }),
+    ).rejects.toBeInstanceOf(SparkDaemonPreDispatchUnavailableError);
+    expect(transportMocks.requestLegacy).not.toHaveBeenCalled();
+  });
+
   it("does not replay a remote failure after oRPC has connected", async () => {
     const remoteFailure = new ORPCError("CONFLICT", {
       message: "mutation rejected",
@@ -182,6 +206,7 @@ describe("protocol-aware Spark daemon client", () => {
       { maxResponseBytes: 64 },
     ).catch((error: unknown) => error);
     expect(normalized).toBeInstanceOf(SparkDaemonRpcError);
+    expect(normalized).toBeInstanceOf(SparkDaemonConnectedTransportError);
     expect(normalized).toMatchObject({
       message: `Spark daemon oRPC transport failed: ${failure.message}`,
       cause: failure,
@@ -241,6 +266,7 @@ describe("protocol-aware Spark daemon client", () => {
     await vi.advanceTimersByTimeAsync(25);
 
     await expect(failure).resolves.toBeInstanceOf(SparkDaemonRpcError);
+    await expect(failure).resolves.toBeInstanceOf(SparkDaemonConnectedTransportError);
     await expect(failure).resolves.toMatchObject({
       message: "Timed out waiting for daemon oRPC response after 25 ms.",
     });

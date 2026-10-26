@@ -7,7 +7,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 
 import { runtimeProtocolVersion } from "@zendev-lab/spark-protocol";
-import { resolveSparkPaths } from "@zendev-lab/spark-system";
+import { resolveSparkPaths } from "@zendev-lab/spark-platform-node";
 import { readSparkDaemonConfig, writeSparkDaemonConfig } from "./config.ts";
 import { relocateSparkDaemonHub } from "./relocation.ts";
 import {
@@ -67,6 +67,7 @@ describe("daemon Hub relocation", () => {
       expect(readSparkDaemonConfig(h.paths)).toEqual({
         installationId: "install-relocation",
         displayName: "Relocation daemon",
+        invocationConcurrency: 8,
       });
       expect(getSparkDaemonServerProfile(h.paths, targetUrl)).toMatchObject({
         runtimeId,
@@ -301,6 +302,7 @@ describe("daemon Hub relocation", () => {
       expect(readSparkDaemonConfig(h.paths)).toEqual({
         installationId: "install-relocation",
         displayName: "Relocation daemon",
+        invocationConcurrency: 8,
       });
       expect(getSparkDaemonServerProfile(h.paths, sourceUrl)).toBeUndefined();
       expect(getSparkDaemonServerProfile(h.paths, targetUrl)?.runtimeId).toBe(runtimeId);
@@ -383,6 +385,7 @@ async function setup(options: SetupOptions = {}): Promise<Harness> {
   const identity = {
     installationId: "install-relocation",
     displayName: "Relocation daemon",
+    invocationConcurrency: 8,
   };
   writeSparkDaemonConfig(paths, identity);
   if (options.includeThirdProfile !== false) {

@@ -1,4 +1,7 @@
-import type { SparkSessionRegistryRecord } from "@zendev-lab/spark-protocol";
+import {
+  parseSparkSessionProjection,
+  type SparkSessionProjection,
+} from "@zendev-lab/spark-protocol";
 import { RuntimeControlCommandError } from "@zendev-lab/spark-hub-coordination/runtime-control";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -14,28 +17,42 @@ import {
 } from "./managed-sessions";
 import { HubRuntimeSessionUnavailableError } from "./hub-runtime-session-client";
 
-const session: SparkSessionRegistryRecord = {
+const session: SparkSessionProjection = {
   sessionId: "sess_a",
   scope: { kind: "workspace", workspaceId: "ws_a" },
-  workspaceId: "ws_a",
-  title: "Alpha",
-  status: "ready",
+  name: "Alpha",
+  lifecycle: "open",
+  placement: "active",
+  activity: "idle",
+  roleBinding: { kind: "none" },
+  incarnation: 1,
+  lineage: { kind: "child", parentSessionId: "sess_admin", origin: { kind: "session" } },
+  visibility: "public",
+  retention: "retain",
+  purpose: "test",
+  lifetime: "scoped",
   bindings: [],
   createdAt: "2026-07-10T00:00:00.000Z",
   updatedAt: "2026-07-10T00:00:00.000Z",
 };
 
-const daemonSession: SparkSessionRegistryRecord = {
+const daemonSession: SparkSessionProjection = {
   ...session,
   sessionId: "sess_daemon",
   scope: { kind: "daemon", daemonId: "daemon-a" },
-  workspaceId: undefined,
+  lifecycle: "closed",
+  lineage: {
+    kind: "child",
+    parentSessionId: "migration:closed-daemon-audit",
+    origin: { kind: "invocation", invocationId: "migration:sess_daemon" },
+  },
+  lifetime: "ephemeral",
 };
 
-const secondParent: SparkSessionRegistryRecord = {
+const secondParent: SparkSessionProjection = {
   ...session,
   sessionId: "sess_b",
-  title: "Beta",
+  name: "Beta",
 };
 
 function sideThread(
@@ -44,32 +61,33 @@ function sideThread(
   generation: number,
   mode: "contextual" | "tangent",
   overrides: {
-    status?: SparkSessionRegistryRecord["status"];
+    placement?: SparkSessionProjection["placement"];
     scope?: { kind: "workspace"; workspaceId: string };
-    workspaceId?: string;
   } = {},
-): SparkSessionRegistryRecord {
-  const workspaceSession = session as SparkSessionRegistryRecord & {
-    scope: { kind: "workspace"; workspaceId: string };
-    workspaceId: string;
-  };
-  return {
-    ...workspaceSession,
+): SparkSessionProjection {
+  return parseSparkSessionProjection({
+    ...session,
     sessionId,
-    title: `${mode} child`,
-    relation: { kind: "side_thread", parentSessionId, generation, mode },
+    name: `${mode} child`,
+    roleBinding: { kind: "inherit" },
+    lineage: {
+      kind: "child",
+      parentSessionId,
+      origin: { kind: "side_thread", generation },
+    },
+    sideThreadMode: mode,
     ...overrides,
-  };
+  });
 }
 
 const snapshot = {
-  version: 1 as const,
+  version: 4 as const,
   sessionId: "sess_a",
   title: "Alpha",
   status: "idle" as const,
   messages: [
     {
-      version: 1 as const,
+      version: 4 as const,
       id: "msg_user",
       role: "user" as const,
       text: "Message from Infoflow",
@@ -103,7 +121,6 @@ describe("managed sessions for hub", () => {
 
     const workspaceScope = {
       scope: { kind: "workspace" as const, workspaceId: "ws_a" },
-      workspaceId: "ws_a",
     };
     await expect(listManagedSessionsForHub(workspaceScope, client)).resolves.toEqual({
       available: true,
@@ -185,7 +202,7 @@ describe("managed sessions for hub", () => {
     expect(client.snapshot).not.toHaveBeenCalled();
   });
 
-  it("returns related workspace sessions only when the rail requests them", async () => {
+  it("returns every workspace Session regardless of lineage origin", async () => {
     const client = daemonClient();
     const activeChildren = [
       sideThread("sess_a_context", session.sessionId, 1, "contextual"),
@@ -193,16 +210,15 @@ describe("managed sessions for hub", () => {
       sideThread("sess_b_context", secondParent.sessionId, 1, "contextual"),
     ];
     const archivedChild = sideThread("sess_a_archived", session.sessionId, 3, "contextual", {
-      status: "archived",
+      placement: "archived",
     });
     client.list.mockResolvedValue([session, ...activeChildren, secondParent, archivedChild]);
     const workspace = {
       scope: { kind: "workspace" as const, workspaceId: "ws_a" },
-      workspaceId: "ws_a",
     };
 
     await expect(listManagedSessionsForHub(workspace, client)).resolves.toMatchObject({
-      sessions: [session, secondParent],
+      sessions: [session, ...activeChildren, secondParent],
     });
     await expect(
       listManagedSessionsForHub({ ...workspace, related: true }, client),
@@ -218,7 +234,6 @@ describe("managed sessions for hub", () => {
     const client = daemonClient();
     const foreign = sideThread("sess_foreign_child", "sess_foreign_parent", 1, "contextual", {
       scope: { kind: "workspace", workspaceId: "ws_foreign" },
-      workspaceId: "ws_foreign",
     });
     client.list.mockResolvedValue([session, foreign]);
 
@@ -226,7 +241,6 @@ describe("managed sessions for hub", () => {
       listManagedSessionsForHub(
         {
           scope: { kind: "workspace", workspaceId: "ws_a" },
-          workspaceId: "ws_a",
           related: true,
         },
         client,
@@ -256,7 +270,6 @@ describe("managed sessions for hub", () => {
       listManagedSessionsForHub(
         {
           scope: { kind: "workspace", workspaceId: "ws_a" },
-          workspaceId: "ws_a",
         },
         client,
       ),
@@ -281,7 +294,6 @@ describe("managed sessions for hub", () => {
       listManagedSessionsForHub(
         {
           scope: { kind: "workspace", workspaceId: "ws_a" },
-          workspaceId: "ws_a",
         },
         client,
       ),
@@ -337,7 +349,7 @@ describe("managed sessions for hub", () => {
   it("returns mutations only after the daemon acknowledges them", async () => {
     const archived = {
       ...session,
-      status: "archived" as const,
+      placement: "archived" as const,
       updatedAt: "2026-07-10T00:01:00.000Z",
     };
     const bound = {
@@ -358,8 +370,9 @@ describe("managed sessions for hub", () => {
       createManagedSessionForHub(
         {
           scope: { kind: "workspace", workspaceId: "ws_a" },
-          workspaceId: "ws_a",
-          title: "Alpha",
+          supervisorSessionId: "sess_admin",
+          name: "Alpha",
+          roleBinding: { kind: "none" },
         },
         client,
       ),
@@ -371,8 +384,9 @@ describe("managed sessions for hub", () => {
 
     expect(client.create).toHaveBeenCalledWith({
       scope: { kind: "workspace", workspaceId: "ws_a" },
-      workspaceId: "ws_a",
-      title: "Alpha",
+      supervisorSessionId: "sess_admin",
+      name: "Alpha",
+      roleBinding: { kind: "none" },
     });
     expect(client.bind).toHaveBeenCalledWith({
       sessionId: "sess_a",
@@ -389,7 +403,7 @@ describe("managed sessions for hub", () => {
         {
           runtimeId: "runtime-a",
           scope: { kind: "daemon" } as never,
-          title: "Legacy daemon session",
+          name: "Legacy daemon session",
         } as never,
         client,
       ),
@@ -405,8 +419,9 @@ describe("managed sessions for hub", () => {
       createManagedSessionForHub(
         {
           scope: { kind: "workspace", workspaceId: "ws_a" },
-          workspaceId: "ws_a",
-          title: "Alpha",
+          supervisorSessionId: "sess_admin",
+          name: "Alpha",
+          roleBinding: { kind: "none" },
         },
         client,
       ),
@@ -416,8 +431,8 @@ describe("managed sessions for hub", () => {
 
 function daemonClient(
   options: {
-    archiveResult?: SparkSessionRegistryRecord;
-    bindResult?: SparkSessionRegistryRecord;
+    archiveResult?: SparkSessionProjection;
+    bindResult?: SparkSessionProjection;
   } = {},
 ) {
   return {
@@ -430,5 +445,6 @@ function daemonClient(
     bind: vi.fn(async () => options.bindResult ?? session),
     unbind: vi.fn(async () => options.bindResult ?? session),
     archive: vi.fn(async () => options.archiveResult ?? session),
+    close: vi.fn(async () => ({ ...session, lifecycle: "closed" as const })),
   } satisfies HubManagedSessionsClient;
 }

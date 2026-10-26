@@ -1,19 +1,15 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
-import { afterEach, describe, expect, it } from "vitest";
-import type { ProjectRef, RoleRef, SubgoalRef, TaskRef } from "@zendev-lab/spark-core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  defaultSparkSessionRegistryRoot,
-  SparkSessionRegistry,
-  type CreateSparkSessionInput,
-} from "@zendev-lab/spark-session";
-import {
-  createSerializedDaemonSessionRegistry,
   createDaemonSessionRegistry,
-  type DaemonSessionRegistry,
+  createSerializedDaemonSessionRegistry,
 } from "./session-registry.ts";
+import { SparkInvocationStore } from "./store/invocations.ts";
+import { migrateSparkDaemonDatabase } from "./store/schema.ts";
 
 const roots: string[] = [];
 
@@ -21,129 +17,363 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe("daemon session registry", () => {
-  it("serializes channel resolution with concurrent create, bind, and archive mutations", async () => {
-    const sparkHome = await mkdtemp(join(tmpdir(), "spark-daemon-session-owner-"));
+describe("daemon Session registry", () => {
+  it("serializes concurrent Administrator ensure calls", async () => {
+    const sparkHome = await mkdtemp(join(tmpdir(), "spark-daemon-administrator-"));
     roots.push(sparkHome);
-    const backing = new SparkSessionRegistry({
-      rootDir: defaultSparkSessionRegistryRoot(sparkHome),
+    const registry = createDaemonSessionRegistry(sparkHome, {
+      resolveWorkspaceCwd: () => "/repo",
     });
-    let activeMutations = 0;
-    let maximumActiveMutations = 0;
-    const track = async <T>(operation: () => Promise<T>): Promise<T> => {
-      activeMutations += 1;
-      maximumActiveMutations = Math.max(maximumActiveMutations, activeMutations);
-      try {
-        // Make an overlap observable if the daemon wrapper stops serializing.
-        await delay(5);
-        return await operation();
-      } finally {
-        activeMutations -= 1;
-      }
-    };
-    const tracked: DaemonSessionRegistry = {
-      create: (input) => track(() => backing.create(toBackingCreateInput(input))),
-      createSupervised: (input) => track(() => backing.create(input)),
-      list: (options) => backing.list(toBackingListOptions(options)),
-      get: (sessionId) => backing.get(sessionId),
-      bind: (input) => track(() => backing.bind(input)),
-      unbind: (sessionId, externalKey) => track(() => backing.unbind(sessionId, externalKey)),
-      archive: (sessionId) => track(() => backing.archive(sessionId)),
-      archiveOwned: (input) => track(() => backing.archiveOwned(input)),
-      markClosing: (input) => track(() => backing.markClosing(input)),
-      sealCloseReceipt: (input) => track(() => backing.sealCloseReceipt(input)),
-      setRoleIfMissing: (sessionId, role) => track(() => backing.setRoleIfMissing(sessionId, role)),
-      setModel: (sessionId, model) => track(() => backing.setModel(sessionId, model)),
-      setThinkingLevel: (sessionId, thinkingLevel) =>
-        track(() => backing.setThinkingLevel(sessionId, thinkingLevel)),
-      recordTurnQueued: (sessionId, now) => track(() => backing.recordTurnQueued(sessionId, now)),
-      recordTurnSettled: (sessionId, now) => track(() => backing.recordTurnSettled(sessionId, now)),
-      recordRun: (input) => track(() => backing.recordRun(input)),
-      bindTranscriptPath: (input) => track(() => backing.bindTranscriptPath(input)),
-      relocateTranscriptPath: (input) => track(() => backing.relocateTranscriptPath(input)),
-      ensureWorkspaceMain: (workspaceId) =>
-        track(() => backing.ensureWorkspaceMain({ workspaceId })),
-      ensureSideThread: (input) => track(() => backing.ensureSideThread(input)),
-      resetSideThread: (input) => track(() => backing.resetSideThread(input)),
-      configureSideThread: (input) => track(() => backing.configureSideThread(input)),
-      resolveBinding: (input) => track(() => backing.resolveBinding(input)),
-    };
-    const registry = createSerializedDaemonSessionRegistry(tracked);
-
-    await registry.create({ sessionId: "bind_target", workspaceId: "ws_ops" });
-    await registry.create({ sessionId: "archive_target", workspaceId: "ws_ops" });
-    await registry.create({ sessionId: "title_target", workspaceId: "ws_ops" });
-
-    const [channelSession] = await Promise.all([
-      registry.resolveBinding({
-        externalKey: "feishu:chat:oc_channel",
-        onUnbound: "create",
-        create: { workspaceId: "ws_channel", title: "Channel" },
-      }),
-      registry.create({ sessionId: "created_concurrently", workspaceId: "ws_created" }),
-      registry.bind({
-        sessionId: "bind_target",
-        externalKey: "infoflow:user:u_bound",
-      }),
-      registry.archive("archive_target"),
-      registry.setRoleIfMissing?.("title_target", "Generated role"),
-    ]);
-
-    expect(maximumActiveMutations).toBe(1);
-    const persisted = await backing.list({ includeArchived: true });
-    expect(persisted.map((session) => session.sessionId).sort()).toEqual(
-      [
-        "archive_target",
-        "bind_target",
-        "title_target",
-        channelSession.sessionId,
-        "created_concurrently",
-      ].sort(),
+    const ensured = await Promise.all(
+      Array.from({ length: 12 }, () => registry.ensureWorkspaceAdministrator("ws_demo")),
     );
-    expect(persisted.find((session) => session.sessionId === "bind_target")?.bindings).toEqual([
-      expect.objectContaining({ externalKey: "infoflow:user:u_bound" }),
+    expect(new Set(ensured.map((session) => session.sessionId))).toHaveLength(1);
+    await expect(registry.list({ includeArchived: true })).resolves.toEqual([
+      expect.objectContaining({
+        lineage: { kind: "root" },
+      }),
     ]);
-    expect(persisted.find((session) => session.sessionId === "archive_target")?.status).toBe(
+  });
+
+  it("serializes mixed mutations behind one daemon writer", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-daemon-serialized-registry-"));
+    roots.push(root);
+    const registry = createDaemonSessionRegistry(root, {
+      resolveWorkspaceCwd: () => "/repo",
+    });
+    const admin = await registry.ensureWorkspaceAdministrator("ws_demo");
+    const request = {
+      scope: { kind: "workspace" as const, workspaceId: "ws_demo" },
+      supervisorSessionId: admin.sessionId,
+      roleBinding: { kind: "none" as const },
+    };
+    const [first, second] = await Promise.all([
+      registry.create({ ...request, sessionId: "sess_first" }),
+      registry.create({ ...request, sessionId: "sess_second" }),
+    ]);
+    await Promise.all([
+      registry.bind({ sessionId: first.sessionId, externalKey: "feishu:chat:demo" }),
+      registry.archive({ sessionId: second.sessionId }),
+    ]);
+    const persisted = await registry.list({ includeArchived: true });
+    expect(persisted.find((session) => session.sessionId === first.sessionId)?.bindings).toEqual([
+      expect.objectContaining({ externalKey: "feishu:chat:demo" }),
+    ]);
+    expect(persisted.find((session) => session.sessionId === second.sessionId)?.placement).toBe(
       "archived",
     );
-    expect(persisted.find((session) => session.sessionId === "title_target")).toMatchObject({
-      role: "Generated role",
-      title: "Generated role",
+  });
+
+  it("linearizes Invocation admission with Session closing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-daemon-admission-fence-"));
+    roots.push(root);
+    const db = new DatabaseSync(":memory:");
+    migrateSparkDaemonDatabase(db);
+    const invocations = new SparkInvocationStore(db);
+    const registry = createDaemonSessionRegistry(root, {
+      resolveWorkspaceCwd: () => "/repo",
     });
-    expect(channelSession.bindings).toEqual([
-      expect.objectContaining({ externalKey: "feishu:chat:oc_channel" }),
-    ]);
+    const admin = await registry.ensureWorkspaceAdministrator("ws_admission_fence");
+    const session = await registry.create({
+      sessionId: "sess_admission_fence",
+      scope: { kind: "workspace", workspaceId: "ws_admission_fence" },
+      supervisorSessionId: admin.sessionId,
+    });
+    let closing!: Promise<unknown>;
+
+    const admitted = await registry.commitInvocationAdmission(session.sessionId, () => {
+      const invocation = invocations.submit({
+        invocationId: "inv_admission_first",
+        sessionId: session.sessionId,
+        prompt: "admission first",
+        task: { type: "session.run", sessionId: session.sessionId, prompt: "admission first" },
+      });
+      closing = registry.markClosing({ sessionId: session.sessionId });
+      return invocation;
+    });
+
+    expect(admitted).toMatchObject({ invocationId: "inv_admission_first", status: "queued" });
+    await expect(closing).resolves.toMatchObject({ lifecycle: "closing" });
+    const admitAfterClosing = vi.fn(() => admitted);
+    await expect(
+      registry.commitInvocationAdmission(session.sessionId, admitAfterClosing),
+    ).rejects.toMatchObject({ code: "session_closing" });
+    expect(admitAfterClosing).not.toHaveBeenCalled();
+    db.close();
+  });
+
+  it("linearizes a synchronous open-Session mutation before or after closing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-daemon-open-mutation-fence-"));
+    roots.push(root);
+    const registry = createDaemonSessionRegistry(root, {
+      resolveWorkspaceCwd: () => "/repo",
+    });
+    const admin = await registry.ensureWorkspaceAdministrator("ws_open_mutation_fence");
+    const session = await registry.create({
+      sessionId: "sess_open_mutation_fence",
+      scope: { kind: "workspace", workspaceId: "ws_open_mutation_fence" },
+      supervisorSessionId: admin.sessionId,
+    });
+    let closing!: Promise<unknown>;
+
+    const committed = await registry.commitOpenSessionMutation(session.sessionId, (observed) => {
+      closing = registry.markClosing({ sessionId: session.sessionId });
+      return observed;
+    });
+
+    expect(committed).toEqual(session);
+    await expect(closing).resolves.toMatchObject({ lifecycle: "closing" });
+    const commitAfterClosing = vi.fn(() => session);
+    await expect(
+      registry.commitOpenSessionMutation(session.sessionId, commitAfterClosing),
+    ).rejects.toMatchObject({ code: "session_closing" });
+    expect(commitAfterClosing).not.toHaveBeenCalled();
+  });
+
+  it("prevents transcript replacement when archive wins the Session fence", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-daemon-archive-first-"));
+    roots.push(root);
+    const registry = createDaemonSessionRegistry(root, {
+      resolveWorkspaceCwd: () => "/repo",
+    });
+    const admin = await registry.ensureWorkspaceAdministrator("ws_archive_first");
+    const session = await registry.create({
+      sessionId: "sess_archive_first",
+      scope: { kind: "workspace", workspaceId: "ws_archive_first" },
+      supervisorSessionId: admin.sessionId,
+    });
+    const sessionPath = join(root, "sess_archive_first.jsonl");
+    await registry.bindTranscriptPath({ sessionId: session.sessionId, sessionPath });
+    await registry.archive(session.sessionId);
+    const replace = vi.fn(async () => undefined);
+
+    await expect(
+      registry.commitTranscriptReplacement(
+        {
+          sessionId: session.sessionId,
+          sessionPath,
+          expectedIncarnation: session.incarnation,
+          expectedLifecycle: "open",
+        },
+        replace,
+      ),
+    ).rejects.toMatchObject({ code: "session_transcript_cas_failed" });
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("holds archive behind an accepted transcript replacement", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-daemon-compact-first-"));
+    roots.push(root);
+    const registry = createDaemonSessionRegistry(root, {
+      resolveWorkspaceCwd: () => "/repo",
+    });
+    const admin = await registry.ensureWorkspaceAdministrator("ws_compact_first");
+    const session = await registry.create({
+      sessionId: "sess_compact_first",
+      scope: { kind: "workspace", workspaceId: "ws_compact_first" },
+      supervisorSessionId: admin.sessionId,
+    });
+    const sessionPath = join(root, "sess_compact_first.jsonl");
+    const bound = await registry.bindTranscriptPath({ sessionId: session.sessionId, sessionPath });
+    const replacementStarted = deferred();
+    const releaseReplacement = deferred();
+    const order: string[] = [];
+    const compact = registry.commitTranscriptReplacement(
+      {
+        sessionId: session.sessionId,
+        sessionPath,
+        expectedIncarnation: bound.incarnation,
+        expectedLifecycle: "open",
+      },
+      async () => {
+        order.push("replacement-started");
+        replacementStarted.resolve();
+        await releaseReplacement.promise;
+        order.push("replacement-finished");
+      },
+    );
+    await replacementStarted.promise;
+    let archiveSettled = false;
+    const archive = registry.archive(session.sessionId).then((result) => {
+      archiveSettled = true;
+      order.push("archive-finished");
+      return result;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(archiveSettled).toBe(false);
+    releaseReplacement.resolve();
+    await expect(compact).resolves.toMatchObject({ placement: "active" });
+    await expect(archive).resolves.toMatchObject({ placement: "archived" });
+    expect(order).toEqual(["replacement-started", "replacement-finished", "archive-finished"]);
+  });
+
+  it("keeps ordinary reads ordered while invocation visibility bypasses unrelated mutations", async () => {
+    const sparkHome = await mkdtemp(join(tmpdir(), "spark-daemon-session-visibility-"));
+    roots.push(sparkHome);
+    const backing = createDaemonSessionRegistry(sparkHome);
+    const administrator = await backing.ensureWorkspaceAdministrator("ws_visibility");
+    const createInput = {
+      scope: { kind: "workspace" as const, workspaceId: "ws_visibility" },
+      supervisorSessionId: administrator.sessionId,
+      roleBinding: { kind: "none" as const },
+    };
+    await backing.create({
+      ...createInput,
+      sessionId: "visibility_first",
+    });
+    await backing.create({
+      ...createInput,
+      sessionId: "visibility_second",
+    });
+
+    const startedMutations: string[] = [];
+    let releaseYield!: () => void;
+    const yieldGate = new Promise<void>((resolve) => {
+      releaseYield = resolve;
+    });
+    let markYieldStarted!: () => void;
+    const yieldStarted = new Promise<void>((resolve) => {
+      markYieldStarted = resolve;
+    });
+    let yieldCount = 0;
+    const registry = createSerializedDaemonSessionRegistry(
+      {
+        ...backing,
+        recordRun: async (input) => {
+          startedMutations.push(input.sessionId);
+          return await backing.recordRun(input);
+        },
+      },
+      {
+        yieldBetweenMutations: async () => {
+          yieldCount += 1;
+          markYieldStarted();
+          await yieldGate;
+          if (yieldCount === 1) throw new Error("injected cooperative yield failure");
+        },
+      },
+    );
+
+    const firstMutation = registry.recordRun({
+      sessionId: "visibility_first",
+      sessionPath: join(sparkHome, "visibility-first.jsonl"),
+    });
+    const secondMutation = registry.recordRun({
+      sessionId: "visibility_second",
+      sessionPath: join(sparkHome, "visibility-second.jsonl"),
+    });
+    await firstMutation;
+    await yieldStarted;
+    expect(startedMutations).toEqual(["visibility_first"]);
+
+    let ordinaryReadSettled = false;
+    const ordinaryRead = registry.get("visibility_second").then((session) => {
+      ordinaryReadSettled = true;
+      return session;
+    });
+    await expect(
+      registry.getInvocationVisibilitySnapshot("visibility_second"),
+    ).resolves.toMatchObject({
+      sessionId: "visibility_second",
+      scope: { kind: "workspace", workspaceId: "ws_visibility" },
+    });
+    await delay(0);
+    expect(ordinaryReadSettled).toBe(false);
+
+    releaseYield();
+    await secondMutation;
+    await expect(ordinaryRead).resolves.toMatchObject({
+      sessionId: "visibility_second",
+      sessionPath: join(sparkHome, "visibility-second.jsonl"),
+    });
+    expect(startedMutations).toEqual(["visibility_first", "visibility_second"]);
+  });
+
+  it("publishes closed transcript deletion and reference cleanup as one registry mutation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-daemon-closed-discard-"));
+    roots.push(root);
+    const registry = createDaemonSessionRegistry(root, {
+      resolveWorkspaceCwd: () => "/repo",
+    });
+    const admin = await registry.ensureWorkspaceAdministrator("ws_closed_discard");
+    const transcript = join(root, "closed.jsonl");
+    const session = await registry.createSupervised({
+      sessionId: "sess_closed_discard",
+      scope: admin.scope,
+      lineage: { kind: "child", parentSessionId: admin.sessionId, origin: { kind: "session" } },
+      visibility: "internal",
+      retention: "retain",
+      purpose: "task_run",
+      sessionPath: transcript,
+      transcriptRef: transcript,
+    });
+    await registry.markClosing({
+      sessionId: session.sessionId,
+      expectedLifecycle: "open",
+    });
+    const closed = await registry.archiveOwned({ sessionId: session.sessionId });
+    const discardStarted = deferred();
+    const releaseDiscard = deferred();
+    let readSettled = false;
+
+    const discard = registry.commitClosedTranscriptDiscard(
+      {
+        sessionId: closed.sessionId,
+        expectedIncarnation: closed.incarnation,
+        expectedSessionPath: transcript,
+        expectedTranscriptRef: transcript,
+      },
+      async () => {
+        discardStarted.resolve();
+        await releaseDiscard.promise;
+      },
+    );
+    await discardStarted.promise;
+    const read = registry.get(session.sessionId).then((value) => {
+      readSettled = true;
+      return value;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(readSettled).toBe(false);
+    releaseDiscard.resolve();
+
+    await expect(discard).resolves.not.toHaveProperty("sessionPath");
+    await expect(read).resolves.not.toHaveProperty("transcriptRef");
   });
 });
 
 describe("daemon session registry cwd ownership", () => {
-  it("creates Channel sessions as Administrator-owned children of the workspace root", async () => {
+  it("creates Channel sessions as daemon roots with private derived cwd", async () => {
     const sparkHome = await mkdtemp(join(tmpdir(), "spark-daemon-channel-session-"));
     roots.push(sparkHome);
+    const channelRoot = join(sparkHome, "channels", "sessions");
     const registry = createDaemonSessionRegistry(sparkHome, {
-      resolveWorkspaceCwd: () => "/Users/demo/workspace/channel",
+      daemonId: "installation-channel",
+      resolveChannelSessionCwd: async (sessionId) => {
+        const cwd = join(channelRoot, sessionId, "workspace");
+        await mkdir(cwd, { recursive: true });
+        return cwd;
+      },
     });
 
-    const channel = await registry.resolveBinding({
+    const channel = await registry.resolveChannelSession({
       externalKey: "feishu:chat:oc_operations",
-      onUnbound: "create",
-      create: { workspaceId: "ws_channel", title: "Operations" },
+      adapterId: "feishu-primary",
+      adapterAccountIdentity: "feishu:tenant-demo:app-demo",
+      name: "Operations",
     });
-    const root = await registry.ensureWorkspaceMain("ws_channel");
 
     expect(channel).toMatchObject({
-      scope: { kind: "workspace", workspaceId: "ws_channel" },
-      lifetime: "persistent",
-      owner: { kind: "session", ref: root.sessionId },
-      roleRef: "role:builtin-administrator",
-      roleRevision: 1,
-      modelType: "coordination",
-      authority: { kind: "channel", ref: "feishu:chat:oc_operations" },
-      stateBinding: { kind: "channel", ref: "feishu:chat:oc_operations" },
+      scope: { kind: "daemon", daemonId: "installation-channel" },
+      roleBinding: { kind: "none" },
+      lineage: { kind: "root" },
       visibility: "public",
       retention: "retain",
       purpose: "channel",
+      cwd: join(channelRoot, channel.sessionId, "workspace"),
     });
+    await expect(registry.list({ scope: { kind: "daemon" } })).resolves.toEqual([channel]);
   });
 
   it("ensures one stable workspace main session under concurrent delivery preparation", async () => {
@@ -154,14 +384,14 @@ describe("daemon session registry cwd ownership", () => {
     });
 
     const ensured = await Promise.all(
-      Array.from({ length: 12 }, () => registry.ensureWorkspaceMain("ws_main")),
+      Array.from({ length: 12 }, () => registry.ensureWorkspaceAdministrator("ws_main")),
     );
 
     expect(new Set(ensured.map((session) => session.sessionId)).size).toBe(1);
     expect(ensured).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          relation: { kind: "workspace_main", generation: 1 },
+          lineage: { kind: "root" },
           scope: { kind: "workspace", workspaceId: "ws_main" },
         }),
       ]),
@@ -172,210 +402,88 @@ describe("daemon session registry cwd ownership", () => {
         (session) =>
           session.scope.kind === "workspace" &&
           session.scope.workspaceId === "ws_main" &&
-          session.relation?.kind === "workspace_main",
+          session.lineage.kind === "root",
       ),
     ).toHaveLength(1);
     await expect(registry.archive(ensured[0]!.sessionId)).rejects.toMatchObject({
-      code: "workspace_main_session_mutation_forbidden",
+      code: "workspace_administrator_session_mutation_forbidden",
     });
   });
 
-  it("freezes the validated requested cwd and its GitChange provenance", async () => {
+  it("freezes validated cwd and rejects Workspace or GitChange widening", async () => {
     const sparkHome = await mkdtemp(join(tmpdir(), "spark-daemon-session-cwd-"));
     roots.push(sparkHome);
     const workspace = join(sparkHome, "workspace");
     const requested = join(workspace, "packages", "demo");
     await mkdir(requested, { recursive: true });
     const registry = createDaemonSessionRegistry(sparkHome, {
-      resolveWorkspaceCwd: (workspaceId) => (workspaceId === "ws_demo" ? workspace : undefined),
-      resolveSessionCwd: async ({ workspaceId, cwd, cwdArtifactRef }) => {
-        if (workspaceId !== "ws_demo") throw new Error(`Unknown workspace: ${workspaceId}`);
-        if (cwd === "/") throw new Error("filesystem root is forbidden");
-        return {
-          cwd: cwd ?? workspace,
-          ...(cwdArtifactRef ? { cwdArtifactRef } : {}),
-        };
-      },
+      resolveWorkspaceCwd: () => workspace,
+      resolveSessionCwd: async ({ cwd, cwdArtifactRef }) => ({
+        cwd: cwd ?? workspace,
+        ...(cwdArtifactRef ? { cwdArtifactRef } : {}),
+      }),
     });
-
+    const admin = await registry.ensureWorkspaceAdministrator("ws_demo");
+    const scope = { kind: "workspace" as const, workspaceId: "ws_demo" };
     await expect(
       registry.create({
         sessionId: "sess_workspace",
-        scope: { kind: "workspace", workspaceId: "ws_demo" },
-        workspaceId: "ws_demo",
+        scope,
+        supervisorSessionId: admin.sessionId,
+        roleBinding: { kind: "none" },
         cwd: requested,
         cwdArtifactRef: "artifact:change",
       }),
-    ).resolves.toMatchObject({
-      sessionId: "sess_workspace",
-      cwd: requested,
-      cwdArtifactRef: "artifact:change",
-    });
+    ).resolves.toMatchObject({ cwd: requested, cwdArtifactRef: "artifact:change" });
+  });
 
+  it("derives child and sibling ownership from the supervisor", async () => {
+    const sparkHome = await mkdtemp(join(tmpdir(), "spark-daemon-session-placement-"));
+    roots.push(sparkHome);
+    const registry = createDaemonSessionRegistry(sparkHome, {
+      resolveWorkspaceCwd: () => "/repo",
+    });
+    const admin = await registry.ensureWorkspaceAdministrator("ws_demo");
+    const scope = { kind: "workspace" as const, workspaceId: "ws_demo" };
+    const parent = await registry.create({
+      scope,
+      supervisorSessionId: admin.sessionId,
+      placement: "child",
+    });
+    const child = await registry.create({
+      scope,
+      supervisorSessionId: parent.sessionId,
+      placement: "child",
+    });
+    expect(child.lineage).toEqual({
+      kind: "child",
+      parentSessionId: parent.sessionId,
+      origin: { kind: "session" },
+    });
+    const sibling = await registry.create({
+      scope,
+      supervisorSessionId: child.sessionId,
+      placement: "sibling",
+    });
+    expect(sibling.lineage).toEqual({
+      kind: "child",
+      parentSessionId: parent.sessionId,
+      origin: { kind: "session" },
+    });
     await expect(
       registry.create({
-        sessionId: "sess_root",
-        scope: { kind: "workspace", workspaceId: "ws_demo" },
-        workspaceId: "ws_demo",
-        cwd: "/",
+        scope,
+        supervisorSessionId: admin.sessionId,
+        placement: "sibling",
       }),
-    ).rejects.toMatchObject({ code: "workspace_cwd_unavailable" });
-
-    await expect(
-      registry.create({
-        sessionId: "sess_missing",
-        scope: { kind: "workspace", workspaceId: "ws_missing" },
-        workspaceId: "ws_missing",
-      }),
-    ).rejects.toMatchObject({ code: "workspace_cwd_unavailable" });
-  });
-
-  it("converges an idle role owner into History before classification takeover", async () => {
-    const sparkHome = await mkdtemp(join(tmpdir(), "spark-daemon-role-convergence-"));
-    roots.push(sparkHome);
-    const registry = createDaemonSessionRegistry(sparkHome, {
-      resolveWorkspaceCwd: () => "/Users/demo/workspace/role-convergence",
-    });
-    const owner = await registry.create({
-      sessionId: "sess_role_owner",
-      scope: { kind: "workspace", workspaceId: "ws_role" },
-      workspaceId: "ws_role",
-      role: "Quality Verification",
-    });
-    const candidate = await registry.create({
-      sessionId: "sess_role_candidate",
-      scope: { kind: "workspace", workspaceId: "ws_role" },
-      workspaceId: "ws_role",
-    });
-
-    const classified = await registry.setRoleIfMissing?.(
-      candidate.sessionId,
-      " Quality   Verification ",
-    );
-
-    expect(classified).toMatchObject({
-      sessionId: candidate.sessionId,
-      role: "Quality Verification",
-    });
-    await expect(registry.get(owner.sessionId)).resolves.toMatchObject({
-      status: "archived",
-      tags: expect.arrayContaining([
-        "policy:stable-role-reuse",
-        "superseded-by:sess_role_candidate",
-      ]),
-      archiveHistory: [expect.objectContaining({ source: "role-convergence" })],
-    });
-  });
-
-  it("does not displace a protected role owner during classification", async () => {
-    const sparkHome = await mkdtemp(join(tmpdir(), "spark-daemon-role-protected-"));
-    roots.push(sparkHome);
-    const registry = createDaemonSessionRegistry(sparkHome, {
-      resolveWorkspaceCwd: () => "/Users/demo/workspace/role-protected",
-      isSessionRoleOwnerProtected: (sessionId) => sessionId === "sess_protected_owner",
-    });
-    await registry.create({
-      sessionId: "sess_protected_owner",
-      scope: { kind: "workspace", workspaceId: "ws_role" },
-      workspaceId: "ws_role",
-      role: "Quality Verification",
-    });
-    await registry.create({
-      sessionId: "sess_protected_candidate",
-      scope: { kind: "workspace", workspaceId: "ws_role" },
-      workspaceId: "ws_role",
-    });
-
-    await expect(
-      registry.setRoleIfMissing?.("sess_protected_candidate", "Quality Verification"),
-    ).rejects.toMatchObject({ code: "session_role_conflict" });
-    await expect(registry.get("sess_protected_owner")).resolves.toMatchObject({ status: "ready" });
-  });
-
-  it("authors and persists task-execution relations from the internal create binding", async () => {
-    const sparkHome = await mkdtemp(join(tmpdir(), "spark-daemon-task-session-"));
-    roots.push(sparkHome);
-    const registry = createDaemonSessionRegistry(sparkHome, {
-      resolveWorkspaceCwd: () => "/Users/demo/workspace/model-repro",
-    });
-    await registry.create({
-      sessionId: "sess_owner",
-      scope: { kind: "workspace", workspaceId: "ws_repro" },
-      workspaceId: "ws_repro",
-    });
-    const session = await registry.create({
-      sessionId: "sess_task",
-      scope: { kind: "workspace", workspaceId: "ws_repro" },
-      workspaceId: "ws_repro",
-      taskExecution: {
-        ownerSessionId: "sess_owner",
-        projectRef: "proj:model-repro" as ProjectRef,
-        taskRef: "task:trace-reference" as TaskRef,
-        subgoalRef: "subgoal:trace-reference" as SubgoalRef,
-        runRef: "run:trace-reference-1",
-        sessionGoalId: "goal-trace-reference-1",
-        roleRef: "role:builtin-explorer" as RoleRef,
-        planRevision: 6,
-        definitionDigest: "abc123",
-        jobId: "task-job:abc123",
-        attempt: 1,
-      },
-    });
-
-    expect(session.relation).toEqual({
-      kind: "task_execution",
-      ownerSessionId: "sess_owner",
-      projectRef: "proj:model-repro",
-      taskRef: "task:trace-reference",
-      subgoalRef: "subgoal:trace-reference",
-      runRef: "run:trace-reference-1",
-      sessionGoalId: "goal-trace-reference-1",
-      roleRef: "role:builtin-explorer",
-      planRevision: 6,
-      definitionDigest: "abc123",
-      jobId: "task-job:abc123",
-      attempt: 1,
-    });
-    await expect(registry.get("sess_task")).resolves.toMatchObject({
-      relation: { kind: "task_execution", jobId: "task-job:abc123" },
-    });
+    ).rejects.toMatchObject({ code: "workspace_administrator_session_mutation_forbidden" });
   });
 });
 
-function toBackingCreateInput(
-  input: Parameters<DaemonSessionRegistry["create"]>[0],
-): CreateSparkSessionInput {
-  if (input.scope?.kind === "daemon") {
-    const { scope: _scope, workspaceId: _workspaceId, ...rest } = input;
-    return { ...rest, scope: { kind: "daemon", daemonId: "install-serialized-test" } };
-  }
-  if (input.scope?.kind === "workspace") {
-    return { ...input, scope: input.scope, workspaceId: input.scope.workspaceId };
-  }
-  const workspaceId = "workspaceId" in input ? input.workspaceId : undefined;
-  if (workspaceId) {
-    return {
-      workspaceId,
-      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-      ...(input.title ? { title: input.title } : {}),
-      ...(input.role ? { role: input.role } : {}),
-      ...(input.cwd ? { cwd: input.cwd } : {}),
-      ...(input.sessionPath ? { sessionPath: input.sessionPath } : {}),
-      ...(input.status ? { status: input.status } : {}),
-    };
-  }
-  throw new Error("test daemon session create requires a scope");
-}
-
-function toBackingListOptions(
-  input: Parameters<DaemonSessionRegistry["list"]>[0],
-): Parameters<SparkSessionRegistry["list"]>[0] {
-  if (!input?.scope) return { includeArchived: input?.includeArchived };
-  if (input.scope.kind === "workspace") {
-    return { includeArchived: input.includeArchived, scope: input.scope };
-  }
-  return {
-    includeArchived: input.includeArchived,
-    scope: { kind: "daemon", daemonId: "install-serialized-test" },
-  };
+function deferred(): { promise: Promise<void>; resolve(): void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }

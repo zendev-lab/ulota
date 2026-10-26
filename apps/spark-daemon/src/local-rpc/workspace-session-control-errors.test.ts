@@ -3,11 +3,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SparkSessionMailStore } from "@zendev-lab/spark-session";
-import { resolveSparkPaths } from "@zendev-lab/spark-system";
+import { resolveSparkPaths } from "@zendev-lab/spark-platform-node";
 import { SparkDaemonLeaseTransferBroker } from "../core/lease-transfer.ts";
 import { createDaemonSessionRegistry } from "../session-registry.ts";
 import { openSparkDaemonDatabase } from "../store/schema.ts";
 import { handleLocalRpcLine } from "./dispatch.ts";
+import { createDaemonWorkspaceSession } from "../../../../test/support/session-fixtures.ts";
 
 describe("workspace and session local RPC control errors", () => {
   const roots: string[] = [];
@@ -139,9 +140,8 @@ describe("workspace and session local RPC control errors", () => {
         ["session-archived", "workspace-a"],
         ["session-bound", "workspace-a"],
       ] as const) {
-        await sessionRegistry.create({
+        await createDaemonWorkspaceSession(sessionRegistry, {
           sessionId,
-          scope: { kind: "workspace", workspaceId },
           workspaceId,
         });
       }
@@ -159,7 +159,7 @@ describe("workspace and session local RPC control errors", () => {
         payload: {},
         body: "investigate",
         origin: { surface: "local", host: "session" },
-        notifyOnCompletion: true,
+        wake: true,
         source: "tool",
       } as const;
       const options = { sessionRegistry, mailStore };
@@ -208,11 +208,7 @@ describe("workspace and session local RPC control errors", () => {
         "session_mail_target_not_local",
       );
 
-      for (const method of [
-        "session.mail.read",
-        "session.mail.ack",
-        "session.notification.deliver",
-      ] as const) {
+      for (const method of ["session.mail.read", "session.mail.ack"] as const) {
         await expectCode(
           request(
             paths,

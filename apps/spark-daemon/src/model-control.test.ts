@@ -7,46 +7,21 @@ import {
   type SparkOAuthFlowSnapshot,
   type SparkProviderControl,
   type SparkProviderControlSnapshot,
-} from "@zendev-lab/spark-ai/control";
+} from "@zendev-lab/spark-llm-providers/control";
 import { createSparkDaemonModelControl } from "./model-control.js";
 import { createDaemonSessionRegistry } from "./session-registry.js";
+import { createDaemonWorkspaceSession } from "../../../test/support/session-fixtures.ts";
 
 const roots: string[] = [];
 const model = { providerName: "baidu-oneapi", modelId: "ernie-4.5" };
 const selectedModel = { providerName: "baidu-oneapi", modelId: "ernie-4.6" };
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe("daemon model control", () => {
-  it("projects the six default GPT-5.6 scoped models while retaining the full catalog", async () => {
-    const root = await mkdtemp(join(tmpdir(), "spark-model-default-scope-"));
-    roots.push(root);
-    const control = createSparkDaemonModelControl({
-      providerControl: createSparkProviderControl({ sparkHome: join(root, "spark-home"), env: {} }),
-      sessionRegistry: createDaemonSessionRegistry(root, {
-        daemonId: "install-model-default-scope",
-        daemonCwd: root,
-      }),
-    });
-
-    const snapshot = await control.snapshot();
-    expect(
-      snapshot.scopedModels
-        ?.map((entry) => `${entry.providerName}/${entry.modelId}`)
-        .toSorted((a, b) => a.localeCompare(b)),
-    ).toEqual([
-      "baidu-oneapi/gpt-5.6-luna",
-      "baidu-oneapi/gpt-5.6-sol",
-      "baidu-oneapi/gpt-5.6-terra",
-      "openai-codex/gpt-5.6-luna",
-      "openai-codex/gpt-5.6-sol",
-      "openai-codex/gpt-5.6-terra",
-    ]);
-    expect(snapshot.providers.flatMap((provider) => provider.models).length).toBeGreaterThan(6);
-  });
-
   it("projects one catalog and persists a conversation-scoped model across fresh snapshots", async () => {
     const root = await mkdtemp(join(tmpdir(), "spark-model-control-"));
     roots.push(root);
@@ -54,7 +29,10 @@ describe("daemon model control", () => {
       daemonId: "install-model-control",
       daemonCwd: root,
     });
-    await sessionRegistry.create({ sessionId: "sess_demo", workspaceId: "ws_demo" });
+    await createDaemonWorkspaceSession(sessionRegistry, {
+      sessionId: "sess_demo",
+      workspaceId: "ws_demo",
+    });
     const prepareModel = vi.fn(async () => undefined);
     const control = createSparkDaemonModelControl({
       providerControl: fakeProviderControl(prepareModel),
@@ -63,7 +41,7 @@ describe("daemon model control", () => {
 
     const initial = await control.snapshot("sess_demo");
     expect(initial.defaultModel).toMatchObject(model);
-    expect(initial.scopedModels).toMatchObject([model, selectedModel]);
+    expect(initial.enabledModels).toMatchObject([model, selectedModel]);
     expect(initial.providers.map((provider) => provider.providerName)).toEqual([
       "baidu-oneapi",
       "openai-codex",
@@ -76,6 +54,11 @@ describe("daemon model control", () => {
     });
     await expect(control.setDefaultModel(selectedModel)).resolves.toMatchObject({
       defaultModel: selectedModel,
+    });
+    await expect(
+      control.setEnabledModels([selectedModel], { kind: "user-initiated", via: "cli" }),
+    ).resolves.toMatchObject({
+      enabledModels: [selectedModel],
     });
     await expect(
       control.importPiAuth({ sourcePath: "/tmp/pi/auth.json", overwrite: false }),
@@ -101,6 +84,26 @@ describe("daemon model control", () => {
     expect(prepareModel).toHaveBeenCalledWith("baidu-oneapi/ernie-4.6");
   });
 
+  it("fails closed when setEnabledModels has no explicit user-initiated intent", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-model-control-intent-"));
+    roots.push(root);
+    const sessionRegistry = createDaemonSessionRegistry(root, {
+      daemonId: "install-model-intent",
+      daemonCwd: root,
+    });
+    const persist = vi.fn(async () => undefined);
+    const control = createSparkDaemonModelControl({
+      providerControl: { ...fakeProviderControl(), setEnabledModels: persist },
+      sessionRegistry,
+    });
+
+    await expect(control.setEnabledModels([selectedModel])).rejects.toMatchObject({
+      name: "SparkDaemonControlError",
+      code: "enabled_models_intent_required",
+    });
+    expect(persist).not.toHaveBeenCalled();
+  });
+
   it("defaults thinking to high while preserving an explicit session level", async () => {
     const root = await mkdtemp(join(tmpdir(), "spark-thinking-control-"));
     roots.push(root);
@@ -108,7 +111,10 @@ describe("daemon model control", () => {
       daemonId: "install-thinking-control",
       daemonCwd: root,
     });
-    await sessionRegistry.create({ sessionId: "sess_thinking", workspaceId: "ws_demo" });
+    await createDaemonWorkspaceSession(sessionRegistry, {
+      sessionId: "sess_thinking",
+      workspaceId: "ws_demo",
+    });
     const control = createSparkDaemonModelControl({
       providerControl: fakeProviderControl(),
       sessionRegistry,
@@ -119,6 +125,125 @@ describe("daemon model control", () => {
 
     await control.setSessionThinkingLevel("sess_thinking", "medium");
     await expect(control.effectiveThinkingLevel("sess_thinking")).resolves.toBe("medium");
+  });
+
+  it("inherits and clamps the complete subagent model profile", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-subagent-model-control-"));
+    roots.push(root);
+    const sessionRegistry = createDaemonSessionRegistry(root, {
+      daemonId: "install-subagent-model-control",
+      daemonCwd: root,
+    });
+    const administrator = await sessionRegistry.ensureWorkspaceAdministrator("ws_demo");
+    if (administrator.scope.kind !== "workspace") throw new Error("Missing workspace fixture");
+    await sessionRegistry.create({
+      sessionId: "sess_parent",
+      scope: administrator.scope,
+      supervisorSessionId: administrator.sessionId,
+      model: selectedModel,
+      thinkingLevel: "medium",
+      maxOutputTokens: 4_096,
+    });
+    const providerControl = fakeProviderControl();
+    const providerSnapshot = await providerControl.snapshot();
+    const unavailableEnabledModel = providerSnapshot.models[0];
+    if (!unavailableEnabledModel) throw new Error("Missing enabled model fixture");
+    unavailableEnabledModel.available = false;
+    const control = createSparkDaemonModelControl({ providerControl, sessionRegistry });
+
+    await expect(control.resolveSubagentOptions!("sess_parent")).resolves.toMatchObject({
+      model: selectedModel,
+      thinkingLevel: "medium",
+      maxOutputTokens: 4_096,
+      enabledModels: [
+        { provider: "baidu-oneapi", model: "ernie-4.5" },
+        { provider: "baidu-oneapi", model: "ernie-4.6" },
+      ],
+    });
+    unavailableEnabledModel.available = true;
+    await expect(
+      control.resolveSubagentOptions!("sess_parent", {
+        provider: model.providerName,
+        model: model.modelId,
+        reasoningEffort: "low" as never,
+        maxTokens: 16_384,
+      }),
+    ).resolves.toMatchObject({
+      model,
+      thinkingLevel: "low",
+      maxOutputTokens: 8_192,
+      enabledModels: expect.arrayContaining([
+        { provider: "baidu-oneapi", model: "ernie-4.5" },
+        { provider: "baidu-oneapi", model: "ernie-4.6" },
+      ]),
+    });
+    await expect(
+      control.resolveSubagentOptions!("sess_parent", { maxTokens: 2_048 }),
+    ).resolves.toMatchObject({
+      model: selectedModel,
+      thinkingLevel: "medium",
+      maxOutputTokens: 2_048,
+    });
+    await expect(
+      control.resolveSubagentOptions!("sess_parent", {
+        provider: model.providerName,
+        model: model.modelId,
+      }),
+    ).resolves.toMatchObject({
+      model,
+      thinkingLevel: "high",
+      maxOutputTokens: 4_096,
+    });
+  });
+
+  it("revalidates explicit subagent routes and supported reasoning at creation time", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-subagent-model-revalidation-"));
+    roots.push(root);
+    const sessionRegistry = createDaemonSessionRegistry(root, {
+      daemonId: "install-subagent-model-revalidation",
+      daemonCwd: root,
+    });
+    await createDaemonWorkspaceSession(sessionRegistry, {
+      sessionId: "sess_parent",
+      workspaceId: "ws_demo",
+    });
+    const providerControl = fakeProviderControl(undefined, undefined, ["baidu-oneapi/ernie-4.5"]);
+    const providerSnapshot = await providerControl.snapshot();
+    const nonReasoning = providerSnapshot.models[0];
+    if (!nonReasoning) throw new Error("Missing model fixture");
+    nonReasoning.reasoning = false;
+    const control = createSparkDaemonModelControl({ providerControl, sessionRegistry });
+
+    await expect(control.resolveSubagentOptions!("sess_parent")).resolves.toMatchObject({
+      model,
+      thinkingLevel: "off",
+    });
+
+    await expect(
+      control.resolveSubagentOptions!("sess_parent", {
+        provider: selectedModel.providerName,
+        model: selectedModel.modelId,
+      }),
+    ).rejects.toMatchObject({ code: "model_not_enabled" });
+    await expect(
+      control.resolveSubagentOptions!("sess_parent", {
+        provider: model.providerName,
+        model: model.modelId,
+        reasoningEffort: "high" as never,
+      }),
+    ).rejects.toMatchObject({ code: "model_unavailable" });
+    await expect(
+      control.resolveSubagentOptions!("sess_parent", {
+        provider: model.providerName,
+      }),
+    ).rejects.toMatchObject({ code: "model_not_found" });
+    await expect(
+      control.resolveSubagentOptions!("sess_parent", {
+        provider: model.providerName,
+        model: model.modelId,
+        reasoningEffort: "unsupported" as never,
+      }),
+    ).rejects.toMatchObject({ code: "model_not_found" });
   });
 
   it("maps OAuth interaction state without credential material", async () => {
@@ -178,11 +303,11 @@ describe("daemon model control", () => {
       sessionRegistry,
     });
     await expect(restrictedControl.setDefaultModel(selectedModel)).rejects.toMatchObject({
-      code: "model_out_of_scope",
+      code: "model_not_enabled",
     });
     await expect(
       restrictedControl.setSessionModel("sess_missing", selectedModel),
-    ).rejects.toMatchObject({ code: "model_out_of_scope" });
+    ).rejects.toMatchObject({ code: "model_not_enabled" });
 
     const unavailableProviderControl = fakeProviderControl();
     const unavailableSnapshot = await unavailableProviderControl.snapshot();
@@ -207,7 +332,7 @@ describe("daemon model control", () => {
     });
   });
 
-  it("uses the current session model for a bounded role leaf without a provider override", async () => {
+  it("uses the current Session model for bounded name generation without a provider override", async () => {
     const root = await mkdtemp(join(tmpdir(), "spark-model-title-"));
     roots.push(root);
     const sessionRegistry = createDaemonSessionRegistry(root, {
@@ -221,12 +346,12 @@ describe("daemon model control", () => {
     });
 
     await expect(
-      control.generateSessionRole!({ prompt: "Why does startup fail?", model: selectedModel }),
+      control.generateSessionName!({ prompt: "Why does startup fail?", model: selectedModel }),
     ).resolves.toBe("Runtime Operations");
     expect(runLeaf).toHaveBeenCalledWith({
-      role: "session-role",
+      role: "session-name",
       brief: expect.stringMatching(
-        /user's language[\s\S]*broad stable responsibility[\s\S]*established naming style/u,
+        /user's language[\s\S]*recognized in a list[\s\S]*do not imply a Role/u,
       ),
       input: "Why does startup fail?",
       sessionModel: "baidu-oneapi/ernie-4.6",
@@ -236,11 +361,132 @@ describe("daemon model control", () => {
 
     runLeaf.mockResolvedValueOnce({ degraded: true, text: "" });
     await expect(
-      control.generateSessionRole!({ prompt: "fallback", model: selectedModel }),
+      control.generateSessionName!({ prompt: "fallback", model: selectedModel }),
     ).resolves.toBeUndefined();
 
-    await control.generateSessionRole!({ prompt: "x".repeat(2_100), model: selectedModel });
+    await control.generateSessionName!({ prompt: "x".repeat(2_100), model: selectedModel });
     expect(runLeaf).toHaveBeenLastCalledWith(expect.objectContaining({ input: "x".repeat(2_000) }));
+  });
+
+  it("runs one bounded tool-free request for a real model connectivity check", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-model-connectivity-"));
+    roots.push(root);
+    const runLeaf = vi.fn(async () => ({ degraded: false, text: "OK" }));
+    const prepareModel = vi.fn(async () => undefined);
+    const control = createSparkDaemonModelControl({
+      providerControl: fakeProviderControl(prepareModel, runLeaf),
+      sessionRegistry: createDaemonSessionRegistry(root, {
+        daemonId: "install-model-connectivity",
+        daemonCwd: root,
+      }),
+    });
+
+    await expect(control.testModel(selectedModel)).resolves.toMatchObject({
+      status: "reachable",
+      model: selectedModel,
+    });
+    expect(prepareModel).toHaveBeenCalledWith("baidu-oneapi/ernie-4.6");
+    expect(runLeaf).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "model-connectivity",
+        sessionModel: "baidu-oneapi/ernie-4.6",
+        maxTokens: 16,
+        reasoning: false,
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+
+  it("returns stable connectivity reasons without leaking provider failures", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-model-connectivity-failure-"));
+    roots.push(root);
+    const control = createSparkDaemonModelControl({
+      providerControl: fakeProviderControl(async () => {
+        throw new Error("secret credential detail");
+      }),
+      sessionRegistry: createDaemonSessionRegistry(root, {
+        daemonId: "install-model-connectivity-failure",
+        daemonCwd: root,
+      }),
+    });
+
+    const result = await control.testModel(selectedModel);
+    expect(result).toMatchObject({
+      status: "unreachable",
+      reasonCode: "authentication-unavailable",
+      model: selectedModel,
+    });
+    expect(JSON.stringify(result)).not.toContain("secret credential detail");
+  });
+
+  it("reports the connectivity deadline separately from cancellation", async () => {
+    vi.useFakeTimers();
+    const root = await mkdtemp(join(tmpdir(), "spark-model-connectivity-timeout-"));
+    roots.push(root);
+    const runLeaf = vi.fn(
+      async ({ signal }: Parameters<NonNullable<SparkProviderControl["runLeaf"]>>[0]) =>
+        await new Promise<never>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const control = createSparkDaemonModelControl({
+      providerControl: fakeProviderControl(undefined, runLeaf),
+      sessionRegistry: createDaemonSessionRegistry(root, {
+        daemonId: "install-model-connectivity-timeout",
+        daemonCwd: root,
+      }),
+    });
+
+    const pending = control.testModel(selectedModel);
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    await expect(pending).resolves.toMatchObject({
+      status: "unreachable",
+      reasonCode: "timeout",
+      model: selectedModel,
+    });
+  });
+
+  it("returns a stable reason when a projected model is no longer in the daemon catalog", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-model-connectivity-stale-"));
+    roots.push(root);
+    const control = createSparkDaemonModelControl({
+      providerControl: fakeProviderControl(),
+      sessionRegistry: createDaemonSessionRegistry(root, {
+        daemonId: "install-model-connectivity-stale",
+        daemonCwd: root,
+      }),
+    });
+
+    await expect(
+      control.testModel({ providerName: "openai-codex", modelId: "removed-model" }),
+    ).resolves.toMatchObject({
+      status: "unreachable",
+      reasonCode: "no-model",
+      model: { providerName: "openai-codex", modelId: "removed-model" },
+    });
+  });
+
+  it("refuses to probe a catalog model outside the user-scoped range", async () => {
+    const root = await mkdtemp(join(tmpdir(), "spark-model-connectivity-scope-"));
+    roots.push(root);
+    const prepareModel = vi.fn(async () => undefined);
+    const runLeaf = vi.fn(async () => ({ degraded: false, text: "OK" }));
+    const control = createSparkDaemonModelControl({
+      providerControl: fakeProviderControl(prepareModel, runLeaf, ["baidu-oneapi/ernie-4.5"]),
+      sessionRegistry: createDaemonSessionRegistry(root, {
+        daemonId: "install-model-connectivity-scope",
+        daemonCwd: root,
+      }),
+    });
+
+    await expect(control.testModel(selectedModel)).resolves.toMatchObject({
+      status: "unreachable",
+      reasonCode: "model-not-enabled",
+      model: selectedModel,
+    });
+    expect(prepareModel).not.toHaveBeenCalled();
+    expect(runLeaf).not.toHaveBeenCalled();
   });
 });
 
@@ -250,7 +496,7 @@ function fakeProviderControl(
     degraded: true,
     text: "",
   }),
-  scopedModelIds: string[] = ["baidu-oneapi/ernie-4.5", "baidu-oneapi/ernie-4.6"],
+  enabledModelIds: string[] = ["baidu-oneapi/ernie-4.5", "baidu-oneapi/ernie-4.6"],
 ): SparkProviderControl {
   const snapshot: SparkProviderControlSnapshot = {
     activeModelId: "baidu-oneapi/ernie-4.5",
@@ -269,7 +515,7 @@ function fakeProviderControl(
         modelCount: 2,
       },
     ],
-    scopedModelIds,
+    enabledModelIds,
     models: [
       {
         id: "baidu-oneapi/ernie-4.5",
@@ -317,6 +563,9 @@ function fakeProviderControl(
     snapshot: async () => snapshot,
     setDefaultModel: async (modelRef) => {
       snapshot.activeModelId = modelRef;
+    },
+    setEnabledModels: async (modelRefs) => {
+      snapshot.enabledModelIds = [...modelRefs];
     },
     setApiKey: async () => undefined,
     logout: async () => false,

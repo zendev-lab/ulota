@@ -1,35 +1,38 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { createSparkProviderControl } from "@zendev-lab/spark-ai/control";
+import { createSparkProviderControl } from "@zendev-lab/spark-llm-providers/control";
 import { createId } from "@zendev-lab/spark-protocol/domain";
+import { type SparkProtocolJsonValue } from "@zendev-lab/spark-protocol/daemon";
+import { ensureSparkDaemonRunning } from "@zendev-lab/spark-daemon-client";
 import {
+  ensureChannelSessionWorkspace,
   resolveSparkPaths,
   resolveSparkUserPaths,
   writePrivateFile,
-} from "@zendev-lab/spark-system";
+} from "@zendev-lab/spark-platform-node";
 import {
   emptySparkUpdateState,
   isSparkBuildInfo,
   readSparkBuildInfo,
   readSparkUpdateState,
   resolveSparkUpdatePaths,
-} from "@zendev-lab/spark-update";
+} from "@zendev-lab/spark-deployment";
 import {
   defaultSparkDaemonConfig,
+  parseSparkDaemonInvocationConcurrency,
   readSparkDaemonConfig,
+  resolveSparkDaemonInvocationConcurrency,
   writeSparkDaemonConfig,
 } from "./config.js";
 import { createSparkDaemonUplinkControl } from "./daemon.js";
 import { startSparkDaemon } from "./daemon-start.js";
 import { getSparkDaemonServerProfile } from "./server-profiles.js";
 import { createSparkDaemonModelControl } from "./model-control.ts";
-import {
-  createEd25519ReproFormalEvidenceVerifier,
-  parseReproFormalEvidencePublicKeys,
-} from "./repro-formal-evidence-verifier.ts";
 import { resolveSessionCwdForWorkspaceId } from "./session-cwd.ts";
-import { migrateDaemonGlobalSessions } from "./session-scope-migration.ts";
+import { migrateSessionRegistryLineage } from "./session-registry-migration.ts";
+import { migrateRoleSessionStructuredData } from "./role-session-data-migration.ts";
+import { migrateRoleSessionSqliteData } from "./role-session-sqlite-migration.ts";
 import { unifyDaemonSessionTranscripts } from "./session-transcript-unification.ts";
 import type { DaemonChannelIngressRuntime } from "./channels/ingress.ts";
 import { SparkDaemonHumanWaitRegistry } from "./core/human-waits.ts";
@@ -37,8 +40,8 @@ import { SparkDaemonLeaseTransferBroker } from "./core/lease-transfer.ts";
 import {
   SparkDaemonLifecycle,
   SparkDaemonInvocationRegistry,
+  INVOCATION_SCHEDULER_QUESTION_OVERFLOW,
   acquireSparkDaemonLock,
-  legacySparkDaemonQueueRoot,
   type SparkDaemonDrainProgress,
   type SparkDaemonHumanInteractionResponder,
   type SparkDaemonLifecycleSnapshot,
@@ -57,16 +60,18 @@ import {
   type LocalHumanInteractionRespondParams,
   type LocalHumanInteractionRespondResult,
   requestTurnSubmit,
+  requestWorkspaceEnsureLocal,
   startLocalRpcServer,
 } from "./local-rpc.js";
-import { migrateLegacyQueueHistory } from "./store/legacy-queue-migration.ts";
+import { localRpcRequest } from "./local-rpc/client-transport.ts";
 import { SparkLoopStore } from "./store/loops.ts";
 import { SparkInvocationStore } from "./store/invocations.ts";
 import { openSparkDaemonDatabase } from "./store/schema.js";
 import { getWorkspaceById, listWorkspaces, resolveWorkspaceLocalPath } from "./store/workspaces.js";
-import { ensureWorkspaceMainSession } from "./workspace-main-session.ts";
+import { ensureWorkspaceAdministratorSession } from "./workspace-administrator-session.ts";
 import {
   cancelSparkDaemonRestartSuccessor,
+  clearSparkDaemonStartMarker,
   clearSparkDaemonRestartFenceForExplicitStart,
   completeSparkDaemonRestartSuccessor,
   isSparkDaemonRestartHelperDefinitelyDead,
@@ -91,6 +96,7 @@ import {
 } from "./build-reload.ts";
 import { createRepeatedErrorReporter } from "./repeated-error-reporter.ts";
 import type { SessionSupervisor } from "./session-supervisor.ts";
+import { preloadSparkDaemonExecutionRuntime } from "./spark/session-run.ts";
 import { closeDaemonLensBroker, prepareDaemonLensBroker } from "./lens/broker-lifecycle.ts";
 import { closeDaemonLensToolService } from "./lens/tool.ts";
 import {
@@ -105,6 +111,7 @@ import {
   startSparkDaemonProcess,
   errorMessage,
 } from "./cli-shared.ts";
+import { isRecord } from "./local-rpc/is-record.ts";
 
 // logs is provided by the caller to avoid a cycle with cli.ts
 let logsCommand: (
@@ -156,15 +163,46 @@ export async function start(
       `Spark daemon successor build ${runningBuildFingerprint} does not match fenced target ${successorContext.targetBuildFingerprint}.`,
     );
   }
+  console.error("[spark-daemon] opening database and preparing process ownership");
+  console.error("[spark-daemon] preloading execution runtime");
+  const executionRuntimePreload = preloadSparkDaemonExecutionRuntime();
+  void executionRuntimePreload.then(undefined, () => undefined);
   const db = openSparkDaemonDatabase(paths);
   const userPaths = resolveSparkUserPaths();
   const sparkHome = userPaths.dataRoot;
+  const config = existsSync(paths.configFile)
+    ? readSparkDaemonConfig(paths)
+    : defaultSparkDaemonConfig();
+  if (!existsSync(paths.configFile)) writeSparkDaemonConfig(paths, config);
   try {
     // The daemon process lock is held and the registry owner does not exist yet,
     // so the migration has exclusive mutation authority over registry.json.
-    await migrateDaemonGlobalSessions({ sparkHome, workspaces: listWorkspaces(db) });
+    console.error("[spark-daemon] migrating session registry ownership");
+    await migrateSessionRegistryLineage({
+      sparkHome,
+      daemonId: config.installationId,
+      resolveChannelSessionCwd: (sessionId) => ensureChannelSessionWorkspace(paths, sessionId),
+    });
+    console.error("[spark-daemon] migrating role session sqlite data");
+    await migrateRoleSessionSqliteData({
+      db,
+      databasePath: paths.databasePath,
+      backupRoot: join(sparkHome, "migrations"),
+    });
+    console.error("[spark-daemon] migrating role session structured data");
+    await migrateRoleSessionStructuredData({
+      sparkHome,
+      userRoleModelSettingsFile: userPaths.roleModelSettingsFile,
+      workspaces: listWorkspaces(db).map((workspace) => ({
+        workspaceId: workspace.id,
+        rootDir: workspace.localPath,
+      })),
+      onWarning: (message) => console.error(`[spark-daemon] migration warning: ${message}`),
+    });
+    console.error("[spark-daemon] preparing lens broker");
     await prepareDaemonLensBroker(db);
   } catch (error) {
+    clearSparkDaemonStartMarker(paths);
     await closeDaemonLensBroker(db);
     db.close();
     await lock.release();
@@ -189,18 +227,7 @@ export async function start(
   process.once("SIGTERM", onSigterm);
   const localEventBus = createSparkDaemonLocalEventBus();
   const invocationRegistry = new SparkDaemonInvocationRegistry();
-  await migrateLegacyQueueHistory({ db, queueRoot: legacySparkDaemonQueueRoot({ paths }) });
-  const config = existsSync(paths.configFile)
-    ? readSparkDaemonConfig(paths)
-    : defaultSparkDaemonConfig();
-  if (!existsSync(paths.configFile)) writeSparkDaemonConfig(paths, config);
-  const reproFormalEvidencePublicKeys = parseReproFormalEvidencePublicKeys(
-    config.reproFormalEvidencePublicKeysJson,
-  );
-  const reproFormalEvidenceVerifier =
-    Object.keys(reproFormalEvidencePublicKeys).length > 0
-      ? createEd25519ReproFormalEvidenceVerifier(reproFormalEvidencePublicKeys)
-      : undefined;
+  const invocationConcurrency = resolveSparkDaemonInvocationConcurrency(config);
   const roleInvocationStore = new SparkInvocationStore(db);
   const roleLoopStore = new SparkLoopStore(db, roleInvocationStore);
   const sessionRegistry = createDaemonSessionRegistry(sparkHome, {
@@ -211,11 +238,10 @@ export async function start(
       roleInvocationStore.sessionActivity(sessionId).active ||
       roleLoopStore.list({ ownerSessionId: sessionId }).length > 0,
     resolveSessionCwd: (input) => resolveSessionCwdForWorkspaceId(db, input),
+    resolveChannelSessionCwd: (sessionId) => ensureChannelSessionWorkspace(paths, sessionId),
   });
   for (const workspace of listWorkspaces(db)) {
-    if (workspace.status !== "archived") {
-      await ensureWorkspaceMainSession(db, sessionRegistry, workspace.id);
-    }
+    await ensureWorkspaceAdministratorSession(db, sessionRegistry, workspace.id);
   }
   const modelControl = createSparkDaemonModelControl({
     providerControl: createSparkProviderControl({
@@ -329,6 +355,11 @@ export async function start(
       onUplinkReconfigure: (serverUrl) => uplinkControl.requestReconfigure(serverUrl),
       onRestart: requestSafeRestart,
       getBuildFingerprint: () => runningBuildFingerprint,
+      getExecutionStatus: () => ({
+        backend: "in_process",
+        rootConcurrency: invocationConcurrency,
+        questionOverflow: INVOCATION_SCHEDULER_QUESTION_OVERFLOW,
+      }),
       getLifecycle: () => {
         const snapshot = lifecycle.snapshot();
         return snapshot.state === "draining" && drainProgress
@@ -349,7 +380,6 @@ export async function start(
       ...(sessionSupervisor ? { sessionSupervisor } : {}),
       modelControl,
       humanWaits,
-      ...(reproFormalEvidenceVerifier ? { reproFormalEvidenceVerifier } : {}),
       leaseTransfers,
       onHumanRequestOutboxReady: () => {
         flushHumanRequestOutbox?.();
@@ -367,15 +397,11 @@ export async function start(
       ...(respondHumanInteraction ? { respondHumanInteraction } : {}),
     });
   try {
+    console.error("[spark-daemon] unifying session transcripts");
     const transcriptMigration = await unifyDaemonSessionTranscripts({
       registry: sessionRegistry,
-      transcriptSparkHome: paths.piAgentDir ?? join(paths.dataDir, "pi-agent"),
-      backupRoot: join(
-        paths.dataDir,
-        "backups",
-        "session-transcript-unification",
-        new Date().toISOString().replaceAll(":", "-"),
-      ),
+      transcriptSparkHome: paths.sessionRuntimeDir ?? join(paths.dataDir, "pi-agent"),
+      backupRoot: join(paths.dataDir, "backups", "session-transcript-v5"),
       apply: true,
     });
     const migratedSessions = transcriptMigration.sessions.filter((session) => session.changed);
@@ -384,6 +410,7 @@ export async function start(
         `[spark-daemon] unified ${migratedSessions.length} session transcripts; backup: ${transcriptMigration.backupRoot}`,
       );
     }
+    console.error("[spark-daemon] starting runtime admission and local RPC");
     await startSparkDaemon({
       paths,
       ...(process.env.SPARK_HOME?.trim() ? { sparkHome: process.env.SPARK_HOME.trim() } : {}),
@@ -399,6 +426,8 @@ export async function start(
       modelControl,
       uplinkControl,
       managePidFile: false,
+      beforeAdmission: executionRuntimePreload,
+      skipWorkspaceAdministratorEnsure: true,
       onDrainProgress: (progress) => {
         drainProgress = progress;
       },
@@ -411,7 +440,9 @@ export async function start(
         // Bind status/stop while startup admission remains closed. Binding a
         // socket is not successor readiness: the Claimed fence remains active
         // until every daemon admission loop is live below.
+        console.error("[spark-daemon] binding local RPC socket");
         localRpc = await startLocalControl();
+        console.error(`[spark-daemon] local RPC listening on ${localRpc.socketPath}`);
       },
       onServing: () => {
         // Admission loops are live before this synchronous callback. Publish
@@ -419,13 +450,16 @@ export async function start(
         // event-loop turn. If an explicit stop won the durable CAS, roll the
         // unobservable lifecycle transition back and shut this successor down.
         lifecycle.activate();
+        console.error("[spark-daemon] serving; restart fence completed when applicable");
         if (!completeSparkDaemonRestartSuccessor(paths, lifecycle.processIdentity)) {
+          clearSparkDaemonStartMarker(paths);
           lifecycle.deactivate();
           stopRequested = true;
           stopIntent.abort(new Error("Spark daemon restart was cancelled before readiness."));
           shutdown.abort();
           return;
         }
+        clearSparkDaemonStartMarker(paths);
         stopBuildWatcher = watchSparkDaemonBuild({
           entrypoint: deployedEntrypoint,
           initialFingerprint: runningBuildFingerprint,
@@ -471,8 +505,12 @@ export async function startCommand(
   const flags = parseFlags(args);
   clearSparkDaemonRestartFenceForExplicitStart(paths);
   const service = startSparkDaemonProcess(paths, io);
-  const waitForReadiness = flags.json === "true" || shouldWaitForDaemon(flags);
-  if (waitForReadiness && !service.alreadyRunning) {
+  const waitForReadiness =
+    flags.json === "true" || shouldWaitForDaemon(flags, { defaultWait: true });
+  // Wait even when another caller already owns bootstrap ("already starting"):
+  // spawn is not readiness, and operators expect `start`/`restart` to exit only
+  // after the local RPC identity is serving.
+  if (waitForReadiness) {
     const readyPid = await waitForDaemonReady(paths, null, io);
     if (flags.json !== "true") {
       io.stdout.write(`${service.detail}\nSpark daemon is ready as process ${readyPid}.\n`);
@@ -516,7 +554,9 @@ export async function stop(
     }
     exitCode = stopUnreachableDaemon(paths, pid, io);
   }
-  if (exitCode !== 0 || !shouldWaitForDaemon(flags)) return exitCode;
+  // Stop stays async by default: many operator/test flows only need the stop
+  // request accepted. Pass --wait when the caller needs process exit observed.
+  if (exitCode !== 0 || !shouldWaitForDaemon(flags, { defaultWait: false })) return exitCode;
 
   if (await waitForDaemonStoppedOrReplaced(paths, pid, ownership)) return 0;
   io.stderr.write(`Spark daemon process ${pid} did not stop before timeout.\n`);
@@ -611,6 +651,8 @@ export async function daemon(
       return 0;
     case "status":
       return await daemonStatus(paths, args, io);
+    case "configure":
+      return configureDaemon(paths, args, io);
     case "start":
       return await start(paths, { explicit: true, managed: false });
     case "stop":
@@ -626,8 +668,59 @@ export async function daemon(
     case "ask":
       return await daemonAsk(paths, args, io);
     default:
-      throw new Error("Usage: spark daemon <status|start|stop|restart|sync|logs|submit|ask>");
+      throw new Error(
+        "Usage: spark daemon <status|configure|start|stop|restart|sync|logs|submit|ask>",
+      );
   }
+}
+
+export function configureDaemon(
+  paths: ReturnType<typeof resolveSparkPaths>,
+  args: string[],
+  io: CliIo,
+): number {
+  const flags = parseFlags(args);
+  const requestedConcurrency = flags["invocation-concurrency"];
+  const unknownFlags = Object.keys(flags).filter(
+    (key) => key !== "invocation-concurrency" && key !== "json",
+  );
+  if (
+    unknownFlags.length > 0 ||
+    positionalArgs(args).length > 0 ||
+    requestedConcurrency === undefined
+  ) {
+    throw new Error(
+      "Usage: spark daemon configure --invocation-concurrency <integer 1..64> [--json]",
+    );
+  }
+
+  const invocationConcurrency = parseSparkDaemonInvocationConcurrency(requestedConcurrency);
+  prepareSparkDaemonState(paths);
+  const current = readSparkDaemonConfig(paths);
+  writeSparkDaemonConfig(paths, { ...current, invocationConcurrency });
+  const restartRequired = readRunningPid(paths) !== null;
+  if (flags.json === "true") {
+    io.stdout.write(
+      `${JSON.stringify(
+        {
+          action: "configure",
+          invocationConcurrency,
+          appliesOn: "next_start",
+          restartRequired,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return 0;
+  }
+  io.stdout.write(
+    `Configured Spark daemon root invocation concurrency to ${invocationConcurrency}.\n` +
+      (restartRequired
+        ? "Restart required: run `spark daemon restart` to apply this startup-only setting.\n"
+        : "This startup-only setting will apply the next time the daemon starts.\n"),
+  );
+  return 0;
 }
 
 export async function restart(
@@ -663,7 +756,7 @@ export async function daemonSync(
     io.stdout.write(
       `Spark daemon restart ${status.restart.restartId} is already ${status.restart.state}.\n`,
     );
-    if (shouldWaitForDaemon(flags)) {
+    if (shouldWaitForDaemon(flags, { defaultWait: true })) {
       const replacementPid = await waitForDaemonReady(paths, status.restart.previousPid, io, {
         restartId: status.restart.restartId,
         targetInstanceId: status.restart.targetInstanceId,
@@ -689,7 +782,13 @@ export async function daemonSync(
       ? `Spark daemon build changed (${shortBuildFingerprint(status.build.runningFingerprint)} -> ${shortBuildFingerprint(status.build.availableFingerprint)}); requesting a safe drain restart.\n`
       : "Spark daemon is running but unreachable; repairing it with the deployed build.\n",
   );
-  return await restart(paths, ["--yes", ...(shouldWaitForDaemon(flags) ? ["--wait"] : [])], io);
+  // Preserve explicit async intent: without this, restart would wait by default
+  // even when the outer sync was invoked with --no-wait.
+  return await restart(
+    paths,
+    ["--yes", ...(shouldWaitForDaemon(flags, { defaultWait: true }) ? ["--wait"] : ["--no-wait"])],
+    io,
+  );
 }
 
 async function requestDrainRestart(
@@ -742,15 +841,23 @@ async function restartWithoutDrainSupport(
   clearSparkDaemonRestartFenceForExplicitStart(paths);
   const service = startSparkDaemonProcess(paths, io);
   io.stdout.write(`${service.detail}\n`);
-  if (flags.wait === "true" && flags["no-wait"] !== "true") {
+  if (shouldWaitForDaemon(flags, { defaultWait: true })) {
     const replacementPid = await waitForDaemonReady(paths, previousPid, io);
     io.stdout.write(`Spark daemon restarted as process ${replacementPid}.\n`);
   }
   return 0;
 }
 
-function shouldWaitForDaemon(flags: Record<string, string>): boolean {
-  return flags.wait === "true" && flags["no-wait"] !== "true";
+function shouldWaitForDaemon(
+  flags: Record<string, string>,
+  options: { defaultWait: boolean },
+): boolean {
+  // Explicit flags always win. Restart/start/sync default to waiting so spawn is
+  // not mistaken for readiness; stop defaults to async acceptance. Daemon-hosted
+  // callers that would wait on their own drain must pass --no-wait.
+  if (flags["no-wait"] === "true") return false;
+  if (flags.wait === "true") return true;
+  return options.defaultWait;
 }
 
 async function startStoppedDaemon(
@@ -761,7 +868,7 @@ async function startStoppedDaemon(
   clearSparkDaemonRestartFenceForExplicitStart(paths);
   const service = startSparkDaemonProcess(paths, io);
   io.stdout.write(`${service.detail}\n`);
-  if (shouldWaitForDaemon(flags)) {
+  if (shouldWaitForDaemon(flags, { defaultWait: true })) {
     const readyPid = await waitForDaemonReady(paths, null, io);
     io.stdout.write(`Spark daemon is ready as process ${readyPid}.\n`);
   }
@@ -778,9 +885,10 @@ async function reportRequestedDaemonRestart(
   io.stdout.write(
     `Spark daemon restart requested at ${requested.requestedAt}; draining active invocations.\n`,
   );
-  // Async is the safe default for daemon-hosted callers: waiting for the
-  // replacement from inside an active invocation would deadlock the drain.
-  if (!shouldWaitForDaemon(flags)) {
+  // Daemon-hosted callers must pass --no-wait: waiting for the replacement
+  // from inside an active invocation would deadlock the drain. External shells
+  // wait by default so `restart --yes` only exits after the successor is ready.
+  if (!shouldWaitForDaemon(flags, { defaultWait: true })) {
     io.stdout.write("Replacement will start after active work finishes.\n");
     return 0;
   }
@@ -1099,10 +1207,14 @@ function formatRestartDrainBlockers(lifecycle: SparkDaemonLifecycleSnapshot | un
   if (blockers.length === 0) return `; drain stage ${stage}; blockers 0`;
   const ids = blockers
     .slice(0, 3)
-    .map((entry) => entry.invocationId)
+    .map((entry) =>
+      entry.pauseState ? `${entry.invocationId}:${entry.pauseState}` : entry.invocationId,
+    )
     .join(",");
+  const waiting = blockers.filter((entry) => entry.pauseState === "human-wait").length;
   return (
     `; drain stage ${stage}; blockers scheduler=${scheduled.length} direct=${direct.length}` +
+    `${waiting > 0 ? ` human-wait=${waiting}` : ""}` +
     ` ids=${ids}${blockers.length > 3 ? ",…" : ""}`
   );
 }
@@ -1246,6 +1358,9 @@ export async function daemonStatus(
       `  state db         ${status.stateDbPath}\n` +
       `  started          ${status.startedAt}\n` +
       `  registered       ${workspaceCount} workspaces across ${status.servers.length} servers\n` +
+      (status.execution
+        ? `  execution        ${status.execution.backend} · ${status.execution.rootConcurrency} root concurrency · ${status.execution.questionOverflow} question overflow\n`
+        : "") +
       `  invocations      ${status.invocations.queued} queued · ${status.invocations.running} running · ${status.invocations.succeeded} succeeded · ${status.invocations.failed} failed · ${status.invocations.cancelled} cancelled\n`,
   );
   for (const server of status.servers) {
@@ -1262,11 +1377,17 @@ export async function daemonSubmit(
   io: CliIo,
 ): Promise<number> {
   prepareSparkDaemonState(paths);
+  if (!io.turnSubmitToService) {
+    await ensureSparkDaemonRunning({ paths });
+  }
   const flags = parseFlags(args);
   const sessionId = flags.session?.trim();
   const prompt = (flags.prompt ?? positionalArgs(args).join(" ")).trim();
   if (!sessionId) throw new Error(STRINGS.submitRequiresSession);
   if (!prompt) throw new Error(STRINGS.submitRequiresPrompt);
+  if (!io.turnSubmitToService) {
+    await ensureDaemonSubmitSession(paths, sessionId);
+  }
   const idempotencyKey = flags["idempotency-key"]?.trim() || createId("idem");
   const submit = io.turnSubmitToService ?? requestTurnSubmit;
   const input = { sessionId, prompt, idempotencyKey };
@@ -1279,12 +1400,108 @@ export async function daemonSubmit(
     // invocation. Retrying once with the same key recovers that invocation.
     result = await submit(paths, input);
   }
+  if (flags.wait === "true") {
+    const waited = await waitForDaemonInvocation(paths, result.invocationId);
+    if (flags.json === "true") {
+      io.stdout.write(`${JSON.stringify(waited, null, 2)}\n`);
+    } else {
+      io.stdout.write(`${waited.status} ${waited.invocationId}\n`);
+    }
+    if (waited.status === "succeeded") return 0;
+    if (waited.status === "cancelled") return 2;
+    return 1;
+  }
   if (flags.json === "true") {
     io.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return 0;
   }
   io.stdout.write(`queued ${result.invocationId}\n`);
   return 0;
+}
+
+async function ensureDaemonSubmitSession(
+  paths: ReturnType<typeof resolveSparkPaths>,
+  sessionId: string,
+): Promise<void> {
+  const cwd = process.cwd();
+  const workspace = await requestWorkspaceEnsureLocal(paths, { localPath: cwd });
+  const sessions = await localRpcRequest(paths, "session.list", { includeArchived: true });
+  const existing = sessions.find((session) => session.sessionId === sessionId);
+  if (existing?.placement === "archived") {
+    throw new Error(`cannot submit to archived session: ${sessionId}`);
+  }
+  if (existing && existing.lifecycle !== "open") {
+    throw new Error(`cannot submit to ${existing.lifecycle} session: ${sessionId}`);
+  }
+  if (
+    existing &&
+    (existing.scope.kind === "daemon" || existing.scope.workspaceId !== workspace.id)
+  ) {
+    throw new Error(
+      `session ${sessionId} belongs to ${
+        existing.scope.kind === "daemon"
+          ? "the daemon scope"
+          : `workspace ${existing.scope.workspaceId}`
+      }, not workspace ${workspace.id}`,
+    );
+  }
+  if (existing) return;
+  const administrator = sessions.find(
+    (session) =>
+      session.scope.kind === "workspace" &&
+      session.scope.workspaceId === workspace.id &&
+      session.lineage.kind === "root",
+  );
+  if (!administrator) {
+    throw new Error(`workspace ${workspace.id} has no reconciled Administrator Session`);
+  }
+  await localRpcRequest(paths, "session.create", {
+    sessionId,
+    scope: { kind: "workspace", workspaceId: workspace.id },
+    supervisorSessionId: administrator.sessionId,
+    roleBinding: { kind: "none" },
+    cwd,
+  });
+}
+
+const WAIT_POLL_INTERVAL_MS = 500;
+const WAIT_POLL_MAX_INTERVAL_MS = 5_000;
+const WAIT_DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
+
+async function waitForDaemonInvocation(
+  paths: ReturnType<typeof resolveSparkPaths>,
+  invocationId: string,
+): Promise<{ invocationId: string; status: string }> {
+  const deadline = Date.now() + WAIT_DEFAULT_TIMEOUT_MS;
+  let interval = WAIT_POLL_INTERVAL_MS;
+  let failureCount = 0;
+  while (Date.now() < deadline) {
+    try {
+      const status = await localRpcRequest(paths, "turn.status", { invocationId });
+      failureCount = 0;
+      if (
+        status.status === "succeeded" ||
+        status.status === "failed" ||
+        status.status === "cancelled"
+      ) {
+        return await localRpcRequest(paths, "turn.result", { invocationId });
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await delay(Math.min(interval, remaining));
+      interval = Math.min(interval * 1.5, WAIT_POLL_MAX_INTERVAL_MS);
+    } catch {
+      failureCount += 1;
+      if (failureCount > 10) {
+        throw new Error(`Too many consecutive failures polling invocation ${invocationId}`);
+      }
+      await delay(Math.min(1000 * failureCount, 5000));
+    }
+  }
+  return {
+    invocationId,
+    status: "failed",
+  };
 }
 
 export async function daemonAsk(
@@ -1332,7 +1549,7 @@ export async function daemonAsk(
   return 0;
 }
 
-function parseAnswers(raw: string | undefined): Record<string, unknown> {
+function parseAnswers(raw: string | undefined): Record<string, SparkProtocolJsonValue> {
   if (!raw) throw new Error("spark daemon ask answer requires --answers <json>");
   let parsed: unknown;
   try {
@@ -1343,11 +1560,7 @@ function parseAnswers(raw: string | undefined): Record<string, unknown> {
   if (!isRecord(parsed)) {
     throw new Error("spark daemon ask answer requires a JSON object in --answers");
   }
-  return parsed;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return parsed as Record<string, SparkProtocolJsonValue>;
 }
 
 function renderHumanInteractionList(result: LocalHumanInteractionListResult): string {
@@ -1422,6 +1635,11 @@ export type DaemonStatus =
         failed: number;
         cancelled: number;
       };
+      execution?: {
+        backend: "in_process";
+        rootConcurrency: number;
+        questionOverflow: 1;
+      };
       lifecycle: SparkDaemonLifecycleSnapshot;
       build: {
         runningFingerprint?: string;
@@ -1469,6 +1687,7 @@ export async function buildDaemonStatus(
       startedAt: statSync(paths.pidFile).mtime.toISOString(),
       servers: status.servers,
       invocations: status.invocations,
+      ...(status.execution ? { execution: status.execution } : {}),
       lifecycle: status.lifecycle,
       build: {
         ...(status.buildFingerprint ? { runningFingerprint: status.buildFingerprint } : {}),

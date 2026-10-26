@@ -1,21 +1,16 @@
 import type { DatabaseSync } from "node:sqlite";
 
+import { createId } from "@zendev-lab/spark-protocol/domain";
 import {
-  parseSparkSessionRegistryRecord,
-  parseSparkSessionRegistryRecords,
+  parseSparkSessionProjection,
+  parseSparkSessionProjections,
   sparkTurnCancelResultSchema,
   sparkTurnStatusResultSchema,
   sparkTurnStreamPageSchema,
   sparkTurnSubmitResultSchema,
-} from "@zendev-lab/spark-protocol/daemon";
-import { createId } from "@zendev-lab/spark-protocol/domain";
-import {
-  type RuntimeCommandResultPayload,
   type ServerCommandPayload,
-} from "@zendev-lab/spark-protocol/runtime";
-import {
   type SparkProtocolJsonValue,
-  type SparkSessionRegistryRecord,
+  type SparkSessionProjection,
   type SparkTurnCancelResult,
   type SparkTurnStatusResult,
   type SparkTurnStreamPage,
@@ -25,6 +20,11 @@ import {
   sparkSessionViewSchema,
   type SparkSessionView,
 } from "@zendev-lab/spark-protocol/presentation";
+import { type RuntimeCommandResultPayload } from "@zendev-lab/spark-protocol/runtime";
+import {
+  sparkSessionLineageOriginKind,
+  sparkSessionParentId,
+} from "@zendev-lab/spark-protocol/session-assignment";
 
 import {
   dispatchRuntimeControlCommands,
@@ -44,7 +44,7 @@ export interface RuntimeSessionRoute {
 
 export interface RuntimeSessionProjectionRecord {
   runtimeId: string;
-  session: SparkSessionRegistryRecord;
+  session: SparkSessionProjection;
   workspaceId?: string;
   runtimeWorkspaceBindingId?: string;
   snapshot?: SparkSessionView;
@@ -272,7 +272,7 @@ export function listRuntimeSessionProjections(
     conditions.push("scope = ?");
     values.push(options.scope);
   }
-  if (!options.includeArchived) conditions.push("status != 'archived'");
+  if (!options.includeArchived) conditions.push("placement != 'archived'");
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const rows = db
     .prepare(
@@ -303,7 +303,7 @@ export function listRuntimeSessionProjections(
 export function reconcileRuntimeSessionListProjection(
   db: DatabaseSync,
   route: RuntimeSessionRoute,
-  sessions: SparkSessionRegistryRecord[],
+  sessions: SparkSessionProjection[],
   options: {
     candidateSessionIds: Iterable<string>;
     includeArchived?: boolean;
@@ -320,7 +320,7 @@ export function reconcileRuntimeSessionListProjection(
       ? "scope = 'workspace' AND workspace_id = ?"
       : "scope = 'daemon' AND workspace_id IS NULL";
   const routeValues = route.scope === "workspace" ? [route.workspaceId ?? ""] : [];
-  const archivedCondition = options.includeArchived ? "" : " AND status != 'archived'";
+  const archivedCondition = options.includeArchived ? "" : " AND placement != 'archived'";
 
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -441,12 +441,12 @@ export function recordRuntimeSessionControlProjection(
   if (payload.status !== "succeeded") return;
   const projection = payload.projection;
   if (projection?.kind === "session.list") {
-    const sessions = parseSparkSessionRegistryRecords(projection.data.sessions);
+    const sessions = parseSparkSessionProjections(projection.data.sessions);
     for (const session of sessions) {
       upsertRuntimeSession(db, command, session, payload.completedAt);
     }
   } else if (projection?.kind === "session.detail") {
-    const session = parseSparkSessionRegistryRecord(projection.data.session);
+    const session = parseSparkSessionProjection(projection.data.session);
     upsertRuntimeSession(db, command, session, payload.completedAt);
   } else if (projection?.kind === "session.snapshot") {
     const sessionId = requireCommandSessionId(command);
@@ -493,7 +493,7 @@ export function recordRuntimeSessionControlProjection(
 function upsertRuntimeSession(
   db: DatabaseSync,
   command: RuntimeControlCommandRecord,
-  session: SparkSessionRegistryRecord,
+  session: SparkSessionProjection,
   projectedAt: string,
 ): void {
   upsertRuntimeSessionProjection(db, command, session, projectedAt);
@@ -502,20 +502,24 @@ function upsertRuntimeSession(
 function upsertRuntimeSessionProjection(
   db: DatabaseSync,
   route: RuntimeSessionRoute,
-  session: SparkSessionRegistryRecord,
+  session: SparkSessionProjection,
   projectedAt: string,
 ): void {
   assertSessionCommandRoute(route, session);
   db.prepare(
     `INSERT INTO runtime_session_projections
-      (runtime_id, session_id, scope, workspace_id, runtime_workspace_binding_id, status,
-       record_json, projected_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (runtime_id, session_id, scope, workspace_id, runtime_workspace_binding_id,
+       lifecycle, placement, activity, lifetime, lineage_origin_kind, record_json, projected_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(runtime_id, session_id) DO UPDATE SET
        scope = excluded.scope,
        workspace_id = excluded.workspace_id,
        runtime_workspace_binding_id = excluded.runtime_workspace_binding_id,
-       status = excluded.status,
+       lifecycle = excluded.lifecycle,
+       placement = excluded.placement,
+       activity = excluded.activity,
+       lifetime = excluded.lifetime,
+       lineage_origin_kind = excluded.lineage_origin_kind,
        record_json = excluded.record_json,
        projected_at = excluded.projected_at`,
   ).run(
@@ -524,7 +528,11 @@ function upsertRuntimeSessionProjection(
     route.scope,
     route.workspaceId ?? null,
     route.runtimeWorkspaceBindingId ?? null,
-    session.status,
+    session.lifecycle,
+    session.placement,
+    session.activity ?? "idle",
+    session.lifetime,
+    sparkSessionLineageOriginKind(session.lineage),
     JSON.stringify(session),
     projectedAt,
   );
@@ -535,7 +543,7 @@ export function replaceRuntimeSideThreadProjection(
   db: DatabaseSync,
   route: RuntimeSessionRoute,
   parentSessionId: string,
-  session: SparkSessionRegistryRecord | null,
+  session: SparkSessionProjection | null,
   projectedAt: string,
 ): void {
   if (route.scope !== "workspace" || !route.workspaceId) {
@@ -546,8 +554,8 @@ export function replaceRuntimeSideThreadProjection(
   }
   if (
     session &&
-    (session.relation?.kind !== "side_thread" ||
-      session.relation.parentSessionId !== parentSessionId)
+    (sparkSessionLineageOriginKind(session.lineage) !== "side_thread" ||
+      sparkSessionParentId(session.lineage) !== parentSessionId)
   ) {
     throw new RuntimeControlCommandError(
       "Side Thread projection does not belong to the requested parent.",
@@ -561,8 +569,8 @@ export function replaceRuntimeSideThreadProjection(
        WHERE runtime_id = ?
          AND scope = 'workspace'
          AND workspace_id = ?
-         AND json_extract(record_json, '$.relation.kind') = 'side_thread'
-         AND json_extract(record_json, '$.relation.parentSessionId') = ?`,
+         AND json_extract(record_json, '$.lineage.origin.kind') = 'side_thread'
+         AND json_extract(record_json, '$.lineage.parentSessionId') = ?`,
     ).run(route.runtimeId, route.workspaceId, parentSessionId);
     if (session) upsertRuntimeSessionProjection(db, route, session, projectedAt);
     db.exec("COMMIT");
@@ -778,7 +786,7 @@ function updateRuntimeInvocationCancellation(
 
 function assertSessionCommandRoute(
   command: RuntimeSessionRoute,
-  session: SparkSessionRegistryRecord,
+  session: SparkSessionProjection,
 ): void {
   if (command.scope === "daemon" && session.scope.kind !== "daemon") {
     throw new RuntimeControlCommandError(
@@ -845,7 +853,7 @@ function parseHistory(
 function runtimeSessionProjectionRecord(
   row: RuntimeSessionProjectionRow,
 ): RuntimeSessionProjectionRecord {
-  const session = parseSparkSessionRegistryRecord(
+  const session = parseSparkSessionProjection(
     parsePersistedJson(row.recordJson, "runtime session record"),
   );
   const snapshotProjection = parseRuntimeSessionSnapshot(row.snapshotJson);

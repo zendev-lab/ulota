@@ -28,29 +28,64 @@ const groups: ConsoleNavGroupCopy = {
 };
 
 describe("console nav", () => {
-  it("keeps daemon grouped under workspace settings chrome", () => {
+  it("shows control-plane, workspace, and daemon settings together for an owner", () => {
     const result = buildConsoleNavGroups({
       workspaceHrefPrefix: "/local",
-      includeControlPlaneNav: false,
+      workspaceSlug: "local",
+      includeControlPlaneNav: true,
       includeWorkspaceNav: true,
       nav,
       groups,
     });
 
     expect(result.map((group) => [group.id, group.label])).toEqual([
+      ["hub", "Hub"],
       ["workspace", "Workspace · Local"],
       ["daemon", "Daemon"],
     ]);
-    expect(result[0]?.items.map((item) => item.href)).toEqual([
+    expect(result[1]?.items.map((item) => item.href)).toEqual([
       "/local/settings",
-      "/local/settings/channels",
       "/local/settings/registration",
     ]);
-    expect(result[1]?.items.map((item) => item.href)).toEqual([
-      "/settings/models",
-      "/settings/invocations",
-      "/settings/update",
+    expect(result[2]?.items.map((item) => item.href)).toEqual([
+      "/settings/channels",
+      "/settings/models?workspace=local",
+      "/settings/invocations?workspace=local",
     ]);
+  });
+
+  it("merges daemon settings into the workspace group when unified", () => {
+    const result = buildConsoleNavGroups({
+      workspaceHrefPrefix: "/local",
+      workspaceSlug: "local",
+      includeControlPlaneNav: true,
+      includeWorkspaceNav: true,
+      mergeDaemonIntoWorkspace: true,
+      nav,
+      groups,
+    });
+
+    expect(result.map((group) => group.id)).toEqual(["hub", "workspace"]);
+    expect(result[1]?.items.map((item) => item.href)).toEqual([
+      "/local/settings",
+      "/local/settings/registration",
+      "/settings/channels",
+      "/settings/models?workspace=local",
+      "/settings/invocations?workspace=local",
+    ]);
+  });
+
+  it("shows only workspace settings without control-plane permission", () => {
+    const result = buildConsoleNavGroups({
+      workspaceHrefPrefix: "/local",
+      workspaceSlug: "local",
+      includeControlPlaneNav: false,
+      includeWorkspaceNav: true,
+      includeDaemonNav: false,
+      nav,
+      groups,
+    });
+    expect(result.map((group) => group.id)).toEqual(["workspace"]);
   });
 
   it("shows only control-plane items on independent Hub settings pages", () => {
@@ -58,6 +93,7 @@ describe("console nav", () => {
       workspaceHrefPrefix: "/local",
       includeControlPlaneNav: true,
       includeWorkspaceNav: false,
+      includeDaemonNav: false,
       nav,
       groups,
     });
@@ -65,12 +101,14 @@ describe("console nav", () => {
     expect(result[0]?.items.map((item) => item.href)).toEqual([
       "/workspaces/new",
       HUB_SETTINGS_HREF,
+      "/settings/update",
     ]);
   });
 
   it("identifies control-plane paths (not workspace daemon settings)", () => {
     expect(isControlPlanePath("/settings/access")).toBe(true);
     expect(isControlPlanePath("/workspaces/new")).toBe(true);
+    expect(isControlPlanePath("/settings/update")).toBe(true);
     expect(isControlPlanePath("/settings/invocations")).toBe(false);
     expect(isControlPlanePath("/settings/models")).toBe(false);
     expect(isControlPlanePath("/local/settings/registration")).toBe(false);
@@ -96,8 +134,14 @@ describe("console nav", () => {
     ).toBe(false);
     expect(
       isConsoleNavItemActive({
-        pathname: "/local/settings/channels",
-        href: "/local/settings/channels",
+        pathname: "/settings/channels",
+        href: "/settings/channels",
+      }),
+    ).toBe(true);
+    expect(
+      isConsoleNavItemActive({
+        pathname: "/settings/models",
+        href: "/settings/models?workspace=local",
       }),
     ).toBe(true);
     expect(isConsoleNavItemActive({ pathname: "/local/settings", href: "/local/settings" })).toBe(
@@ -112,7 +156,7 @@ describe("console nav", () => {
   });
 
   it("labels console pages by their settings scope", () => {
-    expect(currentConsolePageLabel({ pathname: "/local/settings/channels", nav })).toBe(
+    expect(currentConsolePageLabel({ pathname: "/settings/channels", nav })).toBe(
       "Message platforms",
     );
     expect(currentConsolePageLabel({ pathname: "/settings/access", nav })).toBe("Browser access");

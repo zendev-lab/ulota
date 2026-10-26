@@ -1,17 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { Task, TaskRun } from "@zendev-lab/spark-core";
+import { type Task } from "@zendev-lab/spark-tasks";
+import { type TaskRun } from "@zendev-lab/spark-tasks";
 import { isTaskSessionOwnerValid } from "./session-task-owner.ts";
 
-describe("Task Session owner validity", () => {
+describe("Task Session origin validity", () => {
   it("accepts only the active run bound to the exact Session", async () => {
     const run = taskRun();
     const subject = {
-      owner: { kind: "task_run", ref: run.ref } as const,
-      workspaceId: "ws-test",
-      sessionId: run.execution!.sessionId!,
-      relation: {
-        kind: "task_execution" as const,
-        ownerSessionId: "session-owner",
+      origin: {
+        kind: "task_run",
         projectRef: run.projectRef,
         taskRef: run.taskRef,
         runRef: run.ref,
@@ -19,7 +16,9 @@ describe("Task Session owner validity", () => {
         roleRef: "role:executor",
         jobId: run.execution!.jobId,
         attempt: 1,
-      },
+      } as const,
+      workspaceId: "ws-test",
+      sessionId: run.execution!.sessionId!,
     };
     const options = {
       resolveWorkspaceCwd: () => "/workspace",
@@ -40,21 +39,19 @@ describe("Task Session owner validity", () => {
   it("keeps a revision Session only while its Task remains unfinished", async () => {
     const run = taskRun({ sessionLifetime: "task_revision", status: "succeeded" });
     const subject = {
-      owner: { kind: "task_revision", ref: run.execution!.jobId } as const,
-      workspaceId: "ws-test",
-      sessionId: run.execution!.sessionId!,
-      relation: {
-        kind: "task_execution" as const,
-        ownerSessionId: "session-owner",
+      origin: {
+        kind: "task_revision",
         projectRef: run.projectRef,
         taskRef: run.taskRef,
-        runRef: run.ref,
+        revisionRef: run.execution!.jobId,
+        originatingRunRef: run.ref,
         sessionGoalId: run.execution!.sessionGoalId,
         roleRef: "role:executor",
-        sessionLifetime: "task_revision" as const,
         jobId: run.execution!.jobId,
         attempt: 1,
-      },
+      } as const,
+      workspaceId: "ws-test",
+      sessionId: run.execution!.sessionId!,
     };
     const options = {
       resolveWorkspaceCwd: () => "/workspace",
@@ -67,6 +64,32 @@ describe("Task Session owner validity", () => {
         loadGraph: async () => graph(run, "done"),
       }),
     ).resolves.toBe(false);
+  });
+
+  it("keeps an owner-terminal revision Session until its owner closes it", async () => {
+    const run = taskRun({ sessionLifetime: "task_revision", status: "succeeded" });
+    const subject = {
+      origin: {
+        kind: "task_revision",
+        projectRef: run.projectRef,
+        taskRef: run.taskRef,
+        revisionRef: run.execution!.jobId,
+        originatingRunRef: run.ref,
+        sessionGoalId: run.execution!.sessionGoalId,
+        roleRef: "role:executor",
+        jobId: run.execution!.jobId,
+        attempt: 1,
+      } as const,
+      workspaceId: "ws-test",
+      sessionId: run.execution!.sessionId!,
+    };
+
+    await expect(
+      isTaskSessionOwnerValid(subject, {
+        resolveWorkspaceCwd: () => "/workspace",
+        loadGraph: async () => graph(run, "done", "owner_terminal"),
+      }),
+    ).resolves.toBe(true);
   });
 });
 
@@ -91,9 +114,16 @@ function taskRun(
   };
 }
 
-function graph(run: TaskRun, taskStatus: Task["status"] = "running") {
+function graph(
+  run: TaskRun,
+  taskStatus: Task["status"] = "running",
+  sessionRetention?: "task_terminal" | "owner_terminal",
+) {
   return {
     runs: () => [run],
-    getTask: () => ({ status: taskStatus }),
+    getTask: () => ({
+      status: taskStatus,
+      ...(sessionRetention ? { executionPolicy: { sessionRetention } } : {}),
+    }),
   };
 }

@@ -1,36 +1,47 @@
 # @zendev-lab/spark-protocol
 
-JSON-safe schemas and types shared by native TUI, daemon, runtime WebSocket, and Hub surfaces. This package owns refs/errors, command/event envelopes, RoleSpec and Session lifecycle contracts, invocation lifecycle, registration, projections, interactions, and view models.
+JSON-safe schemas and types shared by native TUI, daemon, runtime WebSocket, and
+Hub surfaces. This package owns refs/errors, command and event envelopes,
+RoleSpec, Session lineage, invocation lifecycle, interactions, and view models.
 
 ## Contract-domain subpaths
 
-Prefer these package exports for production imports:
+Production consumers use the public entry point for the contract they need:
 
-| Subpath | Ownership |
+| Subpath | Contracts |
 | --- | --- |
-| `@zendev-lab/spark-protocol/domain` | refs, versions, ownership, errors, shared primitives |
-| `@zendev-lab/spark-protocol/daemon` | local RPC, task claims, commands, sessions, memory approval |
-| `@zendev-lab/spark-protocol/runtime` | runtime WebSocket / registration contracts |
-| `@zendev-lab/spark-protocol/interaction` | human interaction, ask semantics, loop contracts |
-| `@zendev-lab/spark-protocol/presentation` | A2UI, conversation projections, composite view models |
+| `domain` | refs, versions, ownership, errors, shared primitives |
+| `daemon` | local RPC, task claims, commands, sessions, memory approval |
+| `runtime` | runtime WebSocket and registration |
+| `interaction` | human interaction, ask semantics, loops |
+| `presentation` | A2UI, conversation projections, composite view models |
 
-The package root barrel remains a compatibility surface only. The migration reduced production root references from 207 to 0 and root public symbols from 1140 to 1119. `test/fixtures/spark-protocol-root-imports.json` freezes the exact root/subpath symbol digests and shrinking ceilings; `check:architecture` rejects static imports/exports, side-effect imports, dynamic/type imports, `require`, forbidden cross-subpath edges, and symbols exported by more than one contract domain.
+Existing focused entry points, including `repro` and `repro-lane`, remain public.
+The root entry point retains source compatibility. Architecture checks reject
+production root imports and forbidden direct dependencies between the aggregate
+entry points. These groups describe the public API; they do not claim that all
+transitive implementation dependencies have been separated.
 
-The shared RoleSpec contract carries stable revision, semantic Model Type, capabilities, and instantiation policy. Session assignment carries independent lifetime, owner, lifecycle, authority, state binding, visibility, retention, purpose, and transcript reference fields. A discard-on-close Session may retain up to 16 daemon-sealed, 16 KiB close receipts while its transcript and invocation payloads are deleted. Close candidates are strict owner reports, not Evidence or automatic Memory. Decoders preserve unknown RoleSpec extension fields so older surfaces can read newer definitions without inventing lifecycle behavior.
+Session protocol v3 and registry v7 use one runtime entity: `Session`.
+`lineage` is either root or `{ kind: "child", parentSessionId, origin }`.
+Origins preserve provenance for session, side-thread, TaskRun, Task revision,
+Workflow, driver, driver tick, and Invocation creation without defining another
+runtime parent relation. Role identity remains in `roleBinding`. Old clients
+receive an explicit protocol-version mismatch rather than compatibility aliases.
 
-`@zendev-lab/spark-protocol/conversation` projects the existing message-part
-wire schema into shared, stateless conversation semantics. It normalizes text
-phases, redacted thinking, images, tool lifecycle/result merging, and legacy
-text-only messages; browser and terminal adapters continue to own their own
-rendering and interaction behavior.
+Repro terminal output uses the strict `spark.repro.lane-result/v2` schema from
+`@zendev-lab/spark-protocol/repro-lane`. It rejects unknown fields and binds the
+exact checkpoint, Session, TaskRef, RunRef, optional source checkpoint, and
+Formalize parent checkpoint. Repository revisions are optional Evidence, not
+Repro routing identity.
 
-Local RPC turn methods map to `turn.submit.request`, `turn.status.request`, `turn.stream.subscribe`, and `turn.cancel.request`. Bounded invocation list/result/retry/retention payloads are also protocol-owned; retry results identify a new invocation and `retryOfInvocationId`. Runtime commands map to the same transport-neutral `SparkCommand` vocabulary. Facts use `SparkEvent`, including command status/rejection, projections, diagnostics, and errors.
+Local RPC turn methods map to `turn.submit.request`, `turn.status.request`,
+`turn.stream.subscribe`, and `turn.cancel.request`. Invocation records include a
+durable serialization key: ordinary children serialize on themselves, while a
+driver or driver-tick child shares the parent Session key. The scheduler keeps
+FIFO order across daemon restart.
 
-The package must not import terminal, Svelte, Pi SDK, `pi-tui`, or Spark app internals. See [`../../docs/specs/turn.md`](../../docs/specs/turn.md).
-
-The protocol package also owns the dependency-light A2UI v0.9/v0.9.1 basic
-catalog normalizer. Workbench actions use the official client action envelope
-plus Spark's revision- and generation-bound context. The public action schema is
-closed to `pause`, `resume`, `run_now`, `retry_checkpoint`, and confirmed
-`stop`; consumers map these to typed Loop control and must never treat an A2UI
-event as a generic tool invocation.
+The shared conversation model projects the message-part wire schema into
+stateless rendering semantics. The package must not import terminal, Svelte, Pi
+SDK, `pi-tui`, or Spark application internals. See
+[`../../.agents/notes/contracts/turn.md`](../../.agents/notes/contracts/turn.md).

@@ -20,13 +20,31 @@ export default defineConfig({
     // only those two rules through CLI overrides for an advisory hotspot scan.
     overrides: [
       {
-        files: [
-          "packages/**/*.ts",
-          "apps/spark-cli/**/*.ts",
-          "apps/spark-tui/**/*.ts",
-          "test/**/*.ts",
-        ],
+        files: ["packages/**/*.ts", "apps/spark-cli/**/*.ts", "test/**/*.ts"],
         env: { node: true },
+      },
+      {
+        files: ["**/*.test.ts", "**/*.spec.ts"],
+        plugins: ["typescript", "vitest"],
+        rules: {
+          "vitest/expect-expect": "off",
+          "vitest/hoisted-apis-on-top": "error",
+          "vitest/no-conditional-expect": "off",
+          "vitest/no-conditional-tests": "error",
+          "vitest/no-disabled-tests": "error",
+          "vitest/no-duplicate-hooks": "error",
+          "vitest/no-focused-tests": "error",
+          "vitest/prefer-snapshot-hint": "error",
+          "vitest/require-awaited-expect-poll": "error",
+          "vitest/require-local-test-context-for-concurrent-snapshots": "error",
+          "vitest/require-mock-type-parameters": "off",
+          "vitest/require-to-throw-message": "off",
+          "vitest/valid-describe-callback": "error",
+          "vitest/valid-expect": ["error", { maxArgs: 2 }],
+          "vitest/valid-expect-in-promise": "error",
+          "vitest/valid-title": "off",
+          "vitest/warn-todo": "off",
+        },
       },
     ],
   },

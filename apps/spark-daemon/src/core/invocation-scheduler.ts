@@ -11,11 +11,9 @@ import {
   isSparkTurnRestartYieldError,
   isSparkTurnResumeCheckpointPersistable,
   type SparkTurnResumeCheckpoint,
-} from "@zendev-lab/spark-turn";
+} from "../product/host/agent-runtime/agent-loop.ts";
 import type { SparkReproUsageScope } from "@zendev-lab/spark-protocol/token-usage";
 import {
-  SPARK_INVOCATION_INTERRUPTED_ERROR_CODE,
-  SPARK_INVOCATION_INTERRUPTED_ERROR_MESSAGE,
   SparkInvocationStore,
   type CompleteSparkInvocationInput,
   type SparkInvocationEvent,
@@ -26,6 +24,7 @@ import {
   ExecutionAttemptSession,
   InProcessExecutionAttemptAdapter,
   type ExecutionAttemptAdapter,
+  type ExecutionAttemptEventIngress,
 } from "../execution/adapter.ts";
 import { createInProcessExecutionCapabilityRegistry } from "../execution/owner-capabilities.ts";
 import type { ExecutionOwnerHandlers } from "../execution/owner-capabilities.ts";
@@ -36,11 +35,17 @@ import {
   getSparkDaemonTaskSessionId,
   validateSparkDaemonTask,
   type SparkDaemonTask,
+  type SparkDaemonTaskExecutionContext,
   type SparkDaemonTaskExecutor,
   type SparkDaemonTokenUsageObservation,
 } from "./types.ts";
+import {
+  DEFAULT_INVOCATION_SCHEDULER_CONCURRENCY,
+  INVOCATION_SCHEDULER_QUESTION_OVERFLOW,
+} from "./invocation-scheduler-policy.ts";
+import { DaemonEventIngress } from "./daemon-event-ingress.ts";
 
-export const DEFAULT_INVOCATION_SCHEDULER_CONCURRENCY = 4;
+export { DEFAULT_INVOCATION_SCHEDULER_CONCURRENCY } from "./invocation-scheduler-policy.ts";
 /**
  * Daemon turns are durable background work, so their default lifetime is
  * bounded by explicit cancellation rather than an arbitrary wall-clock
@@ -49,13 +54,21 @@ export const DEFAULT_INVOCATION_SCHEDULER_CONCURRENCY = 4;
  */
 export const DEFAULT_INVOCATION_TASK_TIMEOUT_MS = 0;
 export const DEFAULT_INVOCATION_ABORT_DRAIN_MS = 1_000;
-const MAX_BLOCKING_QUESTION_OVERFLOW = 1;
+export { INVOCATION_SCHEDULER_QUESTION_OVERFLOW } from "./invocation-scheduler-policy.ts";
 
 interface ActiveInvocation {
   invocation: SparkInvocationRecord;
   controller: AbortController;
+  commitState: InvocationCommitState;
   settled: Promise<void>;
+  pauseState: "busy" | "human-wait";
 }
+
+interface InvocationCommitState {
+  started: boolean;
+}
+
+type TerminalDeferralResult = { status: "fulfilled" } | { status: "rejected"; reason: unknown };
 
 export interface SparkInvocationSchedulerOptions {
   store: SparkInvocationStore;
@@ -68,6 +81,8 @@ export interface SparkInvocationSchedulerOptions {
   executionAttemptGeneration?: number;
   /** Private fault-domain backend; defaults to the existing in-process executor. */
   executionAttemptAdapter?: ExecutionAttemptAdapter;
+  /** Shared daemon ingress for streamed executor event persistence. */
+  executionEventIngress?: ExecutionAttemptEventIngress;
   /**
    * Optional daemon-owned terminal commit. Production uses this to commit the
    * invocation outcome and its channel-delivery intent in one SQLite
@@ -89,6 +104,10 @@ export interface SparkInvocationSchedulerOptions {
   initiallyAccepting?: boolean;
   /** Restart-only signal used to cooperatively yield at model-to-tool boundaries. */
   restartRequestedSignal?: AbortSignal;
+  /** Testable macrotask boundary before a completed root releases its scheduler slot. */
+  yieldAfterInvocation?: () => Promise<void>;
+  /** Testable cooperative boundary before one invocation commits its terminal bundle. */
+  yieldBeforeTerminalCommit?: () => Promise<void>;
   tokenUsageStore?: SparkTokenUsageStore;
   /** Daemon-owned lookup of the active Repro bound to a persistent root session. */
   resolveReproUsageScope?: (task: SparkDaemonTask) => Promise<SparkReproUsageScope | undefined>;
@@ -101,6 +120,7 @@ export class SparkInvocationScheduler {
   private readonly executionAttemptStore: ExecutionAttemptStore;
   private readonly executionCapabilityRegistry: ExecutionCapabilityRegistry;
   private readonly executionAttemptGeneration: number;
+  private readonly executionEventIngress: ExecutionAttemptEventIngress;
   private readonly completeInvocation: NonNullable<
     SparkInvocationSchedulerOptions["completeInvocation"]
   >;
@@ -109,11 +129,16 @@ export class SparkInvocationScheduler {
   private readonly concurrency: number;
   private readonly taskTimeoutMs: number;
   private readonly restartRequestedSignal?: AbortSignal;
+  private readonly yieldAfterInvocation: () => Promise<void>;
+  private readonly yieldBeforeTerminalCommit: () => Promise<void>;
   private readonly tokenUsageStore?: SparkTokenUsageStore;
   private readonly resolveReproUsageScope?: SparkInvocationSchedulerOptions["resolveReproUsageScope"];
   private readonly active = new Map<string, ActiveInvocation>();
   private readonly structuredActive = new Map<string, ActiveInvocation>();
-  private readonly activeSessions = new Set<string>();
+  private readonly activeSerializationKeys = new Set<string>();
+  private readonly activeSessionIds = new Set<string>();
+  private readonly sessionIdleWaiters = new Map<string, Set<() => void>>();
+  private terminalCommitTail: Promise<void> = Promise.resolve();
   private accepting: boolean;
 
   constructor(options: SparkInvocationSchedulerOptions) {
@@ -122,6 +147,7 @@ export class SparkInvocationScheduler {
     this.executionAttemptAdapter =
       options.executionAttemptAdapter ?? new InProcessExecutionAttemptAdapter();
     this.executionAttemptStore = options.executionAttemptStore;
+    this.executionEventIngress = options.executionEventIngress ?? new DaemonEventIngress();
     this.executionCapabilityRegistry = createInProcessExecutionCapabilityRegistry({
       currentAttempt: (invocationId) => this.executionAttemptStore.current(invocationId),
       owners: options.executionOwnerHandlers,
@@ -144,35 +170,11 @@ export class SparkInvocationScheduler {
       DEFAULT_INVOCATION_TASK_TIMEOUT_MS,
     );
     this.restartRequestedSignal = options.restartRequestedSignal;
+    this.yieldAfterInvocation = options.yieldAfterInvocation ?? yieldMacrotask;
+    this.yieldBeforeTerminalCommit = options.yieldBeforeTerminalCommit ?? yieldMacrotask;
     this.tokenUsageStore = options.tokenUsageStore;
     this.resolveReproUsageScope = options.resolveReproUsageScope;
     this.accepting = options.initiallyAccepting !== false;
-  }
-
-  recover(now?: string): number {
-    // Successor daemon resumes interrupted turns against persisted session state.
-    // Invalid task payloads still fail closed because they cannot be reclaimed.
-    let recovered = 0;
-    while (true) {
-      const running = this.store.listPage({ status: "running", limit: 100 }).invocations;
-      if (running.length === 0) return recovered;
-      for (const invocation of running) {
-        try {
-          validateSparkDaemonTask(invocation.task);
-        } catch {
-          this.store.complete(invocation.invocationId, {
-            status: "failed",
-            errorCode: SPARK_INVOCATION_INTERRUPTED_ERROR_CODE,
-            errorMessage: SPARK_INVOCATION_INTERRUPTED_ERROR_MESSAGE,
-            ...(now ? { now } : {}),
-          });
-          recovered += 1;
-          continue;
-        }
-        this.store.requeueForResume(invocation.invocationId, now);
-        recovered += 1;
-      }
-    }
   }
 
   processBatch(): boolean {
@@ -181,7 +183,7 @@ export class SparkInvocationScheduler {
     let launched = 0;
     while (this.active.size < this.concurrency) {
       const invocation = this.store.claimNext(this.workerId, new Date().toISOString(), [
-        ...this.activeSessions,
+        ...this.activeSerializationKeys,
       ]);
       if (!invocation) break;
       launched += 1;
@@ -193,12 +195,12 @@ export class SparkInvocationScheduler {
     }
     if (
       this.active.size >= this.concurrency &&
-      this.activeQuestionCount() < MAX_BLOCKING_QUESTION_OVERFLOW
+      this.activeQuestionCount() < INVOCATION_SCHEDULER_QUESTION_OVERFLOW
     ) {
       const question = this.store.claimNext(
         this.workerId,
         new Date().toISOString(),
-        [...this.activeSessions],
+        [...this.activeSerializationKeys],
         { sourceKind: "session.question" },
       );
       if (question) {
@@ -214,16 +216,61 @@ export class SparkInvocationScheduler {
   }
 
   cancel(invocationId: string, reason = "cancel requested"): boolean {
-    const outcome = this.store.requestCancellation(invocationId, reason);
     const active = this.active.get(invocationId) ?? this.structuredActive.get(invocationId);
-    if (active) active.controller.abort(new InvocationCancelledError(reason));
+    if (active?.commitState.started) return false;
+    const outcome = this.store.requestCancellation(invocationId, reason);
+    if (active && outcome === "requested") {
+      active.controller.abort(new InvocationCancelledError(reason));
+    }
     return outcome === "cancelled" || outcome === "requested";
   }
 
   snapshot(): SparkInvocationRecord[] {
-    return [...this.active.values(), ...this.structuredActive.values()].map(
-      (entry) => entry.invocation,
+    return this.activeEntries().map((entry) => entry.invocation);
+  }
+
+  /** Process-local drain view, including whether the executor is only waiting on a human. */
+  drainSnapshot(): Array<{
+    invocation: SparkInvocationRecord;
+    pauseState: "busy" | "human-wait";
+  }> {
+    return this.activeEntries().map((entry) => ({
+      invocation: entry.invocation,
+      pauseState: entry.pauseState,
+    }));
+  }
+
+  private activeEntries(): ActiveInvocation[] {
+    return [...this.active.values(), ...this.structuredActive.values()];
+  }
+
+  private activeEntry(invocationId: string): ActiveInvocation | undefined {
+    return this.active.get(invocationId) ?? this.structuredActive.get(invocationId);
+  }
+
+  /** True while this process still owns an executor for the Session, even
+   * after cancellation has made the durable Invocation row terminal. */
+  isSessionActive(sessionId: string): boolean {
+    const normalizedSessionId = sessionId.trim();
+    if (!normalizedSessionId) return false;
+    if (this.activeSessionIds.has(normalizedSessionId)) return true;
+    return [...this.structuredActive.values()].some(
+      ({ invocation }) => invocation.sessionId === normalizedSessionId,
     );
+  }
+
+  /** Resolve after this process has released every executor that owns the Session. */
+  async waitForSessionIdle(sessionId: string): Promise<void> {
+    const normalizedSessionId = sessionId.trim();
+    if (!normalizedSessionId || !this.isSessionActive(normalizedSessionId)) return;
+    await new Promise<void>((resolve) => {
+      const waiters = this.sessionIdleWaiters.get(normalizedSessionId) ?? new Set<() => void>();
+      waiters.add(resolve);
+      this.sessionIdleWaiters.set(normalizedSessionId, waiters);
+      if (!this.isSessionActive(normalizedSessionId)) {
+        this.resolveSessionIdleWaiters(normalizedSessionId);
+      }
+    });
   }
 
   /** Stop claiming durable queued work while allowing active invocations to settle normally. */
@@ -243,6 +290,7 @@ export class SparkInvocationScheduler {
 
   stop(reason = "Spark daemon scheduler stopped"): void {
     for (const active of [...this.active.values(), ...this.structuredActive.values()]) {
+      if (active.commitState.started) continue;
       active.controller.abort(new InvocationCancelledError(reason));
     }
   }
@@ -277,14 +325,30 @@ export class SparkInvocationScheduler {
       return this.store.require(invocationId);
     }
     const controller = new AbortController();
+    const commitState: InvocationCommitState = {
+      started: this.store.hasDurableCommitStarted(invocationId),
+    };
+    const sessionId = getSparkDaemonTaskSessionId(task);
     let executorSettled: Promise<unknown> | undefined;
-    const settled = this.run(invocation, task, controller, (promise) => {
+    const entry: ActiveInvocation = {
+      invocation,
+      controller,
+      commitState,
+      settled: Promise.resolve(),
+      pauseState: "busy",
+    };
+    this.structuredActive.set(invocationId, entry);
+    const settled = this.run(invocation, task, controller, commitState, (promise) => {
       executorSettled = promise;
     }).finally(() => {
-      this.structuredActive.delete(invocationId);
-      if (executorSettled) void executorSettled.catch(() => undefined);
+      const release = () => {
+        this.structuredActive.delete(invocationId);
+        if (sessionId) this.resolveSessionIdleWaiters(sessionId);
+      };
+      if (executorSettled) void executorSettled.then(release, release);
+      else release();
     });
-    this.structuredActive.set(invocationId, { invocation, controller, settled });
+    entry.settled = settled;
     await settled;
     return this.store.require(invocationId);
   }
@@ -297,6 +361,7 @@ export class SparkInvocationScheduler {
 
   private applyCancellationRequests(): void {
     for (const active of [...this.active.values(), ...this.structuredActive.values()]) {
+      if (active.commitState.started) continue;
       const persisted = this.store.getSummary(active.invocation.invocationId);
       if (persisted?.status === "running" && persisted.cancelReason) {
         active.controller.abort(new InvocationCancelledError(persisted.cancelReason));
@@ -335,34 +400,95 @@ export class SparkInvocationScheduler {
       throw new Error("restartCheckpoint is daemon-internal and lacks a durable checkpoint event");
     }
     const controller = new AbortController();
+    const commitState: InvocationCommitState = {
+      started: this.store.hasDurableCommitStarted(invocation.invocationId),
+    };
     const sessionId = getSparkDaemonTaskSessionId(task);
+    const serializationKey = invocation.serializationKey;
     let executorSettled: Promise<unknown> | undefined;
-    if (sessionId) this.activeSessions.add(sessionId);
-    const settled = this.run(invocation, task, controller, (promise) => {
+    this.activeSerializationKeys.add(serializationKey);
+    if (sessionId) this.activeSessionIds.add(sessionId);
+    const entry: ActiveInvocation = {
+      invocation,
+      controller,
+      commitState,
+      settled: Promise.resolve(),
+      pauseState: "busy",
+    };
+    this.active.set(invocation.invocationId, entry);
+    const settled = this.run(invocation, task, controller, commitState, (promise) => {
       executorSettled = promise;
-    }).finally(() => {
-      this.active.delete(invocation.invocationId);
-      if (!sessionId) return;
-      const releaseSession = () => this.activeSessions.delete(sessionId);
-      if (executorSettled) void executorSettled.then(releaseSession, releaseSession);
-      else releaseSession();
+    }).finally(async () => {
+      try {
+        await this.yieldAfterInvocation();
+      } finally {
+        this.active.delete(invocation.invocationId);
+        const releaseSession = () => {
+          this.activeSerializationKeys.delete(serializationKey);
+          if (!sessionId) return;
+          this.activeSessionIds.delete(sessionId);
+          this.resolveSessionIdleWaiters(sessionId);
+        };
+        if (executorSettled) void executorSettled.then(releaseSession, releaseSession);
+        else releaseSession();
+      }
     });
-    this.active.set(invocation.invocationId, { invocation, controller, settled });
+    entry.settled = settled;
+  }
+
+  private resolveSessionIdleWaiters(sessionId: string): void {
+    if (this.isSessionActive(sessionId)) return;
+    const waiters = this.sessionIdleWaiters.get(sessionId);
+    if (!waiters) return;
+    this.sessionIdleWaiters.delete(sessionId);
+    for (const resolve of waiters) resolve();
   }
 
   private async run(
     invocation: SparkInvocationRecord,
     task: SparkDaemonTask,
     controller: AbortController,
+    commitState: InvocationCommitState,
     trackExecutorSettlement: (promise: Promise<unknown>) => void,
   ): Promise<void> {
     this.emit(lifecycleEvent(invocation.invocationId, task, "running"));
     const timeout = new InvocationTimeoutController(this.taskTimeoutMs, controller);
-    timeout.start();
+    if (commitState.started) timeout.disable();
+    else timeout.start();
     let executorSettled: Promise<unknown> | undefined;
-    let attemptSession: ExecutionAttemptSession | undefined;
+    let attemptSession: ExecutionAttemptSession<SparkInvocationEvent> | undefined;
     let streamedEventCount = 0;
     let restartYieldCommitted = false;
+    const terminalDeferrals = new Set<Promise<TerminalDeferralResult>>();
+    let terminalDeferralsClosed = false;
+    const deferTerminalUntil = (delivery: PromiseLike<unknown>): void => {
+      if (terminalDeferralsClosed) {
+        throw new Error(
+          `Invocation ${invocation.invocationId} accepted a terminal deferral after its output boundary closed`,
+        );
+      }
+      const tracked = Promise.resolve(delivery).then(
+        (): TerminalDeferralResult => ({ status: "fulfilled" }),
+        (reason: unknown): TerminalDeferralResult => ({ status: "rejected", reason }),
+      );
+      terminalDeferrals.add(tracked);
+    };
+    const drainTerminalDeferrals = async (): Promise<void> => {
+      let firstFailure: unknown;
+      let failed = false;
+      while (terminalDeferrals.size > 0) {
+        const pending = [...terminalDeferrals];
+        const results = await Promise.all(pending);
+        for (const delivery of pending) terminalDeferrals.delete(delivery);
+        for (const result of results) {
+          if (result.status !== "rejected" || failed) continue;
+          firstFailure = result.reason;
+          failed = true;
+        }
+      }
+      terminalDeferralsClosed = true;
+      if (failed) throw firstFailure;
+    };
     const rootUsagePersistence =
       invocation.claimClass === "structured"
         ? "anonymous"
@@ -370,9 +496,7 @@ export class SparkInvocationScheduler {
           ? "anonymous"
           : task.type === "loop.tick"
             ? "anonymous"
-            : task.hiddenExecution
-              ? "anonymous"
-              : "persistent";
+            : "persistent";
     let rootUsageExecution: ReturnType<SparkTokenUsageStore["registerExecution"]> | undefined;
     const pendingUsageRegistrations: Array<Omit<SparkDaemonTokenUsageObservation, "event">> = [];
     const pendingUsageObservations: SparkDaemonTokenUsageObservation[] = [];
@@ -392,10 +516,7 @@ export class SparkInvocationScheduler {
           ? { detailKind: "loop_evaluator" }
           : {}),
       persistence: rootUsagePersistence,
-      sessionId:
-        task.type === "loop.tick" || task.type === "loop.evaluate"
-          ? task.ownerSessionId
-          : task.sessionId,
+      sessionId: task.sessionId,
     });
     const registerRootUsageExecution = (scope?: SparkReproUsageScope): void => {
       if (!this.tokenUsageStore || rootUsageExecution) return;
@@ -423,11 +544,7 @@ export class SparkInvocationScheduler {
           kind: observation.kind ?? "root_session",
           ...(observation.detailKind ? { detailKind: observation.detailKind } : {}),
           persistence: observation.persistence ?? rootUsagePersistence,
-          sessionId:
-            observation.sessionId ??
-            (task.type === "loop.tick" || task.type === "loop.evaluate"
-              ? task.ownerSessionId
-              : task.sessionId),
+          sessionId: observation.sessionId ?? task.sessionId,
           ...(observation.parentExecutionId
             ? { parentExecutionId: observation.parentExecutionId }
             : {}),
@@ -458,11 +575,7 @@ export class SparkInvocationScheduler {
               ? { detailKind: "loop_evaluator" }
               : {}),
         persistence: observation.persistence ?? rootUsagePersistence,
-        sessionId:
-          observation.sessionId ??
-          (task.type === "loop.tick" || task.type === "loop.evaluate"
-            ? task.ownerSessionId
-            : task.sessionId),
+        sessionId: observation.sessionId ?? task.sessionId,
         ...(observation.parentExecutionId
           ? { parentExecutionId: observation.parentExecutionId }
           : {}),
@@ -512,7 +625,7 @@ export class SparkInvocationScheduler {
         flushPendingUsage();
         return;
       }
-      if (task.type !== "session.run" || task.hiddenExecution) return;
+      if (task.type !== "session.run") return;
       const scope = await this.resolveCurrentReproUsageScope(task);
       if (!scope) return;
       registerRootUsageExecution(scope);
@@ -524,7 +637,7 @@ export class SparkInvocationScheduler {
           ? { kind: "repro", reproId: task.binding.reproId }
           : undefined,
       );
-      if (!rootUsageExecution && task.type === "session.run" && !task.hiddenExecution) {
+      if (!rootUsageExecution && task.type === "session.run") {
         registerRootUsageExecution(await this.resolveCurrentReproUsageScope(task));
       }
     }
@@ -547,63 +660,137 @@ export class SparkInvocationScheduler {
           if (typeof record.type !== "string" || record.type.length === 0) {
             throw new Error("execution attempt event type is missing");
           }
+          return this.store.appendEvent(invocation.invocationId, record.type, record);
+        },
+        eventCommitted: (event) => {
           streamedEventCount += 1;
-          void this.emitPersisted(
-            this.store.appendEvent(invocation.invocationId, record.type, record),
-          );
+          void this.emitPersisted(event);
         },
         persistUsage: (usage) => recordUsage(usage as SparkDaemonTokenUsageObservation),
+        eventIngress: this.executionEventIngress,
       });
-      const context = {
-        invocationId: invocation.invocationId,
-        signal: controller.signal,
-        timeoutMs: this.taskTimeoutMs,
-        withPausedTimeout: async <T>(operation: () => Promise<T>) =>
-          await timeout.runPaused(operation),
-        yieldForRestartIfRequested: (checkpoint: SparkTurnResumeCheckpoint) => {
-          if (!this.restartRequestedSignal?.aborted) return;
-          if (!isSparkTurnResumeCheckpointPersistable(checkpoint)) return;
-          if (controller.signal.aborted) {
-            throw abortReason(controller.signal, new Error("invocation aborted"));
-          }
-          const persisted = this.store.require(invocation.invocationId);
-          if (persisted.cancelReason) throw new InvocationCancelledError(persisted.cancelReason);
-          this.store.requeueAtRestartCheckpoint(invocation.invocationId, checkpoint);
-          restartYieldCommitted = true;
-          throw new SparkTurnRestartYieldError();
-        },
-        emitEvent: (event: SparkDaemonEvent) => attemptSession!.recordEvent(event),
-        ...(this.tokenUsageStore
-          ? {
-              ...(rootUsageExecution ? { tokenUsageScope: rootUsageExecution.scope } : {}),
-              registerTokenUsageExecution: registerUsageExecution,
-              settleTokenUsageExecution: settleUsageExecution,
-              recordTokenUsage: (observation: SparkDaemonTokenUsageObservation) =>
-                attemptSession!.recordUsage(observation),
+      const executionContextForCurrentAttempt = (): SparkDaemonTaskExecutionContext => {
+        const activeAttempt = attemptSession!.current();
+        return {
+          invocationId: invocation.invocationId,
+          invocationAttempt: {
+            epoch: activeAttempt.attemptEpoch,
+            daemonGeneration: activeAttempt.daemonGeneration,
+            correlationId: activeAttempt.correlationId,
+          },
+          signal: controller.signal,
+          timeoutMs: this.taskTimeoutMs,
+          beginDurableCommit: () => {
+            if (commitState.started) return;
+            if (controller.signal.aborted) {
+              throw abortReason(controller.signal, new Error("invocation aborted before commit"));
             }
-          : {}),
+            const persisted = this.store.require(invocation.invocationId);
+            if (persisted.status !== "running") {
+              throw new Error(
+                `Invocation ${invocation.invocationId} is ${persisted.status} before durable commit`,
+              );
+            }
+            if (persisted.cancelReason) {
+              const error = new InvocationCancelledError(persisted.cancelReason);
+              controller.abort(error);
+              throw error;
+            }
+            this.store.markDurableCommitStarted(invocation.invocationId);
+            commitState.started = true;
+            timeout.disable();
+          },
+          deferTerminalUntil,
+          withPausedTimeout: async <T>(operation: () => Promise<T>) => {
+            const entry = this.activeEntry(invocation.invocationId);
+            if (entry) entry.pauseState = "human-wait";
+            const humanWait = new AbortController();
+            try {
+              this.yieldHumanWaitForRestartIfRequested(invocation.invocationId, controller, () => {
+                restartYieldCommitted = true;
+              });
+              return await Promise.race([
+                timeout.runPaused(operation),
+                this.waitForRestartThenYieldHumanWait(
+                  invocation.invocationId,
+                  controller,
+                  humanWait.signal,
+                  () => {
+                    restartYieldCommitted = true;
+                  },
+                ),
+              ]);
+            } finally {
+              humanWait.abort();
+              if (entry && entry.pauseState === "human-wait") entry.pauseState = "busy";
+            }
+          },
+          yieldForRestartIfRequested: (checkpoint: SparkTurnResumeCheckpoint) => {
+            rememberPersistableRestartCheckpoint(invocation.invocationId, checkpoint);
+            if (!this.restartRequestedSignal?.aborted) return;
+            if (!isSparkTurnResumeCheckpointPersistable(checkpoint)) {
+              throw new Error(
+                `Spark daemon restart ${invocation.invocationId} cannot persist this turn checkpoint; refusing to continue past a model-to-tool boundary.`,
+              );
+            }
+            this.commitRestartYield(invocation.invocationId, checkpoint, controller, () => {
+              restartYieldCommitted = true;
+            });
+          },
+          emitEvent: (event: SparkDaemonEvent) => attemptSession!.recordEvent(event),
+          ...(this.tokenUsageStore
+            ? {
+                ...(rootUsageExecution ? { tokenUsageScope: rootUsageExecution.scope } : {}),
+                registerTokenUsageExecution: registerUsageExecution,
+                settleTokenUsageExecution: settleUsageExecution,
+                recordTokenUsage: (observation: SparkDaemonTokenUsageObservation) =>
+                  attemptSession!.recordUsage(observation),
+              }
+            : {}),
+        };
       };
-      executeInProcess = () => this.executeTask(task, context);
+      executeInProcess = () => this.executeTask(task, executionContextForCurrentAttempt());
       executorSettled = attemptSession.execute();
       trackExecutorSettlement(executorSettled);
-      const result = await Promise.race([executorSettled, abortPromise(controller.signal)]);
+      const result = await Promise.race([
+        executorSettled,
+        abortPromise(controller.signal, () => commitState.started),
+      ]);
+      // Async projections accepted before executor settlement are part of the
+      // attempt output boundary. Never commit its high-water mark first.
+      await drainTerminalDeferrals();
       await bindLateReproUsageScope();
       if (streamedEventCount === 0) {
         for (const event of daemonEventsFromTaskResult(result, task, invocation.invocationId)) {
           attemptSession.recordEvent(event);
         }
       }
-      attemptSession.terminal("succeeded");
-      this.completeInvocation(invocation, task, { status: "succeeded", result });
-      this.settleTokenUsageExecution(rootUsageExecution?.executionId, "complete");
-      this.emit(lifecycleEvent(invocation.invocationId, task, "succeeded"));
+      await this.commitTerminalBundle(() => {
+        attemptSession!.terminal("succeeded");
+        this.completeInvocation(invocation, task, { status: "succeeded", result });
+        this.settleTokenUsageExecution(rootUsageExecution?.executionId, "complete");
+        this.emit(lifecycleEvent(invocation.invocationId, task, "succeeded"));
+      });
     } catch (error) {
+      try {
+        await drainTerminalDeferrals();
+      } catch {
+        // Preserve cancellation/timeout/executor failure precedence after all
+        // accepted projections settle. A deferral failure reached from the
+        // success path is already the primary error caught here.
+      }
       if (restartYieldCommitted && isSparkTurnRestartYieldError(error)) {
-        terminalAttempt(attemptSession, "cancelled", { errorCode: "restart_yield" });
+        await this.commitTerminalBundle(() =>
+          terminalAttempt(attemptSession, "cancelled", { errorCode: "restart_yield" }),
+        );
         await bindLateReproUsageScope();
         return;
       }
-      const reason = abortReason(controller.signal, error);
+      const reason = commitState.started
+        ? error instanceof Error
+          ? error
+          : new Error(String(error))
+        : abortReason(controller.signal, error);
       const usageStatus =
         reason instanceof InvocationCancelledError ? ("cancelled" as const) : ("failed" as const);
       const attemptStatus =
@@ -615,7 +802,25 @@ export class SparkInvocationScheduler {
               errorCode: executionErrorCode(reason),
               errorMessage: reason.message,
             };
-      if (!terminalAttempt(attemptSession, attemptStatus, attemptResult)) {
+      const terminalCommitted = await this.commitTerminalBundle(() => {
+        if (!terminalAttempt(attemptSession, attemptStatus, attemptResult)) return false;
+        if (reason instanceof InvocationCancelledError) {
+          this.completeInvocation(invocation, task, {
+            status: "cancelled",
+            cancelReason: reason.message,
+          });
+          this.emit(lifecycleEvent(invocation.invocationId, task, "cancelled", reason.message));
+        } else {
+          this.completeInvocation(invocation, task, {
+            status: "failed",
+            errorCode: executionErrorCode(reason),
+            errorMessage: reason.message,
+          });
+          this.emit(lifecycleEvent(invocation.invocationId, task, "failed", reason.message));
+        }
+        return true;
+      });
+      if (!terminalCommitted) {
         if (controller.signal.aborted && executorSettled) {
           await executorSettled.catch(() => undefined);
         }
@@ -630,20 +835,6 @@ export class SparkInvocationScheduler {
         this.settleTokenUsageExecution(rootUsageExecution?.executionId, usageStatus);
         return;
       }
-      if (reason instanceof InvocationCancelledError) {
-        this.completeInvocation(invocation, task, {
-          status: "cancelled",
-          cancelReason: reason.message,
-        });
-        this.emit(lifecycleEvent(invocation.invocationId, task, "cancelled", reason.message));
-      } else {
-        this.completeInvocation(invocation, task, {
-          status: "failed",
-          errorCode: executionErrorCode(reason),
-          errorMessage: reason.message,
-        });
-        this.emit(lifecycleEvent(invocation.invocationId, task, "failed", reason.message));
-      }
       if (controller.signal.aborted && executorSettled) {
         // A terminal row is visible as soon as cancellation/timeout wins, but
         // the daemon must retain the session fence and process ownership until
@@ -654,8 +845,94 @@ export class SparkInvocationScheduler {
       await bindLateReproUsageScope();
       this.settleTokenUsageExecution(rootUsageExecution?.executionId, usageStatus);
     } finally {
+      persistableRestartCheckpoints.delete(invocation.invocationId);
       timeout.clear();
+      this.executionEventIngress.release(invocation.invocationId);
     }
+  }
+
+  private commitRestartYield(
+    invocationId: string,
+    checkpoint: SparkTurnResumeCheckpoint,
+    controller: AbortController,
+    markYielded: () => void,
+  ): never {
+    if (controller.signal.aborted) {
+      throw abortReason(controller.signal, new Error("invocation aborted"));
+    }
+    const persisted = this.store.require(invocationId);
+    if (persisted.cancelReason) throw new InvocationCancelledError(persisted.cancelReason);
+    this.store.requeueAtRestartCheckpoint(invocationId, checkpoint);
+    markYielded();
+    throw new SparkTurnRestartYieldError();
+  }
+
+  private yieldHumanWaitForRestartIfRequested(
+    invocationId: string,
+    controller: AbortController,
+    markYielded: () => void,
+  ): void {
+    if (!this.restartRequestedSignal?.aborted) return;
+    const checkpoint = lastPersistableRestartCheckpoint(invocationId);
+    if (!checkpoint) {
+      throw new Error(
+        `Spark daemon restart ${invocationId} is waiting for a human response without a persistable restart checkpoint.`,
+      );
+    }
+    if (!isInteractionOnlyRestartCheckpoint(checkpoint)) {
+      throw new Error(
+        `Spark daemon restart ${invocationId} is waiting for a human response after non-replayable tool work.`,
+      );
+    }
+    this.commitRestartYield(invocationId, checkpoint, controller, markYielded);
+  }
+
+  private waitForRestartThenYieldHumanWait(
+    invocationId: string,
+    controller: AbortController,
+    settleSignal: AbortSignal,
+    markYielded: () => void,
+  ): Promise<never> {
+    return new Promise((_, reject) => {
+      const restart = this.restartRequestedSignal;
+      const tryYield = () => {
+        try {
+          this.yieldHumanWaitForRestartIfRequested(invocationId, controller, markYielded);
+        } catch (error) {
+          cleanup();
+          reject(error);
+        }
+      };
+      const onAbort = () => {
+        cleanup();
+        reject(abortReason(controller.signal, new Error("invocation aborted")));
+      };
+      const cleanup = () => {
+        restart?.removeEventListener("abort", tryYield);
+        controller.signal.removeEventListener("abort", onAbort);
+        settleSignal.removeEventListener("abort", cleanup);
+      };
+      if (settleSignal.aborted) return;
+      settleSignal.addEventListener("abort", cleanup, { once: true });
+      if (restart?.aborted) {
+        tryYield();
+        return;
+      }
+      restart?.addEventListener("abort", tryYield, { once: true });
+      controller.signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  private async commitTerminalBundle<T>(operation: () => T): Promise<T> {
+    const result = this.terminalCommitTail.then(async () => {
+      await this.yieldBeforeTerminalCommit();
+      return operation();
+    });
+    this.terminalCommitTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return await result;
   }
 
   private settleTokenUsageExecution(
@@ -699,6 +976,10 @@ export class SparkInvocationScheduler {
     });
     return emitted;
   }
+}
+
+async function yieldMacrotask(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 function daemonEventsFromTaskResult(
@@ -810,6 +1091,7 @@ class InvocationTimeoutController {
   private remainingMs: number;
   private startedAt: number | undefined;
   private pauseDepth = 0;
+  private disabled = false;
 
   constructor(timeoutMs: number, controller: AbortController) {
     this.timeoutMs = timeoutMs;
@@ -818,7 +1100,7 @@ class InvocationTimeoutController {
   }
 
   start(): void {
-    if (this.timeoutMs > 0) this.arm();
+    if (this.timeoutMs > 0 && !this.disabled) this.arm();
   }
 
   async runPaused<T>(operation: () => Promise<T>): Promise<T> {
@@ -828,7 +1110,7 @@ class InvocationTimeoutController {
       return await operation();
     } finally {
       this.pauseDepth -= 1;
-      if (this.pauseDepth === 0 && !this.controller.signal.aborted) this.arm();
+      if (this.pauseDepth === 0 && !this.controller.signal.aborted && !this.disabled) this.arm();
     }
   }
 
@@ -838,8 +1120,14 @@ class InvocationTimeoutController {
     this.startedAt = undefined;
   }
 
+  disable(): void {
+    this.disabled = true;
+    this.clear();
+  }
+
   private arm(): void {
-    if (this.timeoutMs <= 0 || this.timer || this.controller.signal.aborted) return;
+    if (this.timeoutMs <= 0 || this.timer || this.controller.signal.aborted || this.disabled)
+      return;
     this.startedAt = Date.now();
     this.timer = setTimeout(() => {
       this.timer = undefined;
@@ -861,9 +1149,12 @@ class InvocationTimeoutController {
   }
 }
 
-function abortPromise(signal: AbortSignal): Promise<never> {
+function abortPromise(signal: AbortSignal, commitStarted: () => boolean): Promise<never> {
   return new Promise((_, reject) => {
-    const rejectAbort = () => reject(abortReason(signal, new Error("invocation aborted")));
+    const rejectAbort = () => {
+      if (commitStarted()) return;
+      reject(abortReason(signal, new Error("invocation aborted")));
+    };
     if (signal.aborted) rejectAbort();
     else signal.addEventListener("abort", rejectAbort, { once: true });
   });
@@ -910,8 +1201,8 @@ function invalidTaskType(value: unknown): string {
   return "invalid";
 }
 
-function terminalAttempt(
-  session: ExecutionAttemptSession | undefined,
+function terminalAttempt<PersistedEvent>(
+  session: ExecutionAttemptSession<PersistedEvent> | undefined,
   status: "succeeded" | "failed" | "cancelled",
   result?: unknown,
 ): boolean {
@@ -938,4 +1229,31 @@ function positiveInteger(value: number | undefined, fallback: number): number {
 function nonNegativeInteger(value: number | undefined, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
   return Math.max(0, Math.floor(value ?? fallback));
+}
+
+const persistableRestartCheckpoints = new Map<string, SparkTurnResumeCheckpoint>();
+
+function rememberPersistableRestartCheckpoint(
+  invocationId: string,
+  checkpoint: SparkTurnResumeCheckpoint,
+): void {
+  if (!isSparkTurnResumeCheckpointPersistable(checkpoint)) return;
+  persistableRestartCheckpoints.set(invocationId, structuredClone(checkpoint));
+}
+
+function lastPersistableRestartCheckpoint(
+  invocationId: string,
+): SparkTurnResumeCheckpoint | undefined {
+  return persistableRestartCheckpoints.get(invocationId);
+}
+
+function isInteractionOnlyRestartCheckpoint(checkpoint: SparkTurnResumeCheckpoint): boolean {
+  return (
+    checkpoint.toolCalls.length > 0 &&
+    checkpoint.toolCalls.every((toolCall) => isInteractionToolName(toolCall.name))
+  );
+}
+
+function isInteractionToolName(name: string): boolean {
+  return name === "ask" || name === "ask_user" || name === "ask_flow";
 }

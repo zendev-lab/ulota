@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { createId } from "@zendev-lab/spark-protocol/domain";
 import { type HumanRequestCreatedPayload } from "@zendev-lab/spark-protocol/runtime";
-import type { SparkPaths } from "@zendev-lab/spark-system";
+import type { SparkPaths } from "@zendev-lab/spark-platform-node";
 import { readSparkDaemonConfig } from "./config.js";
 import {
   leaseTransferDecisionFromAnswers,
@@ -69,18 +69,13 @@ function hasRunnableCredentials(profile: SparkDaemonServerProfile): boolean {
   return Boolean(profile.runtimeId && profile.runtimeToken);
 }
 
-/** Origins the supervisor would dial (respects parked + workspace bindings). */
+/** Origins the supervisor would dial (daemon login/profiles; respects parked). */
 export function desiredUplinkServerUrls(paths: SparkPaths, db: DatabaseSync): Set<string> {
-  const profiles = new Map(
-    listSparkDaemonServerProfiles(paths).map((profile) => [profile.serverUrl, profile]),
-  );
+  void db;
   const desired = new Set<string>();
-  for (const workspace of listWorkspaces(db)) {
-    if (!workspace.serverUrl) continue;
-    const serverUrl = normalizeSparkDaemonServerUrl(workspace.serverUrl);
-    const profile = profiles.get(serverUrl);
-    if (!profile || profile.parked || !hasRunnableCredentials(profile)) continue;
-    desired.add(serverUrl);
+  for (const profile of listSparkDaemonServerProfiles(paths)) {
+    if (profile.parked || !hasRunnableCredentials(profile)) continue;
+    desired.add(normalizeSparkDaemonServerUrl(profile.serverUrl));
   }
   return desired;
 }

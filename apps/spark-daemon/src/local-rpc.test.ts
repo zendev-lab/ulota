@@ -3,29 +3,31 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { constants as sqliteConstants, type DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 import { parseSparkInteractionRequest } from "@zendev-lab/spark-protocol";
-import type { ChannelNotifyInput, ChannelNotifyResult } from "@zendev-lab/spark-channels";
+import type { ChannelNotifyInput, ChannelNotifyResult } from "@zendev-lab/dsh-channel-transports";
 import {
   SparkSessionMailStore,
   type SparkSessionMailDeliveryReceipt,
 } from "@zendev-lab/spark-session";
-import { resolveSparkPaths } from "@zendev-lab/spark-system";
+import { resolveSparkPaths } from "@zendev-lab/spark-platform-node";
 import {
   requestSparkDaemonLocalRpcWire,
   SparkDaemonLocalRpcUnavailableError,
-} from "@zendev-lab/spark-daemon-client/local-rpc";
+} from "@zendev-lab/spark-daemon-client";
 import {
   createDaemonSessionRegistry,
   createSparkDaemonLocalEventBus,
-  handleLocalRpcLine,
-  parseSparkDaemonLifecycleSnapshot,
   requestDaemonStatus,
   requestDaemonRestart,
   requestWorkspaceEnsureLocal,
   startLocalRpcServer,
 } from "./local-rpc.js";
+import { handleLocalRpcLine } from "./local-rpc/dispatch.ts";
+import { parseSparkDaemonLifecycleSnapshot } from "./local-rpc/results.ts";
+import { upsertSparkDaemonServerProfile } from "./server-profiles.js";
 import { SparkInvocationStore } from "./store/invocations.ts";
 import { SparkChannelDeliveryStore } from "./store/channel-deliveries.ts";
 import { openSparkDaemonDatabase } from "./store/schema.js";
@@ -42,6 +44,28 @@ import type {
   DaemonChannelIngressRuntime,
   DaemonChannelIngressStatus,
 } from "./channels/ingress.ts";
+import {
+  createDaemonWorkspaceSession,
+  workspaceSessionRecord,
+} from "../../../test/support/session-fixtures.ts";
+
+async function countSqliteAuthorizations<T>(
+  db: DatabaseSync,
+  matches: (actionCode: number, tableName: string | null) => boolean,
+  run: () => Promise<T>,
+): Promise<{ count: number; result: T }> {
+  let count = 0;
+  db.setAuthorizer((actionCode, tableName) => {
+    if (matches(actionCode, tableName)) count += 1;
+    return sqliteConstants.SQLITE_OK;
+  });
+  try {
+    const result = await run();
+    return { count, result };
+  } finally {
+    db.setAuthorizer(null);
+  }
+}
 
 describe("Spark daemon local RPC", () => {
   it("owns the complete driver control plane and publishes reconnectable projections", async () => {
@@ -61,9 +85,8 @@ describe("Spark daemon local RPC", () => {
       daemonId: "driver-rpc-test",
       daemonCwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session:driver-owner",
-      scope: { kind: "workspace", workspaceId: "workspace-driver" },
       workspaceId: "workspace-driver",
       cwd: root,
     });
@@ -930,6 +953,133 @@ describe("Spark daemon local RPC", () => {
     }
   });
 
+  it("registers a local workspace without contacting Hub", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-daemon-rpc-"));
+    const workspacePath = join(root, "workspace");
+    const paths = resolveSparkPaths({
+      app: "daemon",
+      env: { HOME: root },
+      overrides: {
+        dataDir: join(root, "data"),
+        cacheDir: join(root, "cache"),
+        stateDir: join(root, "state"),
+        runtimeDir: join(root, "run"),
+      },
+    });
+    const db = openSparkDaemonDatabase(paths);
+    try {
+      mkdirSync(workspacePath);
+      const ensureRegistration = vi.fn();
+      const response = await handleLocalRpcLine(
+        JSON.stringify({
+          id: "rpc_register_local",
+          method: "workspace.register",
+          params: {
+            localPath: realpathSync(workspacePath),
+            displayName: "Local",
+          },
+        }),
+        paths,
+        db,
+        undefined,
+        { ensureSparkDaemonRegistrationForWorkspace: ensureRegistration },
+      );
+      expect(response).toMatchObject({
+        id: "rpc_register_local",
+        ok: true,
+        result: {
+          displayName: "Local",
+          serverUrl: "",
+          localPath: realpathSync(workspacePath),
+        },
+      });
+      expect(ensureRegistration).not.toHaveBeenCalled();
+      expect(listWorkspaces(db)).toHaveLength(1);
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("announces a Hub projection from daemon login when workspace register has only a token", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-daemon-rpc-"));
+    const workspacePath = join(root, "workspace");
+    const paths = resolveSparkPaths({
+      app: "daemon",
+      env: { HOME: root },
+      overrides: {
+        dataDir: join(root, "data"),
+        cacheDir: join(root, "cache"),
+        stateDir: join(root, "state"),
+        runtimeDir: join(root, "run"),
+      },
+    });
+    const db = openSparkDaemonDatabase(paths);
+    try {
+      mkdirSync(workspacePath);
+      await upsertSparkDaemonServerProfile(paths, {
+        serverUrl: "http://127.0.0.1:5173/",
+        runtimeId: "rt_11111111111141111111111111111111",
+        runtimeToken: "spark_rt_token_00000000000000000000000000000000",
+      });
+      const ensureRegistration = vi.fn(async () => ({
+        config: {
+          installationId: "install-test",
+          displayName: "Test Spark daemon",
+          serverUrl: "http://127.0.0.1:5173/",
+          runtimeId: "rt_11111111111141111111111111111111",
+          runtimeToken: "spark_rt_token_00000000000000000000000000000000",
+          refreshToken: "spark_rt_refresh_000000000000000000000000000000",
+          webSocketUrl:
+            "ws://127.0.0.1:5173/api/v1/runtime/runtimes/rt_11111111111141111111111111111111/ws",
+        },
+        workspaceBinding: {
+          workspaceId: "ws_22222222222241112222222222222222",
+          bindingId: "rtwb_33333333333341113333333333333333",
+          localWorkspaceKey: "local",
+          displayName: "Local",
+          status: "indexing" as const,
+        },
+      }));
+      const response = await handleLocalRpcLine(
+        JSON.stringify({
+          id: "rpc_register_token_only",
+          method: "workspace.register",
+          params: {
+            localPath: realpathSync(workspacePath),
+            displayName: "Local",
+            registrationToken: "spark_wsreg_local_rpc",
+          },
+        }),
+        paths,
+        db,
+        undefined,
+        {
+          ensureSparkDaemonRegistrationForWorkspace: ensureRegistration,
+          verifySparkDaemonWorkspaceConnection: vi.fn(async () => undefined),
+        },
+      );
+      expect(response).toMatchObject({
+        id: "rpc_register_token_only",
+        ok: true,
+        result: {
+          displayName: "Local",
+          serverUrl: "http://127.0.0.1:5173/",
+        },
+      });
+      expect(ensureRegistration).toHaveBeenCalledWith(
+        paths,
+        expect.objectContaining({
+          serverUrl: "http://127.0.0.1:5173/",
+          registrationToken: "spark_wsreg_local_rpc",
+        }),
+      );
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rolls back workspace registration when websocket verification fails", async () => {
     const root = mkdtempSync(join(tmpdir(), "spark-daemon-rpc-"));
     const workspacePath = join(root, "workspace");
@@ -1182,6 +1332,28 @@ describe("Spark daemon local RPC", () => {
         error: { message: expect.stringContaining("CURSOR_GAP") },
       });
 
+      const largeText = "x".repeat(300 * 1024);
+      store.appendEvent(result.invocationId, "large-delta", { text: largeText });
+      const largePage = await handleLocalRpcLine(
+        JSON.stringify({
+          id: "turn_stream_large_event",
+          method: "turn.stream",
+          params: { invocationId: result.invocationId, after: 2, limit: 100 },
+        }),
+        paths,
+        db,
+        undefined,
+      );
+      expect(largePage).toMatchObject({
+        ok: true,
+        result: {
+          invocationId: result.invocationId,
+          events: [{ sequence: 3, kind: "large-delta", payload: { text: largeText } }],
+          nextCursor: 3,
+          hasMore: false,
+        },
+      });
+
       const removed = await handleLocalRpcLine(
         JSON.stringify({ id: "removed_queue", method: "daemon.queue" }),
         paths,
@@ -1215,9 +1387,8 @@ describe("Spark daemon local RPC", () => {
       daemonId: "cancel-test",
       daemonCwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session-a",
-      scope: { kind: "workspace", workspaceId: "workspace-cancel" },
       workspaceId: "workspace-cancel",
       cwd: root,
     });
@@ -1239,7 +1410,10 @@ describe("Spark daemon local RPC", () => {
         { sessionRegistry },
       );
       const invocation = (submitted as { result: { invocationId: string } }).result;
-      expect(await sessionRegistry.get("session-a")).toMatchObject({ status: "running" });
+      expect(await sessionRegistry.get("session-a")).toMatchObject({
+        lifecycle: "open",
+        placement: "active",
+      });
 
       const cancelled = await handleLocalRpcLine(
         JSON.stringify({
@@ -1264,7 +1438,10 @@ describe("Spark daemon local RPC", () => {
           cancelRequested: true,
         },
       });
-      expect(await sessionRegistry.get("session-a")).toMatchObject({ status: "ready" });
+      expect(await sessionRegistry.get("session-a")).toMatchObject({
+        lifecycle: "open",
+        placement: "active",
+      });
 
       const duplicate = await handleLocalRpcLine(
         JSON.stringify({
@@ -1285,7 +1462,10 @@ describe("Spark daemon local RPC", () => {
         ok: true,
         result: { invocationId: invocation.invocationId, status: "queued" },
       });
-      expect(await sessionRegistry.get("session-a")).toMatchObject({ status: "ready" });
+      expect(await sessionRegistry.get("session-a")).toMatchObject({
+        lifecycle: "open",
+        placement: "active",
+      });
       const duplicateStatus = await handleLocalRpcLine(
         JSON.stringify({
           id: "turn_status_duplicate",
@@ -1476,9 +1656,8 @@ describe("Spark daemon local RPC", () => {
       daemonId: "socket-test",
       daemonCwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "event-session",
-      scope: { kind: "workspace", workspaceId: "workspace-events" },
       workspaceId: "workspace-events",
       cwd: root,
     });
@@ -1613,15 +1792,13 @@ describe("Spark daemon local RPC", () => {
       daemonId: "invocation-list-test",
       daemonCwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session:selected",
-      scope: { kind: "workspace", workspaceId: "workspace-diagnostics" },
       workspaceId: "workspace-diagnostics",
       cwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session:other",
-      scope: { kind: "workspace", workspaceId: "workspace-diagnostics" },
       workspaceId: "workspace-diagnostics",
       cwd: root,
     });
@@ -1877,17 +2054,54 @@ describe("Spark daemon local RPC", () => {
         },
       });
 
-      const heartbeat = await handleLocalRpcLine(
-        JSON.stringify({
-          id: "client_heartbeat",
-          method: "workspace.client.heartbeat",
-          params: { clientId: "wcl-rpc-tui", leaseTtlMs: 60_000 },
-        }),
-        paths,
+      const heartbeatRequest = (id: string) =>
+        handleLocalRpcLine(
+          JSON.stringify({
+            id,
+            method: "workspace.client.heartbeat",
+            params: { clientId: "wcl-rpc-tui", leaseTtlMs: 60_000 },
+          }),
+          paths,
+          db,
+          undefined,
+        );
+      const baselineHeartbeat = await countSqliteAuthorizations(
         db,
-        undefined,
+        (actionCode, tableName) =>
+          actionCode === sqliteConstants.SQLITE_READ && tableName === "invocations",
+        () => heartbeatRequest("client_heartbeat_baseline"),
       );
-      expect(heartbeat).toMatchObject({ ok: true, result: { client: { status: "connected" } } });
+      expect(baselineHeartbeat.result).toMatchObject({
+        ok: true,
+        result: { client: { status: "connected" } },
+      });
+
+      const insert = db.prepare(
+        `INSERT INTO workspaces
+          (id, server_url, local_workspace_key, display_name, local_path, status,
+           capabilities_json, diagnostics_json, created_at, updated_at)
+         VALUES (?, '', ?, ?, ?, 'available', '{}', '{}', ?, ?)`,
+      );
+      for (let index = 0; index < 79; index += 1) {
+        const suffix = index.toString().padStart(2, "0");
+        insert.run(
+          `rtwb_unrelated_${suffix}`,
+          `unrelated-${suffix}`,
+          `Unrelated ${suffix}`,
+          join(root, `unrelated-${suffix}`),
+          "2026-05-26T00:00:00.000Z",
+          "2026-05-26T00:00:00.000Z",
+        );
+      }
+      const scaledHeartbeat = await countSqliteAuthorizations(
+        db,
+        (actionCode, tableName) =>
+          actionCode === sqliteConstants.SQLITE_READ && tableName === "invocations",
+        () => heartbeatRequest("client_heartbeat_scaled"),
+      );
+      expect(scaledHeartbeat.result).toMatchObject({ ok: true });
+      expect(baselineHeartbeat.count).toBeGreaterThan(0);
+      expect(scaledHeartbeat.count).toBe(baselineHeartbeat.count);
 
       const released = await handleLocalRpcLine(
         JSON.stringify({
@@ -1996,8 +2210,7 @@ describe("Spark daemon local RPC", () => {
     const runningStatus = {
       plane: "daemon" as const,
       resource: "channel" as const,
-      workspaceId: "ws_demo",
-      configPath: join(root, ".spark", "workspaces", "ws_demo", "channels", "config.json"),
+      configPath: join(root, ".spark", "channels.json"),
       available: true as const,
       configured: true,
       ingressEnabled: true,
@@ -2005,7 +2218,7 @@ describe("Spark daemon local RPC", () => {
       adapters: [{ id: "feishu", type: "feishu", running: true, state: "connected" as const }],
       routes: [{ name: "ops", adapter: "feishu", recipient: "oc_ops" }],
       observedAt: "2026-07-10T00:00:00.000Z",
-      text: "channels workspace=ws_demo running adapters=1/1 routes=1 ingress=on\n",
+      text: "channels daemon running adapters=1/1 routes=1 ingress=on\n",
     };
     const channelIngress = {
       status: vi.fn(() => runningStatus),
@@ -2019,7 +2232,7 @@ describe("Spark daemon local RPC", () => {
         JSON.stringify({
           id: "channel_status",
           method: "channel.status",
-          params: { workspaceId: "ws_demo" },
+          params: {},
         }),
         paths,
         db,
@@ -2027,7 +2240,7 @@ describe("Spark daemon local RPC", () => {
         { channelIngress },
       );
       expect(status).toEqual({ id: "channel_status", ok: true, result: runningStatus });
-      expect(channelIngress.status).toHaveBeenCalledWith("ws_demo");
+      expect(channelIngress.status).toHaveBeenCalledWith();
 
       const config = {
         adapters: {
@@ -2045,7 +2258,7 @@ describe("Spark daemon local RPC", () => {
         JSON.stringify({
           id: "channel_configure",
           method: "channel.configure",
-          params: { workspaceId: "ws_demo", config },
+          params: { config },
         }),
         paths,
         db,
@@ -2053,13 +2266,13 @@ describe("Spark daemon local RPC", () => {
         { channelIngress },
       );
       expect(configured).toEqual({ id: "channel_configure", ok: true, result: runningStatus });
-      expect(channelIngress.configure).toHaveBeenCalledWith("ws_demo", config);
+      expect(channelIngress.configure).toHaveBeenCalledWith(config);
 
       const reloaded = await handleLocalRpcLine(
         JSON.stringify({
           id: "channel_reload",
           method: "channel.reload",
-          params: { workspaceId: "ws_demo" },
+          params: {},
         }),
         paths,
         db,
@@ -2067,14 +2280,13 @@ describe("Spark daemon local RPC", () => {
         { channelIngress },
       );
       expect(reloaded).toEqual({ id: "channel_reload", ok: true, result: runningStatus });
-      expect(channelIngress.reload).toHaveBeenCalledWith("ws_demo");
+      expect(channelIngress.reload).toHaveBeenCalledWith();
 
       const invalidConfigure = await handleLocalRpcLine(
         JSON.stringify({
           id: "channel_configure_bad",
           method: "channel.configure",
           params: {
-            workspaceId: "ws_demo",
             config: {
               adapters: {},
               routes: {},
@@ -2126,29 +2338,42 @@ describe("Spark daemon local RPC", () => {
       );
 
     try {
+      const administratorA = await sessionRegistry.ensureWorkspaceAdministrator("ws_a");
+      const administratorB = await sessionRegistry.ensureWorkspaceAdministrator("ws_b");
       const [first, second] = await Promise.all([
         request("session_create_a", "session.create", {
           sessionId: "sess_a",
-          workspaceId: "ws_a",
-          title: "First",
+          scope: { kind: "workspace", workspaceId: "ws_a" },
+          supervisorSessionId: administratorA.sessionId,
+          placement: "child",
+          roleBinding: { kind: "none" },
+          name: "First",
         }),
         request("session_create_b", "session.create", {
           sessionId: "sess_b",
-          workspaceId: "ws_b",
+          scope: { kind: "workspace", workspaceId: "ws_b" },
+          supervisorSessionId: administratorB.sessionId,
+          placement: "child",
+          roleBinding: { kind: "none" },
         }),
       ]);
       expect(first).toMatchObject({ ok: true, result: { sessionId: "sess_a" } });
       expect(second).toMatchObject({ ok: true, result: { sessionId: "sess_b" } });
 
       const listed = await request("session_list", "session.list", {
-        workspaceId: "ws_a",
+        scope: { kind: "workspace", workspaceId: "ws_a" },
       });
       expect(listed).toMatchObject({
         ok: true,
-        result: [{ sessionId: "sess_a", workspaceId: "ws_a" }],
+        result: expect.arrayContaining([
+          expect.objectContaining({
+            sessionId: "sess_a",
+            scope: { kind: "workspace", workspaceId: "ws_a" },
+          }),
+        ]),
       });
       const fetched = await request("session_get", "session.get", { sessionId: "sess_a" });
-      expect(fetched).toMatchObject({ ok: true, result: { title: "First" } });
+      expect(fetched).toMatchObject({ ok: true, result: { name: "First" } });
 
       await sessionRegistry.recordTurnQueued("sess_a");
       const staleRegistry = await request("session_get_stale", "session.get", {
@@ -2156,7 +2381,7 @@ describe("Spark daemon local RPC", () => {
       });
       expect(staleRegistry).toMatchObject({
         ok: true,
-        result: { sessionId: "sess_a", status: "ready" },
+        result: { sessionId: "sess_a", lifecycle: "open", activity: "idle" },
       });
       const queuedRegistryUpdatedAt = (staleRegistry as { result: { updatedAt: string } }).result
         .updatedAt;
@@ -2174,13 +2399,20 @@ describe("Spark daemon local RPC", () => {
         ok: true,
         result: {
           sessionId: "sess_a",
-          status: "running",
+          activity: "queued",
           updatedAt: queuedRegistryUpdatedAt,
         },
       });
       expect(
-        await request("session_list_active", "session.list", { workspaceId: "ws_a" }),
-      ).toMatchObject({ ok: true, result: [{ sessionId: "sess_a", status: "running" }] });
+        await request("session_list_active", "session.list", {
+          scope: { kind: "workspace", workspaceId: "ws_a" },
+        }),
+      ).toMatchObject({
+        ok: true,
+        result: expect.arrayContaining([
+          expect.objectContaining({ sessionId: "sess_a", activity: "queued" }),
+        ]),
+      });
       invocationStore.claimNext("test-worker", "2099-07-15T00:00:01.000Z");
       invocationStore.complete(activeInvocation.invocationId, {
         status: "succeeded",
@@ -2193,14 +2425,21 @@ describe("Spark daemon local RPC", () => {
         ok: true,
         result: {
           sessionId: "sess_a",
-          status: "ready",
+          lifecycle: "open",
+          activity: "idle",
           updatedAt: queuedRegistryUpdatedAt,
         },
       });
       expect(
-        await request("session_list_settled", "session.list", { workspaceId: "ws_a" }),
-      ).toMatchObject({ ok: true, result: [{ sessionId: "sess_a", status: "ready" }] });
-
+        await request("session_list_settled", "session.list", {
+          scope: { kind: "workspace", workspaceId: "ws_a" },
+        }),
+      ).toMatchObject({
+        ok: true,
+        result: expect.arrayContaining([
+          expect.objectContaining({ sessionId: "sess_a", activity: "idle" }),
+        ]),
+      });
       const bound = await request("session_bind", "session.bind", {
         sessionId: "sess_a",
         externalKey: "feishu:chat:oc_demo",
@@ -2222,7 +2461,7 @@ describe("Spark daemon local RPC", () => {
       expect(archived).toMatchObject({
         ok: true,
         result: {
-          status: "archived",
+          placement: "archived",
           tags: expect.arrayContaining(["archive-source:manual", "topic:managed-session-rpc"]),
           archiveHistory: [
             expect.objectContaining({
@@ -2234,21 +2473,28 @@ describe("Spark daemon local RPC", () => {
       });
       expect(
         await request("session_search_archived", "session.list", {
+          scope: { kind: "workspace", workspaceId: "ws_a" },
           includeArchived: true,
           query: "managed-session-rpc cleanup",
           tags: ["topic:managed-session-rpc"],
         }),
-      ).toMatchObject({ ok: true, result: [{ sessionId: "sess_a", status: "archived" }] });
+      ).toMatchObject({
+        ok: true,
+        result: [expect.objectContaining({ sessionId: "sess_a", placement: "archived" })],
+      });
       expect(
         await request("session_get_archived", "session.get", { sessionId: "sess_a" }),
-      ).toMatchObject({ ok: true, result: { sessionId: "sess_a", status: "archived" } });
+      ).toMatchObject({
+        ok: true,
+        result: { sessionId: "sess_a", placement: "archived" },
+      });
       expect(
         await request("session_restore", "session.restore", { sessionId: "sess_a" }),
       ).toMatchObject({
         ok: true,
         result: {
           sessionId: "sess_a",
-          status: "ready",
+          placement: "active",
           tags: expect.arrayContaining(["topic:managed-session-rpc", "lifecycle:restored"]),
         },
       });
@@ -2303,6 +2549,7 @@ describe("Spark daemon local RPC", () => {
       );
 
     try {
+      const administrator = await sessionRegistry.ensureWorkspaceAdministrator(workspace.id);
       const retiredDaemonScope = await request("create_global", "session.create", {
         sessionId: "sess_global",
         scope: { kind: "daemon" },
@@ -2311,26 +2558,31 @@ describe("Spark daemon local RPC", () => {
         ok: false,
         error: {
           code: "invalid_scope",
-          message: "New top-level sessions must belong to a workspace.",
+          message: "New Sessions must belong to a workspace.",
         },
       });
 
       const workspaceSession = await request("create_workspace", "session.create", {
         sessionId: "sess_workspace",
-        workspaceId: workspace.id,
+        scope: { kind: "workspace", workspaceId: workspace.id },
+        supervisorSessionId: administrator.sessionId,
+        placement: "child",
+        roleBinding: { kind: "none" },
       });
       expect(workspaceSession).toMatchObject({
         ok: true,
         result: {
           scope: { kind: "workspace", workspaceId: workspace.id },
-          workspaceId: workspace.id,
           cwd: workspace.localPath,
         },
       });
 
       const unresolvedWorkspace = await request("create_unresolved", "session.create", {
         sessionId: "sess_unresolved",
-        workspaceId: "ws_missing",
+        scope: { kind: "workspace", workspaceId: "ws_missing" },
+        supervisorSessionId: administrator.sessionId,
+        placement: "child",
+        roleBinding: { kind: "none" },
       });
       expect(unresolvedWorkspace).toMatchObject({
         ok: false,
@@ -2339,7 +2591,10 @@ describe("Spark daemon local RPC", () => {
 
       await request("create_question", "session.create", {
         sessionId: "sess_question",
-        workspaceId: workspace.id,
+        scope: { kind: "workspace", workspaceId: workspace.id },
+        supervisorSessionId: administrator.sessionId,
+        placement: "child",
+        roleBinding: { kind: "none" },
       });
       const questionInput = {
         sessionId: "sess_question",
@@ -2382,7 +2637,7 @@ describe("Spark daemon local RPC", () => {
         await request("get_question_running", "session.get", { sessionId: "sess_question" }),
       ).toMatchObject({
         ok: true,
-        result: { status: "running" },
+        result: { activity: "queued" },
       });
 
       const workspaceTurn = await request("turn_workspace", "turn.submit", {
@@ -2447,9 +2702,8 @@ describe("Spark daemon local RPC", () => {
     const mailStore = new SparkSessionMailStore({ sparkHome });
     try {
       for (const sessionId of ["sess_origin", "sess_worker"]) {
-        await sessionRegistry.create({
+        await createDaemonWorkspaceSession(sessionRegistry, {
           sessionId,
-          scope: { kind: "workspace", workspaceId: "ws_session_send" },
           workspaceId: "ws_session_send",
         });
       }
@@ -2462,7 +2716,7 @@ describe("Spark daemon local RPC", () => {
         idempotencyKey: "session.send:sess_origin:tool-1",
         body: "investigate",
         origin: { surface: "local", host: "session" },
-        notifyOnCompletion: true,
+        wake: true,
         source: "tool",
       };
       const send = async (id: string) =>
@@ -2536,298 +2790,6 @@ describe("Spark daemon local RPC", () => {
         ok: true,
         result: { message: { id: firstResult.result.message.id, readAt: expect.any(String) } },
       });
-    } finally {
-      db.close();
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("delivers durable user notifications and skips already delivered targets", async () => {
-    const root = mkdtempSync(join(tmpdir(), "spark-daemon-rpc-notification-"));
-    const workspacePath = join(root, "workspace");
-    mkdirSync(workspacePath);
-    const paths = resolveSparkPaths({
-      app: "daemon",
-      env: { HOME: root },
-      overrides: {
-        dataDir: join(root, "data"),
-        cacheDir: join(root, "cache"),
-        stateDir: join(root, "state"),
-        runtimeDir: join(root, "run"),
-      },
-    });
-    const db = openSparkDaemonDatabase(paths);
-    const sparkHome = join(root, ".spark");
-    const sessionRegistry = createDaemonSessionRegistry(sparkHome, {
-      daemonId: "notification-test",
-      daemonCwd: root,
-      resolveWorkspaceCwd: (workspaceId) =>
-        workspaceId === "ws_delivery" ? workspacePath : undefined,
-    });
-    const mailStore = new SparkSessionMailStore({ sparkHome });
-    const status = notificationChannelStatus("ws_delivery", [
-      { id: "info-main", type: "infoflow" },
-      { id: "qq-main", type: "qqbot" },
-    ]);
-    const notify = vi.fn(
-      async (_workspaceId: string, input: ChannelNotifyInput): Promise<ChannelNotifyResult> => {
-        if (!input.adapter || !input.recipient) throw new Error("missing delivery target");
-        return {
-          action: "send",
-          adapter: input.adapter,
-          recipient: input.recipient,
-          text: input.text ?? "",
-        };
-      },
-    );
-    const channelIngress = {
-      status: vi.fn(() => status),
-      configure: vi.fn(async () => status),
-      reload: vi.fn(async () => status),
-      notify,
-    } satisfies Pick<DaemonChannelIngressRuntime, "status" | "configure" | "reload" | "notify">;
-
-    try {
-      await sessionRegistry.create({
-        sessionId: "sess_delivery",
-        scope: { kind: "workspace", workspaceId: "ws_delivery" },
-        workspaceId: "ws_delivery",
-      });
-      await sessionRegistry.bind({
-        sessionId: "sess_delivery",
-        externalKey: "infoflow:group:group-1",
-      });
-      await sessionRegistry.bind({
-        sessionId: "sess_delivery",
-        externalKey: "qqbot:c2c:user-1",
-      });
-      const sent = await mailStore.send({
-        toSessionId: "sess_delivery",
-        fromSessionId: "sess_sender",
-        kind: "notification",
-        visibility: "user",
-        delivery: "channel",
-        deliveryTargets: [
-          { adapter: "infoflow", externalKey: "infoflow:group:group-1" },
-          { adapter: "qqbot", externalKey: "qqbot:c2c:user-1" },
-        ],
-        body: "Deployment complete",
-        source: "tool",
-      });
-      const request = async (id: string) =>
-        await handleLocalRpcLine(
-          JSON.stringify({
-            id,
-            method: "session.notification.deliver",
-            params: { sessionId: "sess_delivery", messageId: sent.message.id },
-          }),
-          paths,
-          db,
-          undefined,
-          { sessionRegistry, mailStore, channelIngress },
-        );
-
-      const delivered = await request("deliver_notification");
-      expect(delivered).toMatchObject({
-        id: "deliver_notification",
-        ok: true,
-        result: {
-          deliveries: [
-            {
-              adapter: "infoflow",
-              externalKey: "infoflow:group:group-1",
-              status: "delivered",
-              attemptCount: 1,
-              receipt: { adapter: "info-main", recipient: "group:group-1" },
-            },
-            {
-              adapter: "qqbot",
-              externalKey: "qqbot:c2c:user-1",
-              status: "delivered",
-              attemptCount: 1,
-              receipt: { adapter: "qq-main", recipient: "c2c:user-1" },
-            },
-          ],
-        },
-      });
-      expect(notify.mock.calls).toEqual([
-        [
-          "ws_delivery",
-          {
-            action: "send",
-            adapter: "info-main",
-            recipient: "group:group-1",
-            text: "Deployment complete",
-          },
-        ],
-        [
-          "ws_delivery",
-          {
-            action: "send",
-            adapter: "qq-main",
-            recipient: "c2c:user-1",
-            text: "Deployment complete",
-          },
-        ],
-      ]);
-
-      const repeated = await request("deliver_notification_again");
-      expect(repeated).toMatchObject({
-        ok: true,
-        result: {
-          deliveries: [
-            { status: "delivered", attemptCount: 1 },
-            { status: "delivered", attemptCount: 1 },
-          ],
-        },
-      });
-      expect(notify).toHaveBeenCalledTimes(2);
-      expect(await mailStore.get("sess_delivery", sent.message.id)).toMatchObject({
-        deliveries: [
-          { status: "delivered", attemptCount: 1, lastError: null },
-          { status: "delivered", attemptCount: 1, lastError: null },
-        ],
-      });
-    } finally {
-      db.close();
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("keeps failed notification receipts retryable and rejects internal mail before notify", async () => {
-    const root = mkdtempSync(join(tmpdir(), "spark-daemon-rpc-notification-retry-"));
-    const workspacePath = join(root, "workspace");
-    mkdirSync(workspacePath);
-    const paths = resolveSparkPaths({
-      app: "daemon",
-      env: { HOME: root },
-      overrides: {
-        dataDir: join(root, "data"),
-        cacheDir: join(root, "cache"),
-        stateDir: join(root, "state"),
-        runtimeDir: join(root, "run"),
-      },
-    });
-    const db = openSparkDaemonDatabase(paths);
-    const sparkHome = join(root, ".spark");
-    const sessionRegistry = createDaemonSessionRegistry(sparkHome, {
-      daemonId: "notification-retry-test",
-      daemonCwd: root,
-      resolveWorkspaceCwd: (workspaceId) =>
-        workspaceId === "ws_retry" ? workspacePath : undefined,
-    });
-    const mailStore = new SparkSessionMailStore({ sparkHome });
-    const status = notificationChannelStatus("ws_retry", [{ id: "info-main", type: "infoflow" }]);
-    let attempt = 0;
-    const notify = vi.fn(
-      async (_workspaceId: string, input: ChannelNotifyInput): Promise<ChannelNotifyResult> => {
-        attempt += 1;
-        if (attempt === 1) throw new Error("channel temporarily unavailable");
-        if (!input.adapter || !input.recipient) throw new Error("missing delivery target");
-        return {
-          action: "send",
-          adapter: input.adapter,
-          recipient: input.recipient,
-          text: input.text ?? "",
-        };
-      },
-    );
-    const channelIngress = {
-      status: vi.fn(() => status),
-      configure: vi.fn(async () => status),
-      reload: vi.fn(async () => status),
-      notify,
-    } satisfies Pick<DaemonChannelIngressRuntime, "status" | "configure" | "reload" | "notify">;
-
-    try {
-      await sessionRegistry.create({
-        sessionId: "sess_retry",
-        scope: { kind: "workspace", workspaceId: "ws_retry" },
-        workspaceId: "ws_retry",
-      });
-      await sessionRegistry.bind({
-        sessionId: "sess_retry",
-        externalKey: "infoflow:user:user-1",
-      });
-      const sent = await mailStore.send({
-        toSessionId: "sess_retry",
-        fromSessionId: "sess_sender",
-        kind: "notification",
-        visibility: "user",
-        delivery: "channel",
-        deliveryTargets: [{ adapter: "infoflow", externalKey: "infoflow:user:user-1" }],
-        body: "Please review",
-        source: "tool",
-      });
-      const request = async (id: string, messageId: string) =>
-        await handleLocalRpcLine(
-          JSON.stringify({
-            id,
-            method: "session.notification.deliver",
-            params: { sessionId: "sess_retry", messageId },
-          }),
-          paths,
-          db,
-          undefined,
-          { sessionRegistry, mailStore, channelIngress },
-        );
-
-      const failed = await request("deliver_failed", sent.message.id);
-      expect(failed).toMatchObject({
-        ok: true,
-        result: {
-          deliveries: [
-            {
-              adapter: "infoflow",
-              externalKey: "infoflow:user:user-1",
-              status: "failed",
-              attemptCount: 1,
-              error: "channel temporarily unavailable",
-            },
-          ],
-        },
-      });
-      expect(await mailStore.get("sess_retry", sent.message.id)).toMatchObject({
-        deliveries: [
-          {
-            status: "failed",
-            attemptCount: 1,
-            lastError: "channel temporarily unavailable",
-          },
-        ],
-      });
-
-      const retried = await request("deliver_retried", sent.message.id);
-      expect(retried).toMatchObject({
-        ok: true,
-        result: {
-          deliveries: [
-            {
-              status: "delivered",
-              attemptCount: 2,
-              receipt: { adapter: "info-main", recipient: "user-1" },
-            },
-          ],
-        },
-      });
-      expect(JSON.stringify(retried)).not.toContain("channel temporarily unavailable");
-      expect(notify).toHaveBeenCalledTimes(2);
-
-      await expect(
-        Promise.resolve().then(() =>
-          mailStore.send({
-            toSessionId: "sess_retry",
-            fromSessionId: "sess_sender",
-            kind: "notification",
-            visibility: "internal",
-            delivery: "channel",
-            deliveryTargets: [{ adapter: "infoflow", externalKey: "infoflow:user:user-1" }],
-            body: "Internal only",
-            source: "tool",
-          }),
-        ),
-      ).rejects.toThrow("channel delivery requires explicit user visibility");
-      expect(notify).toHaveBeenCalledTimes(2);
     } finally {
       db.close();
       rmSync(root, { recursive: true, force: true });
@@ -2933,10 +2895,10 @@ describe("Spark daemon local RPC", () => {
       );
 
     try {
-      await sessionRegistry.create({
+      await createDaemonWorkspaceSession(sessionRegistry, {
         sessionId: "sess_view",
         workspaceId: "ws_view",
-        title: "Unified conversation",
+        name: "Unified conversation",
       });
 
       const empty = await request("snapshot_empty");
@@ -2946,7 +2908,7 @@ describe("Spark daemon local RPC", () => {
           sessionId: "sess_view",
           title: "Unified conversation",
           messages: [],
-          metadata: { workspaceId: "ws_view", registryStatus: "ready" },
+          metadata: { workspaceId: "ws_view" },
         },
       });
       expect(JSON.stringify(empty)).not.toContain("sessionPath");
@@ -3013,25 +2975,27 @@ describe("Spark daemon local RPC", () => {
         result: {
           status: "idle",
           messages: [],
-          // Raw registry metadata may remain stale after direct store settlement;
-          // the daemon-owned pending projection above is the activity authority.
-          metadata: { registryStatus: "running" },
+          metadata: {
+            sessionLifecycle: "open",
+            sessionPlacement: "active",
+            sessionActivity: "idle",
+          },
         },
       });
 
       const fallbackPath = join(
-        paths.piAgentDir!,
+        paths.sessionRuntimeDir!,
         "sessions",
         "workspace-hash",
         "2026-07-10T08-00-00-000Z_sess_view.jsonl",
       );
-      mkdirSync(join(paths.piAgentDir!, "sessions", "workspace-hash"), { recursive: true });
+      mkdirSync(join(paths.sessionRuntimeDir!, "sessions", "workspace-hash"), { recursive: true });
       writeFileSync(
         fallbackPath,
         `${[
           {
             type: "session",
-            version: 3,
+            version: 4,
             id: "sess_view",
             timestamp: "2026-07-10T08:00:00.000Z",
             cwd: "/workspace/view",
@@ -3129,19 +3093,51 @@ describe("Spark daemon local RPC", () => {
       expect(JSON.stringify(bound)).not.toMatch(
         /inactive answer|system-secret|tool-secret|secret-input|sessionPath/u,
       );
+      expect((bound as { result: Record<string, unknown> }).result).not.toHaveProperty("snapshot");
+      expect((bound as { result: Record<string, unknown> }).result).not.toHaveProperty("history");
+      const promptHistoryCompatibility = await handleLocalRpcLine(
+        JSON.stringify({
+          id: "prompt_history_compatibility",
+          method: "session.prompt-history",
+          params: { sessionId: "sess_view", limit: 100 },
+        }),
+        paths,
+        db,
+        undefined,
+        { sessionRegistry },
+      );
+      expect(promptHistoryCompatibility).toMatchObject({
+        ok: false,
+        error: { message: "Unknown local RPC method: session.prompt-history" },
+      });
+      const retryTargetCompatibility = await handleLocalRpcLine(
+        JSON.stringify({
+          id: "retry_target_compatibility",
+          method: "session.retry-target",
+          params: { sessionId: "sess_view" },
+        }),
+        paths,
+        db,
+        undefined,
+        { sessionRegistry },
+      );
+      expect(retryTargetCompatibility).toMatchObject({
+        ok: false,
+        error: { message: "Unknown local RPC method: session.retry-target" },
+      });
 
       const preferredPath = join(
-        paths.piAgentDir!,
+        paths.sessionRuntimeDir!,
         "sessions",
         "preferred",
         "2026-07-10T09-00-00-000Z_sess_view.jsonl",
       );
-      mkdirSync(join(paths.piAgentDir!, "sessions", "preferred"), { recursive: true });
+      mkdirSync(join(paths.sessionRuntimeDir!, "sessions", "preferred"), { recursive: true });
       writeFileSync(
         preferredPath,
         `${JSON.stringify({
           type: "session",
-          version: 3,
+          version: 4,
           id: "sess_view",
           timestamp: "2026-07-10T09:00:00.000Z",
           cwd: "/workspace/view",
@@ -3203,27 +3199,26 @@ describe("Spark daemon local RPC", () => {
     const modelControl = {
       snapshot: vi.fn(async () => snapshot),
       setDefaultModel: vi.fn(async () => snapshot),
-      setSessionModel: vi.fn(async () => ({
-        sessionId: "sess_model",
-        scope: { kind: "workspace" as const, workspaceId: "ws_model" },
-        workspaceId: "ws_model",
-        model,
-        bindings: [],
-        status: "ready" as const,
-        createdAt: "2026-07-10T00:00:00.000Z",
-        updatedAt: "2026-07-10T00:01:00.000Z",
-      })),
-      setSessionThinkingLevel: vi.fn(async () => ({
-        sessionId: "sess_model",
-        scope: { kind: "workspace" as const, workspaceId: "ws_model" },
-        workspaceId: "ws_model",
-        model,
-        thinkingLevel: "high" as const,
-        bindings: [],
-        status: "ready" as const,
-        createdAt: "2026-07-10T00:00:00.000Z",
-        updatedAt: "2026-07-10T00:01:00.000Z",
-      })),
+      setEnabledModels: vi.fn(async () => snapshot),
+      setSessionModel: vi.fn(async () =>
+        workspaceSessionRecord({
+          sessionId: "sess_model",
+          workspaceId: "ws_model",
+          model,
+          createdAt: "2026-07-10T00:00:00.000Z",
+          updatedAt: "2026-07-10T00:01:00.000Z",
+        }),
+      ),
+      setSessionThinkingLevel: vi.fn(async () =>
+        workspaceSessionRecord({
+          sessionId: "sess_model",
+          workspaceId: "ws_model",
+          model,
+          thinkingLevel: "high" as const,
+          createdAt: "2026-07-10T00:00:00.000Z",
+          updatedAt: "2026-07-10T00:01:00.000Z",
+        }),
+      ),
       setApiKey,
       importPiAuth,
       logout: vi.fn(async () => ({ removed: true, snapshot })),
@@ -3234,6 +3229,12 @@ describe("Spark daemon local RPC", () => {
       effectiveModel: vi.fn(async () => model),
       effectiveThinkingLevel: vi.fn(async () => undefined),
       prepareModel,
+      testModel: vi.fn(async (selectedModel) => ({
+        status: "reachable" as const,
+        model: selectedModel,
+        latencyMs: 1,
+        checkedAt: "2026-07-10T00:02:00.000Z",
+      })),
     } satisfies SparkDaemonModelControl;
 
     try {
@@ -3676,8 +3677,7 @@ function notificationChannelStatus(
   return {
     plane: "daemon",
     resource: "channel",
-    workspaceId,
-    configPath: `/tmp/${workspaceId}/channels/config.json`,
+    configPath: `/tmp/channels/${workspaceId}.json`,
     available: true,
     configured: true,
     ingressEnabled: true,
@@ -3689,6 +3689,6 @@ function notificationChannelStatus(
     })),
     routes: [],
     observedAt: "2026-07-15T00:00:00.000Z",
-    text: `channels workspace=${workspaceId} running`,
+    text: "channels daemon running",
   };
 }

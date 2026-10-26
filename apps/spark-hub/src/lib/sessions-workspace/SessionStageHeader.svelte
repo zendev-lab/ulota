@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Icon } from "@zendev-lab/spark-ui";
-  import ChannelSessionIcon from "$lib/ChannelSessionIcon.svelte";
+  import { ChannelSessionIcon } from "@zendev-lab/spark-ui";
   import { Button } from "@zendev-lab/spark-ui";
   import { enhance } from "$app/forms";
   import { visibleSessionStatus } from "$lib/conversation-status";
@@ -27,12 +27,22 @@
     onOpenSideThread: () => void;
   } = $props();
 
-  let displayedSessionStatus = $derived(visibleSessionStatus(host.selected.status));
+  let displayedSessionStatus = $derived(
+    visibleSessionStatus(
+      host.selected.placement === "archived" ? "archived" : (host.selected.activity ?? "idle"),
+    ),
+  );
+  let explicitRoleRef = $derived(
+    host.selected.roleBinding.kind === "explicit" ? host.selected.roleBinding.roleRef : null,
+  );
   let selectedPresentation = $derived(host.sessionPresentation(host.selected));
   let objective = $derived(sessionWorkObjective(host.liveSessionView));
   let primaryLoop = $derived(primarySessionLoop(host.liveSessionView));
   let semanticStatus = $derived(sessionWorkStatus(host.liveSessionView));
-  let currentStep = $derived(host.liveSessionView?.work?.repro?.plan.currentStep?.goal);
+  let currentStep = $derived(
+    host.liveSessionView?.work?.repro?.checkpoint?.summary ??
+      host.liveSessionView?.work?.repro?.checkpoint?.kind,
+  );
   let modeLabel = $derived(
     host.liveSessionView?.work?.repro
       ? host.copy.reproMode
@@ -67,7 +77,7 @@
         <p>{currentStep ?? (objective ? selectedPresentation.title : host.sessionScopeLabel(host.selected))}</p>
       </div>
       <div class="stage-actions">
-        {#if host.selected.role}<span class="context-chip">{host.selected.role}</span>{/if}
+        {#if explicitRoleRef}<span class="context-chip">{explicitRoleRef}</span>{/if}
         <Button
           variant="secondary"
           size="compact"

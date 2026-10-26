@@ -3,36 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "vitest";
-import type { ExtensionRoleRunner } from "@zendev-lab/spark-core";
 
 import { registerSparkRolesTools } from "./extension.ts";
+import { createDefaultRoleRegistry } from "./role-runtime.ts";
 
 const DEFAULT_TEST_CWD = "/tmp/spark-roles-tool-default-cwd";
-
-const defaultNativeRoleRunner: ExtensionRoleRunner = async (input) => {
-  const text = input.instruction.instruction.includes("without final message")
-    ? ""
-    : "Fake worker result.";
-  const jsonEvents = input.instruction.instruction.includes("without final message")
-    ? [{ type: "agent_start" }, { type: "agent_end", messages: [] }]
-    : input.instruction.instruction.includes("protocol")
-      ? []
-      : [
-          {
-            type: "message_end",
-            message: { role: "assistant", content: [{ type: "text", text }] },
-          },
-        ];
-  const stdout = input.instruction.instruction.includes("protocol")
-    ? '"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta"}\n'
-    : text;
-  return {
-    record: { ...input.record, status: "succeeded", finishedAt: "2026-06-22T00:00:00.000Z" },
-    stdout,
-    stderr: "",
-    jsonEvents,
-  };
-};
 
 interface ToolConfig {
   name: string;
@@ -45,9 +20,7 @@ interface ToolConfig {
     onUpdate: (update: { content: Array<{ type: "text"; text: string }> }) => void,
     ctx: {
       cwd?: string;
-      model?: { provider: string; id: string; api?: string };
       modelRegistry?: unknown;
-      runRole?: ExtensionRoleRunner;
     },
   ) => Promise<{
     content: Array<{ type: "text"; text: string }>;
@@ -126,22 +99,22 @@ test("role action tool dispatches canonical list, get, and create actions", asyn
 
     assert.throws(
       () => executeRoleTool(tools, "role", { action: "send", toSessionId: "session:b" }, dir),
-      /role\.action must be list, get, create, call/u,
+      /role\.action must be list, get, create, model_list/u,
     );
-    await assert.rejects(
+    assert.throws(
       () =>
         executeRoleTool(
           tools,
           "role",
           {
             action: "call",
-            role: "worker",
+            role: "executor",
             sessionId: "session:persistent",
             instruction: "Do not accept persistent session targets here.",
           },
           dir,
         ),
-      /role does not manage persistent sessions/u,
+      /role\.action must be list, get, create, model_list/u,
     );
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -160,7 +133,7 @@ test("role action tool manages role model settings", async () => {
       "role",
       {
         action: "model_set",
-        role: "worker",
+        role: "executor",
         model: "test/model",
         source: "project",
       },
@@ -171,10 +144,15 @@ test("role action tool manages role model settings", async () => {
       /Saved project model setting for type implementation/,
     );
 
-    const got = await executeRoleTool(tools, "role", { action: "model_get", role: "worker" }, dir);
+    const got = await executeRoleTool(
+      tools,
+      "role",
+      { action: "model_get", role: "executor" },
+      dir,
+    );
     assert.match(got.content[0]?.text ?? "", /test\/model source=project/);
     assert.equal(
-      (got.details?.model as { selector?: string } | undefined)?.selector,
+      (got.details?.model as { modelType?: string } | undefined)?.modelType,
       "implementation",
     );
 
@@ -186,25 +164,10 @@ test("role action tool manages role model settings", async () => {
     );
     assert.match(listed.content[0]?.text ?? "", /implementation -> test\/model/);
 
-    const called = await executeRoleTool(
-      tools,
-      "role",
-      {
-        action: "call",
-        role: "worker",
-        instruction: "Run with the saved project role model setting.",
-        timeoutMs: 5_000,
-      },
-      dir,
-      { model: { provider: "ignored", id: "session", api: "openai-responses" } },
-    );
-    assert.match(called.content[0]?.text ?? "", /Role call succeeded: executor/);
-    assert.match(called.content[0]?.text ?? "", /model=test\/model/);
-
     const deleted = await executeRoleTool(
       tools,
       "role",
-      { action: "model_delete", role: "worker", source: "project" },
+      { action: "model_delete", role: "executor", source: "project" },
       dir,
     );
     assert.match(deleted.content[0]?.text ?? "", /Deleted project model setting/);
@@ -212,7 +175,7 @@ test("role action tool manages role model settings", async () => {
     const afterDelete = await executeRoleTool(
       tools,
       "role",
-      { action: "model_get", role: "worker" },
+      { action: "model_get", role: "executor" },
       dir,
     );
     assert.match(afterDelete.content[0]?.text ?? "", /No model setting for type implementation/);
@@ -223,7 +186,7 @@ test("role action tool manages role model settings", async () => {
         "role",
         {
           action: "model_set",
-          role: "worker",
+          role: "executor",
           model: "missing/model",
           source: "project",
         },
@@ -238,6 +201,46 @@ test("role action tool manages role model settings", async () => {
   }
 });
 
+test("role schema has seven strict static-definition and model-setting actions", () => {
+  const tools = registerRoleToolsForTest();
+  const roleToolParameters = tools.get("role")?.parameters as
+    | { anyOf?: Array<Record<string, unknown>>; unionOf?: Array<Record<string, unknown>> }
+    | undefined;
+  const branches = roleToolParameters?.anyOf ?? roleToolParameters?.unionOf ?? [];
+  assert.equal(branches.length, 7);
+  const branch = (action: string): Record<string, unknown> => {
+    const match = branches.find((candidate) => {
+      const properties = (candidate as { properties?: Record<string, unknown> }).properties ?? {};
+      return (properties.action as { const?: string } | undefined)?.const === action;
+    });
+    assert.ok(match, `missing role action branch: ${action}`);
+    return match;
+  };
+  const create = branch("create") as {
+    additionalProperties?: boolean;
+    properties?: Record<string, unknown>;
+  };
+  assert.equal(create.additionalProperties, false);
+  assert.ok(create.properties?.modelType);
+  assert.ok(create.properties?.skills);
+  assert.equal("model" in (create.properties ?? {}), false);
+  assert.equal("instruction" in (create.properties ?? {}), false);
+  assert.equal(
+    branches.some((candidate) => JSON.stringify(candidate).includes('"call"')),
+    false,
+  );
+  assert.equal(tools.has("call_role"), false);
+
+  const roles = createDefaultRoleRegistry({ now: "2026-01-01T00:00:00.000Z" }).list({
+    source: "builtin",
+  });
+  assert.deepEqual(
+    roles.map((role) => role.id),
+    ["administrator", "executor", "explorer", "reviewer"],
+  );
+  assert.ok(roles.every((role) => role.source === "builtin" && role.revision.length > 0));
+});
+
 test("role spec tools keep patch presets out of builtin role lookup", async () => {
   const dir = await mkdtemp(join(tmpdir(), "spark-roles-no-patcher-"));
   try {
@@ -245,7 +248,7 @@ test("role spec tools keep patch presets out of builtin role lookup", async () =
     const listed = await executeRoleTool(tools, "list_roles", { source: "builtin" }, dir);
     const roleIds = ((listed.details?.roles ?? []) as Array<{ id: string }>).map((role) => role.id);
 
-    assert.deepEqual(roleIds, ["administrator", "executor", "explorer", "researcher", "reviewer"]);
+    assert.deepEqual(roleIds, ["administrator", "executor", "explorer", "reviewer"]);
     assert.doesNotMatch(listed.content[0]?.text ?? "", /\bpatcher?\b/);
     await assert.rejects(
       executeRoleTool(tools, "get_role", { role: "patch" }, dir),
@@ -260,205 +263,7 @@ test("role spec tools keep patch presets out of builtin role lookup", async () =
   }
 });
 
-test("call_role launches fresh owned Role Sessions", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "spark-roles-tool-"));
-  const previousBindingHome = process.env.SPARK_HOME;
-  process.env.SPARK_HOME = dir;
-  try {
-    const tools = registerRoleToolsForTest();
-    let capturedNativeInput: Parameters<ExtensionRoleRunner>[0] | undefined;
-    const result = await executeCallRole(
-      tools,
-      {
-        role: "worker",
-        instruction: "Run the fake worker.",
-        launch: "fresh",
-        model: "test/model",
-        timeoutMs: 5_000,
-      },
-      dir,
-      {
-        runRole: async (input) => {
-          capturedNativeInput = input;
-          return await defaultNativeRoleRunner(input);
-        },
-      },
-    );
-
-    assert.match(result.content[0]?.text ?? "", /Role call succeeded: executor/);
-    assert.match(
-      result.content[0]?.text ?? "",
-      /runRef=run:[^\n]+ · launch=fresh · model=test\/model/,
-    );
-    assert.match(result.content[0]?.text ?? "", /result:\nFake worker result\./);
-    assert.doesNotMatch(result.content[0]?.text ?? "", /lastJsonEvent/);
-    assert.doesNotMatch(result.content[0]?.text ?? "", /stdout:\n\{"type":"message_end"/);
-    const details = result.details as {
-      record?: { status?: string; launch?: string };
-      jsonEventCount?: number;
-      delivery?: { status?: string; hasFinalAssistantText?: boolean };
-    };
-    assert.equal(details.record?.status, "succeeded");
-    assert.equal(details.record?.launch, "fresh");
-    assert.equal(details.jsonEventCount, 1);
-    assert.equal(capturedNativeInput?.role.id, "executor");
-    assert.ok(capturedNativeInput?.role.allowedTools?.includes("edit"));
-    assert.equal(capturedNativeInput?.instruction.instruction, "Run the fake worker.");
-    assert.equal(capturedNativeInput?.launch, "fresh");
-    assert.equal(capturedNativeInput?.noSession, undefined);
-    assert.equal(capturedNativeInput?.record.noSession, undefined);
-    assert.equal(capturedNativeInput?.role.modelType, "implementation");
-    assert.equal(capturedNativeInput?.role.instantiation, "owned");
-    assert.equal(capturedNativeInput?.model, "test/model");
-    assert.equal(capturedNativeInput?.timeoutMs, 5_000);
-    assert.equal(capturedNativeInput?.cwd, dir);
-    assert.equal(details.delivery?.status, "delivered");
-    assert.equal(details.delivery?.hasFinalAssistantText, true);
-
-    const canonical = await executeRoleTool(
-      tools,
-      "role",
-      {
-        action: "call",
-        role: "worker",
-        instruction: "Run the fake worker through the canonical role tool.",
-        launch: "fresh",
-        model: "test/model",
-        timeoutMs: 5_000,
-      },
-      dir,
-    );
-    assert.match(canonical.content[0]?.text ?? "", /Role call succeeded: executor/);
-  } finally {
-    if (previousBindingHome === undefined) delete process.env.SPARK_HOME;
-    else process.env.SPARK_HOME = previousBindingHome;
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("call_role rejects an unconfigured Model Type instead of inheriting the session model", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "spark-roles-session-model-"));
-  const previousBindingHome = process.env.SPARK_HOME;
-  process.env.SPARK_HOME = dir;
-  try {
-    const tools = registerRoleToolsForTest();
-
-    await assert.rejects(
-      executeRoleTool(
-        tools,
-        "role",
-        {
-          action: "call",
-          role: "worker",
-          instruction: "Do not inherit the active session model.",
-          timeoutMs: 5_000,
-        },
-        dir,
-        { model: { provider: "test", id: "model", api: "openai-responses" } },
-      ),
-      (error: unknown) =>
-        error instanceof Error &&
-        error.name === "RoleModelTypeUnconfiguredError" &&
-        (error as Error & { code?: string }).code === "role_model_type_unconfigured",
-    );
-  } finally {
-    if (previousBindingHome === undefined) delete process.env.SPARK_HOME;
-    else process.env.SPARK_HOME = previousBindingHome;
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("call_role does not expose raw JSON protocol fragments as output", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "spark-roles-protocol-fragment-"));
-  const previousBindingHome = process.env.SPARK_HOME;
-  process.env.SPARK_HOME = dir;
-  try {
-    const tools = registerRoleToolsForTest();
-    const result = await executeCallRole(
-      tools,
-      {
-        role: "worker",
-        instruction: "Run protocol fragment.",
-        model: "test/model",
-      },
-      dir,
-    );
-
-    assert.match(result.content[0]?.text ?? "", /Role call succeeded: executor/);
-    assert.match(result.content[0]?.text ?? "", /delivery: empty/);
-    assert.doesNotMatch(result.content[0]?.text ?? "", /assistantMessageEvent/);
-    assert.doesNotMatch(result.content[0]?.text ?? "", /toolcall_delta/);
-    assert.equal((result.details as { delivery?: { status?: string } }).delivery?.status, "empty");
-  } finally {
-    if (previousBindingHome === undefined) delete process.env.SPARK_HOME;
-    else process.env.SPARK_HOME = previousBindingHome;
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("call_role exposes empty delivery when JSON events have no final assistant message", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "spark-roles-empty-delivery-"));
-  const previousBindingHome = process.env.SPARK_HOME;
-  process.env.SPARK_HOME = dir;
-  try {
-    const tools = registerRoleToolsForTest();
-    const result = await executeCallRole(
-      tools,
-      {
-        role: "worker",
-        instruction: "Run without final message.",
-        model: "test/model",
-      },
-      dir,
-    );
-
-    assert.match(result.content[0]?.text ?? "", /Role call succeeded: executor/);
-    assert.match(
-      result.content[0]?.text ?? "",
-      /delivery: empty .*no final assistant message found \(2 JSON events captured\)/,
-    );
-    const details = result.details as {
-      record?: { status?: string };
-      jsonEventCount?: number;
-      delivery?: { status?: string; hasFinalAssistantText?: boolean; jsonEventCount?: number };
-    };
-    assert.equal(details.record?.status, "succeeded");
-    assert.equal(details.jsonEventCount, 2);
-    assert.equal(details.delivery?.status, "empty");
-    assert.equal(details.delivery?.hasFinalAssistantText, false);
-    assert.equal(details.delivery?.jsonEventCount, 2);
-  } finally {
-    if (previousBindingHome === undefined) delete process.env.SPARK_HOME;
-    else process.env.SPARK_HOME = previousBindingHome;
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("call_role directs persistent continuity to the session tool", async () => {
-  const tools = registerRoleToolsForTest();
-  await assert.rejects(
-    executeCallRole(tools, {
-      role: "reviewer",
-      instruction: "Review with context.",
-      launch: "forked",
-    }),
-    /forked launch is not public; use the session tool for continuity/,
-  );
-});
-
-test("call_role rejects unknown launches instead of falling back to fresh", async () => {
-  const tools = registerRoleToolsForTest();
-  await assert.rejects(
-    executeCallRole(tools, {
-      role: "worker",
-      instruction: "Run with an invalid launch.",
-      launch: "legacy-mode",
-    }),
-    /unsupported role launch mode/,
-  );
-});
-
-test("spark-roles tools require ctx cwd unless call_role cwd is explicit", async () => {
+test("spark-roles tools require ctx cwd", async () => {
   const tools = registerRoleToolsForTest();
 
   await assert.rejects(
@@ -466,7 +271,7 @@ test("spark-roles tools require ctx cwd unless call_role cwd is explicit", async
     /list_roles requires ctx\.cwd/,
   );
   await assert.rejects(
-    executeRoleToolWithoutCwd(tools, "get_role", { role: "worker" }),
+    executeRoleToolWithoutCwd(tools, "get_role", { role: "executor" }),
     /get_role requires ctx\.cwd/,
   );
   await assert.rejects(
@@ -479,35 +284,6 @@ test("spark-roles tools require ctx cwd unless call_role cwd is explicit", async
     }),
     /create_role requires ctx\.cwd/,
   );
-  await assert.rejects(
-    executeRoleToolWithoutCwd(tools, "call_role", {
-      role: "worker",
-      instruction: "Run without cwd.",
-    }),
-    /call_role requires ctx\.cwd/,
-  );
-
-  const dir = await mkdtemp(join(tmpdir(), "spark-roles-explicit-cwd-"));
-  const previousBindingHome = process.env.SPARK_HOME;
-  process.env.SPARK_HOME = dir;
-  try {
-    const explicit = await executeRoleToolWithoutCwd(
-      tools,
-      "call_role",
-      {
-        role: "worker",
-        instruction: "Run with explicit cwd.",
-        cwd: dir,
-        model: "test/model",
-      },
-      { runRole: defaultNativeRoleRunner },
-    );
-    assert.match(explicit.content[0]?.text ?? "", /Role call succeeded: executor/);
-  } finally {
-    if (previousBindingHome === undefined) delete process.env.SPARK_HOME;
-    else process.env.SPARK_HOME = previousBindingHome;
-    await rm(dir, { recursive: true, force: true });
-  }
 });
 
 test("spark-roles tools reject invalid explicit parameters instead of using defaults", async () => {
@@ -612,69 +388,6 @@ test("spark-roles tools reject invalid explicit parameters instead of using defa
     }),
     /create_role model is not supported; use role model settings/,
   );
-  await assert.rejects(
-    executeCallRole(tools, {
-      role: 42,
-      instruction: "Run with an invalid role selector.",
-    }),
-    /call_role role must be a string/,
-  );
-  await assert.rejects(
-    executeCallRole(tools, {
-      role: "worker",
-      instruction: 42,
-    }),
-    /call_role instruction must be a string/,
-  );
-  await assert.rejects(
-    executeCallRole(tools, {
-      role: "worker",
-      instruction: "Run with an invalid timeout.",
-      timeoutMs: "5000",
-    }),
-    /call_role timeoutMs must be a finite number/,
-  );
-  await assert.rejects(
-    executeCallRole(tools, {
-      role: "worker",
-      instruction: "Run with removed dryRun flag.",
-      dryRun: true,
-    }),
-    /call_role dryRun is no longer supported/,
-  );
-  await assert.rejects(
-    executeCallRole(tools, {
-      role: "worker",
-      instruction: "Run with a removed pi command parameter.",
-      piCommand: "custom-pi",
-    }),
-    /call_role piCommand is no longer supported/,
-  );
-  await assert.rejects(
-    executeCallRole(tools, {
-      role: "worker",
-      instruction: "Run with an invalid session directory.",
-      sessionDir: 42,
-    }),
-    /call_role sessionDir is not supported for anonymous role calls/,
-  );
-  await assert.rejects(
-    executeCallRole(tools, {
-      role: "worker",
-      instruction: "Run with a persistent-only reset option.",
-      reset: true,
-    }),
-    /call_role reset is not supported; use session action=call/,
-  );
-  await assert.rejects(
-    executeCallRole(tools, {
-      role: "reviewer",
-      instruction: "Fork with an invalid parent.",
-      launch: "forked",
-      forkFromSession: 42,
-    }),
-    /call_role forked launch is not public|call_role forkFromSession is not public/,
-  );
 });
 
 function registerRoleToolsForTest(): Map<string, ToolConfig> {
@@ -685,36 +398,18 @@ function registerRoleToolsForTest(): Map<string, ToolConfig> {
   return tools;
 }
 
-function executeCallRole(
-  tools: Map<string, ToolConfig>,
-  params: Record<string, unknown>,
-  cwd = DEFAULT_TEST_CWD,
-  ctxExtra: {
-    model?: { provider: string; id: string; api?: string };
-    modelRegistry?: unknown;
-    runRole?: ExtensionRoleRunner;
-  } = {},
-): Promise<{ content: Array<{ type: "text"; text: string }>; details?: Record<string, unknown> }> {
-  return executeRoleTool(tools, "call_role", params, cwd, ctxExtra);
-}
-
 function executeRoleTool(
   tools: Map<string, ToolConfig>,
   name: string,
   params: Record<string, unknown>,
   cwd = DEFAULT_TEST_CWD,
-  ctxExtra: {
-    model?: { provider: string; id: string; api?: string };
-    modelRegistry?: unknown;
-    runRole?: ExtensionRoleRunner;
-  } = {},
+  ctxExtra: { modelRegistry?: unknown } = {},
 ): Promise<{ content: Array<{ type: "text"; text: string }>; details?: Record<string, unknown> }> {
   const call = canonicalRoleToolCall(name, params);
   const tool = tools.get(call.name);
   assert.ok(tool, `missing ${call.name} tool`);
   return tool.execute("tool-call", call.params, new AbortController().signal, () => undefined, {
     cwd,
-    runRole: defaultNativeRoleRunner,
     modelRegistry: testModelRegistry(),
     ...ctxExtra,
   });
@@ -735,18 +430,11 @@ function executeRoleToolWithoutCwd(
   tools: Map<string, ToolConfig>,
   name: string,
   params: Record<string, unknown>,
-  ctxExtra: { runRole?: ExtensionRoleRunner } = {},
 ): Promise<{ content: Array<{ type: "text"; text: string }>; details?: Record<string, unknown> }> {
   const call = canonicalRoleToolCall(name, params);
   const tool = tools.get(call.name);
   assert.ok(tool, `missing ${call.name} tool`);
-  return tool.execute(
-    "tool-call",
-    call.params,
-    new AbortController().signal,
-    () => undefined,
-    ctxExtra,
-  );
+  return tool.execute("tool-call", call.params, new AbortController().signal, () => undefined, {});
 }
 
 function canonicalRoleToolCall(
@@ -762,8 +450,6 @@ function canonicalRoleToolCall(
       return { name: "role", params: { action: "get", ...params } };
     case "create_role":
       return { name: "role", params: { action: "create", ...params } };
-    case "call_role":
-      return { name: "role", params: { action: "call", ...params } };
     case "model_list_roles":
       return { name: "role", params: { action: "model_list", ...params } };
     case "model_get_role":

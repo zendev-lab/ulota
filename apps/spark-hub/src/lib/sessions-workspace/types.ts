@@ -6,7 +6,7 @@ import type {
 } from "@zendev-lab/spark-hub-coordination/session-activity";
 import type {
   SparkModelControlSnapshot,
-  SparkSessionRelation,
+  SparkSessionProjection,
 } from "@zendev-lab/spark-protocol/daemon";
 import type { HubMessages } from "@zendev-lab/spark-i18n/hub";
 
@@ -14,25 +14,7 @@ import type { HubMessages } from "@zendev-lab/spark-i18n/hub";
 export type SessionActivity = SessionActivityProjection;
 export type { SessionActivityCommand, SessionActivityQueuedTurn, SessionActivityReport };
 
-export type SessionRecord = {
-  sessionId: string;
-  workspaceId?: string;
-  scope?:
-    | { kind: "workspace"; workspaceId: string }
-    | { kind: "daemon"; daemonId?: string; daemonLabel?: string };
-  title?: string;
-  status: string;
-  role?: string;
-  relation?: SparkSessionRelation;
-  bindings?: Array<{
-    kind: string;
-    adapter?: string;
-    externalKey?: string;
-    boundAt?: string;
-  }>;
-  createdAt: string;
-  updatedAt: string;
-};
+export type SessionRecord = SparkSessionProjection;
 
 export type WorkspaceOption = {
   id: string;

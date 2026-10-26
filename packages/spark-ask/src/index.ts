@@ -5,9 +5,9 @@ import type {
   ExtensionInteractionResponse,
   ExtensionEvidenceRequestBinding,
   SparkHostContext,
-} from "@zendev-lab/spark-core";
-import { truncateToWidth } from "@zendev-lab/spark-tui-adapter/text";
-import { createId } from "@zendev-lab/spark-protocol/domain";
+} from "@zendev-lab/spark-invocation";
+import { ToolCallText } from "@zendev-lab/spark-text-rendering";
+import { SPARK_PROTOCOL_VERSION, createId } from "@zendev-lab/spark-protocol/domain";
 import {
   parseSparkMemoryApprovalBinding,
   type SparkMemoryApprovalBinding,
@@ -68,6 +68,8 @@ export interface SparkAskRequest {
   interactionRequestId?: string;
   /** Host-only detached EvidenceRequest binding; raw ask_user cannot set this. */
   evidenceRequest?: ExtensionEvidenceRequestBinding;
+  /** Address the ask to this Session instead of User. */
+  toSessionId?: string;
   questions: SparkAskQuestion[];
 }
 
@@ -144,19 +146,10 @@ interface ToolCallComponent {
   render(width: number): string[];
 }
 
-class ToolCallText implements ToolCallComponent {
-  private readonly text: string;
-
-  constructor(text: string) {
-    this.text = text;
-  }
-
-  render(width: number): string[] {
-    return [truncateToWidth(this.text, Math.max(1, width), "…")];
-  }
-}
-
 export function createAskUserRequest(input: SparkAskRequest): SparkAskRequest {
+  if (input.toSessionId?.trim() && input.evidenceRequest) {
+    throw new Error("ask.toSessionId cannot be combined with evidenceRequest");
+  }
   if (input.questions.length === 0) throw new Error("ask_user needs at least one question");
   if (
     input.timeoutMs !== undefined &&
@@ -357,6 +350,7 @@ function decodeAskRequest(params: Record<string, unknown>): SparkAskRequest {
       params.evidenceRequest && typeof params.evidenceRequest === "object"
         ? (params.evidenceRequest as ExtensionEvidenceRequestBinding)
         : undefined,
+    toSessionId: typeof params.toSessionId === "string" ? params.toSessionId.trim() : undefined,
     questions,
   });
 }
@@ -415,7 +409,7 @@ function createAskUserInteractionRequest(
   request: SparkAskRequest,
 ): ExtensionAskFlowInteractionRequest {
   return {
-    version: 1,
+    version: SPARK_PROTOCOL_VERSION,
     kind: "askFlow",
     requestId: request.interactionRequestId ?? createId("ask"),
     title: request.title?.trim() || "Ask user",
@@ -424,6 +418,7 @@ function createAskUserInteractionRequest(
     metadata: { tool: "ask_user" },
     delivery: request.delivery ?? "blocking",
     ...(request.evidenceRequest ? { evidenceRequest: request.evidenceRequest } : {}),
+    ...(request.toSessionId ? { toSessionId: request.toSessionId } : {}),
     ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {}),
     mode: request.mode ?? "clarification",
     questions: request.questions.map((question) => ({
@@ -741,6 +736,7 @@ export type {
   SparkAskActionToolOptions,
   SparkAskAutoAnswerProvider,
   SparkAskAutoAnswerResolver,
+  SparkAskDaemonRequest,
 } from "./action-tool.ts";
 export {
   recordCanonicalAnswerEventEvidenceReceipt,
@@ -778,6 +774,7 @@ export type { AskConfigStoreOptions } from "./config/store.ts";
 export type { AskConfig, AskConfigStore } from "./config/schema.ts";
 export { SparkAskFlowController, normalizeAskKey, printableAskText } from "./ui/controller.ts";
 export type { SparkAskTui, SparkAskView } from "./ui/controller.ts";
+export { askFlowAnswersFromResult, askFlowRequestFromInteraction } from "./from-interaction.ts";
 export { createInitialState, buildExtendedOptions } from "./state/state.ts";
 export type { AskState } from "./state/state.ts";
 export { reduce } from "./state/reducer.ts";

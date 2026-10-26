@@ -1,13 +1,13 @@
-import { sparkLocalRpcProcedureSchemas } from "@zendev-lab/spark-protocol/daemon";
 import {
+  sparkLocalRpcProcedureSchemas,
   type SparkAssignment,
   type SparkLocalRpcInput,
   type SparkLocalRpcMethod,
   type SparkLocalRpcOutput,
-  type SparkSessionRegistryRecord,
+  type SparkSessionProjection,
   type SparkTurnSubmitResult,
 } from "@zendev-lab/spark-protocol/daemon";
-import { resolveSparkPaths } from "@zendev-lab/spark-system";
+import { resolveSparkPaths } from "@zendev-lab/spark-platform-node";
 import { requestSparkDaemon, type SparkDaemonClientOptions } from "@zendev-lab/spark-daemon-client";
 
 export type HubCoordinationDaemonRequest = <M extends SparkLocalRpcMethod>(
@@ -26,7 +26,7 @@ export interface HubCoordinationDaemonClientOptions {
 export async function getManagedSession(
   sessionId: string,
   options: HubCoordinationDaemonClientOptions = {},
-): Promise<SparkSessionRegistryRecord> {
+): Promise<SparkSessionProjection> {
   return daemonRequest("session.get", { sessionId }, options);
 }
 

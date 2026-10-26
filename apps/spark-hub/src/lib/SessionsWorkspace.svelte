@@ -11,7 +11,7 @@
     SessionQueueLabels,
     SlashActionAvailability,
   } from "$lib/components/conversation";
-  import { sessionHasChannelBinding } from "$lib/channel-session-title";
+  import { sessionHasChannelBinding } from "@zendev-lab/spark-ui/channel-session";
   import { formatRelativeTime, statusLabel as getStatusLabel, type AppMessages } from "$lib/i18n";
   import type { PendingWorkbenchAsk } from "$lib/pending-ask";
   import {
@@ -204,8 +204,9 @@ import { type SparkActionView, type SparkSessionView } from "@zendev-lab/spark-p
   const feedback = createShellFeedbackController();
   let sessionModelForm = $state<HTMLFormElement | null>(null);
   let sessionThinkingForm = $state<HTMLFormElement | null>(null);
-  let sessionModeForm = $state<HTMLFormElement | null>(null);
-  let sessionMode = $state("");
+  let sessionDirectiveForm = $state<HTMLFormElement | null>(null);
+  let directivePrompt = $state("");
+  let directiveSubmissionId = $state(createId("idem"));
   let retryMessageForm = $state<HTMLFormElement | null>(null);
 
   const activityRefresh = createActivityRefreshController({
@@ -238,7 +239,7 @@ import { type SparkActionView, type SparkSessionView } from "@zendev-lab/spark-p
   let sessionMessages = $derived(live.liveSessionView?.messages ?? []);
   let sessionActivityState = $derived(
     resolveSessionActivityState({
-      registryStatus: selected?.status,
+      registryStatus: selected?.activity,
       session: live.liveSessionView,
       projectedTurns: activity?.queuedTurns ?? [],
       liveActiveTurnId: live.liveEventState?.activeTurnId,
@@ -576,10 +577,11 @@ import { type SparkActionView, type SparkSessionView } from "@zendev-lab/spark-p
     sessionThinkingForm?.requestSubmit();
   }
 
-  async function submitModeSelection(mode: "plan" | "execute" | "fleet") {
-    sessionMode = mode;
+  async function submitDirectiveSelection(directive: "plan" | "execute" | "fleet") {
+    directivePrompt = `/${directive}`;
+    directiveSubmissionId = createId("idem");
     await tick();
-    sessionModeForm?.requestSubmit();
+    sessionDirectiveForm?.requestSubmit();
   }
 
   const {
@@ -595,7 +597,7 @@ import { type SparkActionView, type SparkSessionView } from "@zendev-lab/spark-p
     getLatestRetryPrompt: () => latestRetryPrompt,
     retryConversationTurn,
     submitThinkingSelection,
-    submitModeSelection,
+    submitDirectiveSelection,
     openActivityPane: () => {
       activityPaneOpen = true;
     },
@@ -633,16 +635,16 @@ import { type SparkActionView, type SparkSessionView } from "@zendev-lab/spark-p
     set sessionModelForm(v) { sessionModelForm = v; },
     get sessionThinkingForm() { return sessionThinkingForm; },
     set sessionThinkingForm(v) { sessionThinkingForm = v; },
-    get sessionModeForm() { return sessionModeForm; },
-    set sessionModeForm(v) { sessionModeForm = v; },
+    get sessionDirectiveForm() { return sessionDirectiveForm; },
+    set sessionDirectiveForm(v) { sessionDirectiveForm = v; },
     get retryMessageForm() { return retryMessageForm; },
     set retryMessageForm(v) { retryMessageForm = v; },
     get sessionModel() { return composer.sessionModel; },
     set sessionModel(v) { composer.sessionModel = v; },
     get sessionThinkingLevel() { return composer.sessionThinkingLevel; },
     set sessionThinkingLevel(v) { composer.sessionThinkingLevel = v; },
-    get sessionMode() { return sessionMode; },
-    set sessionMode(v) { sessionMode = v; },
+    get directivePrompt() { return directivePrompt; },
+    get directiveSubmissionId() { return directiveSubmissionId; },
     retryPrompt: feedback.retryPrompt,
     retrySubmissionId: feedback.retrySubmissionId,
     get message() { return composer.message; },

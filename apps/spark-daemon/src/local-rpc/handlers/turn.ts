@@ -4,19 +4,18 @@ import {
   sparkInvocationRetryResultSchema,
 } from "@zendev-lab/spark-protocol/daemon";
 import { SparkInvocationStore } from "../../store/invocations.ts";
-import { executeSparkDaemonSessionControl } from "../../session-control.ts";
 import {
-  invocationListResult,
-  invocationResult,
-  sessionControlOptions,
-  settleManagedSessionTurn,
-} from "../helpers.ts";
+  executeSparkDaemonSessionControl,
+  invocationListControlResult,
+} from "../../session-control.ts";
+import { invocationResult, sessionControlOptions, settleManagedSessionTurn } from "../helpers.ts";
 import type { LocalRpcDispatchContext } from "./context.ts";
 import {
   parseLocalRpcServiceOutput,
   type LocalRpcServiceOutput,
   type LocalRpcServiceRequest,
 } from "../types.ts";
+import { requireChannelPeerAccess } from "./session.ts";
 
 type TurnRequest = Extract<
   LocalRpcServiceRequest,
@@ -54,6 +53,12 @@ export async function handleTurnRequest(
       return parseLocalRpcServiceOutput(request.method, executed.result);
     }
     case "turn.status": {
+      const invocation = new SparkInvocationStore(db).require(request.params.invocationId);
+      await requireChannelPeerAccess(
+        ctx,
+        request.params.callerSessionId,
+        invocation.sessionId ?? undefined,
+      );
       const executed = await executeSparkDaemonSessionControl(
         sessionControlOptions(paths, db, options),
         { kind: "turn.status.request", scope: "any", payload: { ...request.params } },
@@ -61,22 +66,30 @@ export async function handleTurnRequest(
       return parseLocalRpcServiceOutput(request.method, executed.result);
     }
     case "turn.result": {
+      const invocation = new SparkInvocationStore(db).require(request.params.invocationId);
+      await requireChannelPeerAccess(
+        ctx,
+        request.params.callerSessionId,
+        invocation.sessionId ?? undefined,
+      );
       return invocationResult(new SparkInvocationStore(db), request.params.invocationId);
     }
     case "invocation.list": {
-      return invocationListResult(new SparkInvocationStore(db), request.params);
+      return invocationListControlResult(new SparkInvocationStore(db), request.params);
     }
     case "invocation.retry": {
       const store = new SparkInvocationStore(db);
       const retryKey = `invocation.retry:${request.params.invocationId}`;
       const existing = store.findByIdempotencyKey(retryKey);
       const original = store.require(request.params.invocationId);
-      if (!existing && original.sessionId) {
-        await options.sessionRegistry?.recordTurnQueued(original.sessionId);
-      }
       let retried;
       try {
-        retried = store.retry(request.params.invocationId);
+        retried =
+          !existing && original.sessionId && options.sessionRegistry
+            ? await options.sessionRegistry.commitInvocationAdmission(original.sessionId, () =>
+                store.retry(request.params.invocationId),
+              )
+            : store.retry(request.params.invocationId);
       } catch (error) {
         if (!existing && original.sessionId) {
           await settleManagedSessionTurn(options.sessionRegistry, original.sessionId);

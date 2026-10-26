@@ -9,19 +9,28 @@ import {
 
 describe("workbench session scope", () => {
   it("shows only sessions scoped to the active workspace and hides daemon-scoped ones", () => {
-    expect(isSessionVisibleInWorkbenchRail({ workspaceId: "ws_spore" }, "ws_spore")).toBe(true);
-    expect(isSessionVisibleInWorkbenchRail({ workspaceId: "spark" }, "ws_spore")).toBe(false);
     expect(
       isSessionVisibleInWorkbenchRail(
-        { workspaceId: "legacy", scope: { kind: "daemon", daemonId: "daemon-a" } },
+        { scope: { kind: "workspace", workspaceId: "ws_spore" } },
+        "ws_spore",
+      ),
+    ).toBe(true);
+    expect(
+      isSessionVisibleInWorkbenchRail(
+        { scope: { kind: "workspace", workspaceId: "spark" } },
+        "ws_spore",
+      ),
+    ).toBe(false);
+    expect(
+      isSessionVisibleInWorkbenchRail(
+        { scope: { kind: "daemon", daemonId: "daemon-a" } },
         "ws_spore",
       ),
     ).toBe(false);
   });
 
-  it("prefers canonical workspace scope over the legacy compatibility field", () => {
+  it("uses the canonical workspace scope", () => {
     const session = {
-      workspaceId: "legacy-workspace",
       scope: { kind: "workspace" as const, workspaceId: "ws_current" },
     };
 
@@ -45,7 +54,8 @@ describe("workbench session scope", () => {
     };
     const channelSession = {
       sessionId: "sess_channel",
-      scope: { kind: "workspace" as const, workspaceId: "ws_current" },
+      scope: { kind: "daemon" as const, daemonId: "daemon-a" },
+      purpose: "channel",
       bindings: [{ kind: "channel", externalKey: "infoflow:user:u1" }],
     };
     const daemonSession = {
@@ -66,31 +76,30 @@ describe("workbench session scope", () => {
         ],
         "ws_current",
       ),
-    ).toEqual([workspaceSession, channelSession]);
+    ).toEqual([workspaceSession]);
   });
 
   it("builds adjacent parent and Side Thread rows without promoting orphans", () => {
-    const parentA = { sessionId: "parent-a", status: "ready" };
-    const parentB = { sessionId: "parent-b", status: "ready" };
+    const parentA = { sessionId: "parent-a", placement: "active" };
+    const parentB = { sessionId: "parent-b", placement: "active" };
     const child = {
       sessionId: "child-a",
-      status: "ready",
-      relation: {
-        kind: "side_thread",
+      placement: "active",
+      lineage: {
+        kind: "child",
         parentSessionId: parentA.sessionId,
-        generation: 2,
-        mode: "contextual",
+        origin: { kind: "side_thread", generation: 2 },
       },
     };
     const archived = {
       ...child,
       sessionId: "child-archived",
-      status: "archived",
+      placement: "archived",
     };
     const orphan = {
       ...child,
       sessionId: "child-orphan",
-      relation: { ...child.relation, parentSessionId: "missing-parent" },
+      lineage: { ...child.lineage, parentSessionId: "missing-parent" },
     };
 
     expect(buildSessionRailTree([parentA, child, parentB, archived, orphan])).toEqual([
@@ -104,9 +113,10 @@ describe("workbench session scope", () => {
       { session: parentB, ariaLevel: 1, orphaned: false },
       {
         session: orphan,
-        ariaLevel: 2,
+        ariaLevel: 1,
         parentSessionId: "missing-parent",
         orphaned: true,
+        diagnostic: "orphan",
       },
     ]);
     expect(
@@ -114,5 +124,43 @@ describe("workbench session scope", () => {
         ({ session }) => session.sessionId,
       ),
     ).toEqual(["parent-a", "child-a", "child-archived", "parent-b"]);
+  });
+
+  it("diagnoses arbitrary-depth lineage cycles without looping", () => {
+    const first = {
+      sessionId: "cycle-first",
+      placement: "active",
+      lineage: {
+        kind: "child" as const,
+        parentSessionId: "cycle-second",
+        origin: { kind: "driver" },
+      },
+    };
+    const second = {
+      sessionId: "cycle-second",
+      placement: "active",
+      lineage: {
+        kind: "child" as const,
+        parentSessionId: "cycle-first",
+        origin: { kind: "driver_tick" },
+      },
+    };
+
+    expect(buildSessionRailTree([first, second])).toEqual([
+      {
+        session: first,
+        ariaLevel: 1,
+        parentSessionId: second.sessionId,
+        orphaned: true,
+        diagnostic: "cycle",
+      },
+      {
+        session: second,
+        ariaLevel: 1,
+        parentSessionId: first.sessionId,
+        orphaned: true,
+        diagnostic: "cycle",
+      },
+    ]);
   });
 });

@@ -3,17 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChannelDeliveryError, ChannelRegistryError } from "@zendev-lab/spark-channels";
+import { ChannelDeliveryError, ChannelRegistryError } from "@zendev-lab/dsh-channel-transports";
 import type {
   SparkLocalRpcInput,
   SparkLocalRpcMethod,
   SparkLocalRpcOrpcClient,
 } from "@zendev-lab/spark-protocol/local-rpc-orpc-contract";
-import { resolveSparkPaths, type SparkPaths } from "@zendev-lab/spark-system";
+import { resolveSparkPaths, type SparkPaths } from "@zendev-lab/spark-platform-node";
 import {
   createSparkDaemonOrpcClient,
   invokeSparkDaemonOrpcLiveMethod,
-} from "@zendev-lab/spark-daemon-client/orpc";
+} from "@zendev-lab/spark-daemon-client";
 import { createDaemonSessionRegistry } from "../session-registry.ts";
 import { SparkDaemonControlError } from "../control-error.ts";
 import type { SparkDaemonModelControl } from "../model-control.ts";
@@ -24,6 +24,7 @@ import { handleLocalRpcLine } from "./dispatch.ts";
 import { startLocalRpcOrpcServer } from "./orpc-server.ts";
 import { startLocalRpcServer } from "./transport.ts";
 import type { LocalRpcHandlerOptions } from "./types.ts";
+import { createDaemonWorkspaceSession } from "../../../../test/support/session-fixtures.ts";
 
 describe("local-rpc direct oRPC service", () => {
   const dirs: string[] = [];
@@ -57,6 +58,11 @@ describe("local-rpc direct oRPC service", () => {
       db,
       handlerOptions: {
         getLifecycle: () => ({ state: "running" as const }),
+        getExecutionStatus: () => ({
+          backend: "in_process" as const,
+          rootConcurrency: 8,
+          questionOverflow: 1 as const,
+        }),
       },
     });
     closers.push(() => server.close());
@@ -68,6 +74,7 @@ describe("local-rpc direct oRPC service", () => {
 
     await expect(handle.client.daemon.status({})).resolves.toMatchObject({
       lifecycle: { state: "running" },
+      execution: { backend: "in_process", rootConcurrency: 8, questionOverflow: 1 },
     });
     await expect(handle.client.workspace.list({})).resolves.toMatchObject({
       workspaces: [expect.objectContaining({ localPath: join(dir, "workspace") })],
@@ -77,6 +84,212 @@ describe("local-rpc direct oRPC service", () => {
     });
     await expect(handle.client.invocation.list({})).resolves.toMatchObject({
       invocations: expect.any(Array),
+    });
+  });
+
+  it("reads bounded durable user prompt history only over daemon oRPC", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "spark-orpc-prompt-history-"));
+    dirs.push(dir);
+    const paths = resolveSparkPaths({
+      app: "daemon",
+      env: { HOME: dir },
+      overrides: {
+        dataDir: join(dir, "data"),
+        cacheDir: join(dir, "cache"),
+        stateDir: join(dir, "state"),
+        runtimeDir: join(dir, "run"),
+      },
+    });
+    const db = openSparkDaemonDatabase(paths);
+    closers.push(async () => db.close());
+    const sessionRegistry = createDaemonSessionRegistry(join(dir, ".spark"), {
+      daemonCwd: dir,
+    });
+    const sessionId = "prompt-history-live";
+    const transcriptPath = join(dir, "prompt-history.jsonl");
+    writeFileSync(
+      transcriptPath,
+      `${[
+        {
+          type: "session",
+          version: 4,
+          id: sessionId,
+          timestamp: "2026-08-12T00:00:00.000Z",
+          cwd: dir,
+        },
+        {
+          type: "message",
+          id: "prompt-1",
+          parentId: null,
+          timestamp: "2026-08-12T00:00:01.000Z",
+          message: { role: "user", content: "first prompt" },
+        },
+        {
+          type: "message",
+          id: "answer-1",
+          parentId: "prompt-1",
+          timestamp: "2026-08-12T00:00:02.000Z",
+          message: { role: "assistant", content: "first answer" },
+        },
+        {
+          type: "message",
+          id: "prompt-2",
+          parentId: "answer-1",
+          timestamp: "2026-08-12T00:00:03.000Z",
+          message: { role: "user", content: "second prompt" },
+        },
+        {
+          type: "message",
+          id: "image-1",
+          parentId: "prompt-2",
+          timestamp: "2026-08-12T00:00:03.500Z",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "image",
+                data: Buffer.from("native image").toString("base64"),
+                mimeType: "image/png",
+                name: "result.png",
+              },
+            ],
+          },
+        },
+      ]
+        .map((entry) => JSON.stringify(entry))
+        .join("\n")}\n`,
+    );
+    await createDaemonWorkspaceSession(sessionRegistry, {
+      sessionId,
+      workspaceId: "workspace-prompt-history",
+      cwd: dir,
+      sessionPath: transcriptPath,
+    });
+    const retrySource = new SparkInvocationStore(db).submit({
+      sessionId,
+      task: {
+        type: "session.run",
+        sessionId,
+        prompt: "retry this TUI turn",
+        messageMetadata: {
+          origin: { kind: "user", host: "tui", surface: "local" },
+        },
+      },
+      now: "2026-08-12T00:00:04.000Z",
+    });
+    new SparkInvocationStore(db).complete(retrySource.invocationId, {
+      status: "failed",
+      errorCode: "EXECUTION_TRANSIENT",
+      errorMessage: "empty response",
+      now: "2026-08-12T00:00:05.000Z",
+    });
+    const server = await startLocalRpcOrpcServer({
+      paths,
+      db,
+      handlerOptions: { sessionRegistry },
+    });
+    closers.push(() => server.close());
+    const handle = await createSparkDaemonOrpcClient({ paths });
+    closers.push(async () => handle.close());
+
+    await expect(
+      invokeSparkDaemonOrpcLiveMethod(handle.client, "session.prompt-history", {
+        sessionId,
+        limit: 1,
+      }),
+    ).resolves.toMatchObject({
+      sessionId,
+      prompts: [{ messageId: "prompt-2", text: "second prompt" }],
+      totalPrompts: 2,
+      truncated: true,
+    });
+    await expect(
+      invokeSparkDaemonOrpcLiveMethod(handle.client, "session.retry-target", { sessionId }),
+    ).resolves.toEqual({
+      sessionId,
+      target: {
+        invocationId: retrySource.invocationId,
+        failedAt: "2026-08-12T00:00:05.000Z",
+      },
+    });
+    const latestPage = await invokeSparkDaemonOrpcLiveMethod(
+      handle.client,
+      "session.snapshot-page",
+      { sessionId, messageLimit: 2 },
+    );
+    expect(latestPage).toMatchObject({
+      history: {
+        totalMessages: 4,
+        loadedMessages: 2,
+        earlierMessages: 2,
+        laterMessages: 0,
+        hasEarlierMessages: true,
+        nextBeforeMessageId: "prompt-2",
+      },
+    });
+    await expect(
+      invokeSparkDaemonOrpcLiveMethod(handle.client, "session.media.read", {
+        sessionId,
+        messageId: "image-1",
+        contentIndex: 0,
+        limit: 7,
+      }),
+    ).resolves.toMatchObject({
+      sessionId,
+      messageId: "image-1",
+      contentIndex: 0,
+      mediaType: "image/png",
+      name: "result.png",
+      offset: 0,
+      sizeBytes: 12,
+      nextOffset: 7,
+      complete: false,
+    });
+    for (const method of ["session.snapshot-page", "session.media.read"] as const) {
+      await expect(
+        handleLocalRpcLine(
+          JSON.stringify({ id: `legacy-${method}`, method, params: { sessionId } }),
+          paths,
+          db,
+          undefined,
+          { sessionRegistry },
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { message: `Unknown local RPC method: ${method}` },
+      });
+    }
+    await expect(
+      handleLocalRpcLine(
+        JSON.stringify({
+          id: "legacy-prompt-history",
+          method: "session.prompt-history",
+          params: { sessionId, limit: 1 },
+        }),
+        paths,
+        db,
+        undefined,
+        { sessionRegistry },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { message: "Unknown local RPC method: session.prompt-history" },
+    });
+    await expect(
+      handleLocalRpcLine(
+        JSON.stringify({
+          id: "legacy-retry-target",
+          method: "session.retry-target",
+          params: { sessionId },
+        }),
+        paths,
+        db,
+        undefined,
+        { sessionRegistry },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { message: "Unknown local RPC method: session.retry-target" },
     });
   });
 
@@ -229,10 +442,6 @@ describe("local-rpc direct oRPC service", () => {
       sessionId: "missing-daemon-identity",
       scope: { kind: "daemon" as const },
     };
-    const createError = await rejectionOf(
-      invokeSparkDaemonOrpcLiveMethod(handle.client, "session.create", createInput),
-    );
-    expect(createError).toMatchObject({ code: "invalid_scope" });
     await expect(
       handleLocalRpcLine(
         JSON.stringify({ id: "legacy-create", method: "session.create", params: createInput }),
@@ -246,9 +455,8 @@ describe("local-rpc direct oRPC service", () => {
       error: { code: "invalid_scope" },
     });
 
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "parent-session",
-      scope: { kind: "workspace", workspaceId: "workspace-errors" },
       workspaceId: "workspace-errors",
       cwd: dir,
     });
@@ -260,10 +468,9 @@ describe("local-rpc direct oRPC service", () => {
       sessionId: child.sessionId,
       externalKey: "qqbot:c2c:side-thread",
     };
-    const bindError = await rejectionOf(
+    await expect(
       invokeSparkDaemonOrpcLiveMethod(handle.client, "session.bind", bindInput),
-    );
-    expect(bindError).toMatchObject({ code: "side_thread_mutation_forbidden" });
+    ).resolves.toMatchObject({ sessionId: child.sessionId });
     await expect(
       handleLocalRpcLine(
         JSON.stringify({ id: "legacy-bind", method: "session.bind", params: bindInput }),
@@ -272,19 +479,15 @@ describe("local-rpc direct oRPC service", () => {
         undefined,
         { sessionRegistry },
       ),
-    ).resolves.toMatchObject({
-      ok: false,
-      error: { code: "side_thread_mutation_forbidden" },
-    });
+    ).resolves.toMatchObject({ ok: true });
 
     const submitInput = {
       sessionId: child.sessionId,
       prompt: "must use the Side Thread controller",
     };
-    const submitError = await rejectionOf(
+    await expect(
       invokeSparkDaemonOrpcLiveMethod(handle.client, "turn.submit", submitInput),
-    );
-    expect(submitError).toMatchObject({ code: "side_thread_direct_submit_forbidden" });
+    ).resolves.toMatchObject({ status: "queued" });
     await expect(
       handleLocalRpcLine(
         JSON.stringify({ id: "legacy-submit", method: "turn.submit", params: submitInput }),
@@ -293,10 +496,7 @@ describe("local-rpc direct oRPC service", () => {
         undefined,
         { sessionRegistry },
       ),
-    ).resolves.toMatchObject({
-      ok: false,
-      error: { code: "side_thread_direct_submit_forbidden" },
-    });
+    ).resolves.toMatchObject({ ok: true });
 
     const mismatchPath = join(dir, "mismatched-session.jsonl");
     writeFileSync(
@@ -307,9 +507,8 @@ describe("local-rpc direct oRPC service", () => {
         timestamp: "2026-07-27T12:00:00.000Z",
       })}\n`,
     );
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "snapshot-mismatch",
-      scope: { kind: "workspace", workspaceId: "workspace-errors" },
       workspaceId: "workspace-errors",
       cwd: dir,
       sessionPath: mismatchPath,
@@ -338,9 +537,8 @@ describe("local-rpc direct oRPC service", () => {
 
     const invalidPath = join(dir, "invalid-session.jsonl");
     writeFileSync(invalidPath, `${JSON.stringify({ type: "invalid" })}\n`);
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "snapshot-invalid",
-      scope: { kind: "workspace", workspaceId: "workspace-errors" },
       workspaceId: "workspace-errors",
       cwd: dir,
       sessionPath: invalidPath,
@@ -400,6 +598,7 @@ describe("local-rpc direct oRPC service", () => {
     const modelControl: SparkDaemonModelControl = {
       snapshot: unusedModelControlMethod,
       setDefaultModel: unusedModelControlMethod,
+      setEnabledModels: unusedModelControlMethod,
       setSessionModel: unusedModelControlMethod,
       setSessionThinkingLevel: unusedModelControlMethod,
       setApiKey: unusedModelControlMethod,
@@ -417,6 +616,7 @@ describe("local-rpc direct oRPC service", () => {
       effectiveModel: unusedModelControlMethod,
       effectiveThinkingLevel: unusedModelControlMethod,
       prepareModel: unusedModelControlMethod,
+      testModel: unusedModelControlMethod,
     };
     const channelStatus = {
       plane: "daemon" as const,
@@ -439,7 +639,7 @@ describe("local-rpc direct oRPC service", () => {
         status: () => channelStatus,
         configure: async () => channelStatus,
         reload: async () => channelStatus,
-        async notify(_workspaceId, input) {
+        async notify(input) {
           if (input.text === "not-sent") {
             throw new ChannelDeliveryError("provider rejected before send", "not-sent");
           }
@@ -551,7 +751,6 @@ describe("local-rpc direct oRPC service", () => {
       handlerOptions,
       method: "channel.notify",
       params: {
-        workspaceId: "ws_channel",
         action: "send",
         adapter: "missing",
         recipient: "recipient",
@@ -607,6 +806,7 @@ describe("local-rpc direct oRPC service", () => {
     const modelControl: SparkDaemonModelControl = {
       snapshot: crossDomainFailure,
       setDefaultModel: crossDomainFailure,
+      setEnabledModels: crossDomainFailure,
       setSessionModel: crossDomainFailure,
       setSessionThinkingLevel: crossDomainFailure,
       setApiKey: crossDomainFailure,
@@ -619,6 +819,7 @@ describe("local-rpc direct oRPC service", () => {
       effectiveModel: crossDomainFailure,
       effectiveThinkingLevel: crossDomainFailure,
       prepareModel: crossDomainFailure,
+      testModel: crossDomainFailure,
     };
     const handlerOptions: LocalRpcHandlerOptions = { modelControl };
     const server = await startLocalRpcOrpcServer({ paths, db, handlerOptions });

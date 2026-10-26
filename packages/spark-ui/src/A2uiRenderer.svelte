@@ -1,25 +1,10 @@
 <script lang="ts">
-  import { normalizeSparkA2uiDocument, resolveSparkA2uiDataPath, sparkWorkbenchActionRequestSchema, updateSparkA2uiDataModel } from "@zendev-lab/spark-protocol/presentation";
-import { type SparkProtocolJsonValue } from "@zendev-lab/spark-protocol/daemon";
-import { type SparkA2uiComponent, type SparkA2uiSurface, type SparkWorkbenchActionRequest } from "@zendev-lab/spark-protocol/presentation";
+  import { normalizeSparkA2uiDocument, resolveSparkA2uiDataPath, type SparkA2uiComponent, type SparkA2uiSurface } from "@zendev-lab/spark-protocol/presentation";
   import { onMount, type Component } from "svelte";
-  import type { SparkA2uiActionHandler, SparkA2uiInteractiveBinding } from "./a2ui.ts";
 
   const MAX_RENDER_DEPTH = 64;
 
-  let {
-    content,
-    interactive = false,
-    binding,
-    onAction,
-    stopConfirmation = "Stop this Repro Loop? This cannot be resumed.",
-  }: {
-    content: string;
-    interactive?: boolean;
-    binding?: SparkA2uiInteractiveBinding;
-    onAction?: SparkA2uiActionHandler;
-    stopConfirmation?: string;
-  } = $props();
+  let { content }: { content: string } = $props();
 
   let document = $derived(normalizeSparkA2uiDocument(content));
   let surface = $derived(
@@ -30,8 +15,6 @@ import { type SparkA2uiComponent, type SparkA2uiSurface, type SparkWorkbenchActi
   let sourceContent = $state("");
   let dataModel = $state<unknown>({});
   let activeTab = $state<string | null>(null);
-  let submitting = $state(false);
-  let feedback = $state<string | null>(null);
   let Markdown = $state<Component<{ source: string; streaming?: boolean }> | null>(null);
 
   onMount(() => {
@@ -45,8 +28,6 @@ import { type SparkA2uiComponent, type SparkA2uiSurface, type SparkWorkbenchActi
     sourceContent = content;
     dataModel = structuredClone(surface?.dataModel ?? {});
     activeTab = null;
-    submitting = false;
-    feedback = null;
   });
 
   function component(id: string): SparkA2uiComponent | undefined {
@@ -90,68 +71,30 @@ import { type SparkA2uiComponent, type SparkA2uiSurface, type SparkWorkbenchActi
     );
   }
 
-  function fieldPath(node: SparkA2uiComponent): string | null {
-    const value = node.value;
-    return isRecord(value) && typeof value.path === "string" ? value.path : null;
-  }
-
-  function updateField(node: SparkA2uiComponent, value: SparkProtocolJsonValue) {
-    const path = fieldPath(node);
-    if (path) dataModel = updateSparkA2uiDataModel(dataModel, path, value);
-  }
-
-  async function dispatch(node: SparkA2uiComponent) {
-    if (!interactive || !binding || !onAction || submitting || !surface) return;
-    const action = isRecord(node.action) && isRecord(node.action.event) ? node.action.event : null;
-    if (!action || typeof action.name !== "string") return;
-    const candidate = sparkWorkbenchActionRequestSchema.safeParse({
-      version: document.version,
-      action: {
-        name: action.name,
-        surfaceId: surface.surfaceId,
-        sourceComponentId: node.id,
-        timestamp: new Date().toISOString(),
-        context: resolveValue(action.context ?? {}),
-      },
+  function navigateTabs(
+    event: KeyboardEvent & { currentTarget: HTMLButtonElement },
+    tabs: Array<{ title: string; child: string }>,
+    currentChild: string,
+  ) {
+    const currentIndex = tabs.findIndex((tab) => tab.child === currentChild);
+    if (currentIndex < 0) return;
+    const nextIndex =
+      event.key === "ArrowRight" || event.key === "ArrowDown"
+        ? (currentIndex + 1) % tabs.length
+        : event.key === "ArrowLeft" || event.key === "ArrowUp"
+          ? (currentIndex - 1 + tabs.length) % tabs.length
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? tabs.length - 1
+              : null;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const tablist = event.currentTarget.parentElement;
+    activeTab = tabs[nextIndex]?.child ?? null;
+    queueMicrotask(() => {
+      tablist?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus();
     });
-    if (!candidate.success || !matchesBinding(candidate.data, binding)) {
-      feedback = "This Workbench action is stale or untrusted. Refresh before trying again.";
-      return;
-    }
-    if (
-      candidate.data.action.context.actionId === "stop" &&
-      !globalThis.confirm(stopConfirmation)
-    ) {
-      return;
-    }
-    submitting = true;
-    feedback = `Sending ${actionLabel(candidate.data.action.context.actionId)}…`;
-    try {
-      await onAction(candidate.data);
-      feedback = `${actionLabel(candidate.data.action.context.actionId)} accepted. Refreshing Workbench…`;
-    } catch (error) {
-      feedback = error instanceof Error ? error.message : "Workbench action failed.";
-    } finally {
-      submitting = false;
-    }
-  }
-
-  function matchesBinding(
-    action: SparkWorkbenchActionRequest,
-    expected: SparkA2uiInteractiveBinding,
-  ): boolean {
-    const context = action.action.context;
-    return (
-      expected.lifecycle === "live" &&
-      context.artifactRef === expected.artifactRef &&
-      context.revision === expected.revision &&
-      context.loopId === expected.loopId &&
-      context.generation === expected.generation
-    );
-  }
-
-  function actionLabel(value: SparkWorkbenchActionRequest["action"]["context"]["actionId"]): string {
-    return value.replaceAll("_", " ");
   }
 
   function isRecord(value: unknown): value is Record<string, unknown> {
@@ -190,11 +133,14 @@ import { type SparkA2uiComponent, type SparkA2uiSurface, type SparkWorkbenchActi
         <div class="a2ui-tablist" role="tablist" aria-label="Repro Workbench views">
           {#each tabs as tab (tab.child)}
             <button
+              id={`a2ui-tab-${tab.child}`}
               type="button"
               role="tab"
               aria-selected={selected === tab.child}
               aria-controls={`a2ui-panel-${tab.child}`}
+              tabindex={selected === tab.child ? 0 : -1}
               onclick={() => (activeTab = tab.child)}
+              onkeydown={(event) => navigateTabs(event, tabs, tab.child)}
             >{tab.title}</button>
           {/each}
         </div>
@@ -203,6 +149,7 @@ import { type SparkA2uiComponent, type SparkA2uiSurface, type SparkWorkbenchActi
             id={`a2ui-panel-${tab.child}`}
             class="a2ui-tabpanel"
             role="tabpanel"
+            aria-labelledby={`a2ui-tab-${tab.child}`}
             hidden={selected !== tab.child}
           >
             {@render renderNode(tab.child, nextAncestors)}
@@ -214,8 +161,7 @@ import { type SparkA2uiComponent, type SparkA2uiSurface, type SparkWorkbenchActi
         class="a2ui-action"
         class:danger={isRecord(node.action) && JSON.stringify(node.action).includes('"actionId":"stop"')}
         type="button"
-        disabled={!interactive || !binding || submitting}
-        onclick={() => dispatch(node)}
+        disabled
       >{childText(node.child) || text(node.label) || "Action"}</button>
     {:else if node.component === "Divider"}
       <hr />
@@ -224,8 +170,7 @@ import { type SparkA2uiComponent, type SparkA2uiSurface, type SparkWorkbenchActi
         <span>{text(node.label)}</span>
         <input
           value={text(node.value)}
-          disabled={!interactive}
-          oninput={(event) => updateField(node, event.currentTarget.value)}
+          disabled
         />
       </label>
     {:else if node.component === "Checkbox"}
@@ -233,8 +178,7 @@ import { type SparkA2uiComponent, type SparkA2uiSurface, type SparkWorkbenchActi
         <input
           type="checkbox"
           checked={Boolean(resolveValue(node.value))}
-          disabled={!interactive}
-          onchange={(event) => updateField(node, event.currentTarget.checked)}
+          disabled
         />
         <span>{text(node.label) || childText(node.child)}</span>
       </label>
@@ -246,7 +190,7 @@ import { type SparkA2uiComponent, type SparkA2uiSurface, type SparkWorkbenchActi
 
 <div
   class="a2ui-renderer"
-  data-interactive={interactive && binding?.lifecycle === "live"}
+  data-interactive="false"
   data-surface-id={surface?.surfaceId}
 >
   {#if surface?.components.root}
@@ -260,7 +204,6 @@ import { type SparkA2uiComponent, type SparkA2uiSurface, type SparkWorkbenchActi
       <ul>{#each document.diagnostics as diagnostic}<li>{diagnostic}</li>{/each}</ul>
     </details>
   {/if}
-  <p class="a2ui-feedback" aria-live="polite">{feedback ?? ""}</p>
 </div>
 
 <style>
@@ -376,15 +319,9 @@ import { type SparkA2uiComponent, type SparkA2uiSurface, type SparkWorkbenchActi
 
   .a2ui-unsupported,
   .a2ui-empty,
-  .a2ui-diagnostics,
-  .a2ui-feedback {
+  .a2ui-diagnostics {
     color: var(--color-ink-subtle, #71717a);
     font-size: 12px;
-  }
-
-  .a2ui-feedback {
-    margin: 0;
-    min-height: 1.25em;
   }
 
   @media (max-width: 640px) {

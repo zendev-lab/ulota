@@ -1,9 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
+
 import {
   applyDaemonSqliteResourceLimits,
   openSqliteDatabase,
   type SparkPaths,
-} from "@zendev-lab/spark-system";
+} from "@zendev-lab/spark-platform-node";
 import { runDaemonMigrations } from "./migrations/registry.js";
 
 export function openSparkDaemonDatabase(paths: SparkPaths): DatabaseSync {

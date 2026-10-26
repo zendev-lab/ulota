@@ -4,9 +4,9 @@ import type {
   ExtensionInteractionCapabilities,
   ExtensionInteractionResponse,
   SparkHostContext,
-} from "@zendev-lab/spark-core";
-import { createId } from "@zendev-lab/spark-protocol/domain";
-import { truncateToWidth } from "@zendev-lab/spark-tui-adapter/text";
+} from "@zendev-lab/spark-invocation";
+import { SPARK_PROTOCOL_VERSION, createId } from "@zendev-lab/spark-protocol/domain";
+import { truncateToWidth } from "@zendev-lab/spark-text-rendering";
 import { Type } from "typebox";
 
 import { rejectAutonomousAskAlias } from "./autonomous-policy.ts";
@@ -463,7 +463,7 @@ function createSparkAskFlowInteractionRequest(
   toolCallId?: string,
 ): ExtensionAskFlowInteractionRequest {
   return {
-    version: 1,
+    version: SPARK_PROTOCOL_VERSION,
     kind: "askFlow",
     ...(toolCallId?.trim() ? { toolCallId: toolCallId.trim() } : {}),
     requestId: request.interactionRequestId ?? createId("ask"),
@@ -473,6 +473,7 @@ function createSparkAskFlowInteractionRequest(
     metadata: { tool: "ask_flow" },
     delivery: request.delivery ?? "blocking",
     ...(request.evidenceRequest ? { evidenceRequest: request.evidenceRequest } : {}),
+    ...(request.toSessionId ? { toSessionId: request.toSessionId } : {}),
     ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {}),
     mode: request.mode ?? "clarification",
     ...(request.flow ? { flow: request.flow } : {}),

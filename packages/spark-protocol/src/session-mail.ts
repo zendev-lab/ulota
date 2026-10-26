@@ -1,10 +1,7 @@
 import { z } from "zod";
 import { sparkProtocolJsonObjectSchema, sparkProtocolJsonValueSchema } from "./command-events.ts";
 import { sparkTurnSubmitResultSchema } from "./invocation-lifecycle.ts";
-import {
-  sparkChannelAdapterSchema,
-  sparkSessionRegistryRecordSchema,
-} from "./session-assignment.ts";
+import { sparkChannelAdapterSchema, sparkSessionProjectionSchema } from "./session-assignment.ts";
 
 export const sparkSessionMailKindSchema = z.enum(["request", "notification"]);
 export const sparkSessionMailVisibilitySchema = z.enum(["internal", "user"]);
@@ -24,7 +21,6 @@ export const sparkSessionMailChannelTargetSchema = z.object({
 });
 
 export const sparkSessionMailOriginBindingSchema = sparkSessionMailChannelTargetSchema.extend({
-  workspaceId: z.string().trim().min(1),
   adapter: sparkChannelAdapterSchema,
   adapterId: z.string().trim().min(1),
   recipient: z.string().trim().min(1),
@@ -52,6 +48,15 @@ export const sparkSessionMailRequestAdmissionSchema = z.discriminatedUnion("stat
   }),
 ]);
 
+export const sparkSessionMailRequestExecutionSchema = z.object({
+  notifyOnCompletion: z.boolean().default(false),
+  parentInvocationId: z.string().trim().min(1).nullish(),
+  origin: z.object({
+    surface: z.enum(["local", "channel"]),
+    host: z.enum(["tui", "web", "channel", "daemon", "session"]),
+  }),
+});
+
 export const sparkSessionMailMessageSchema = z.object({
   id: z.string().trim().min(1),
   toSessionId: z.string().trim().min(1),
@@ -73,27 +78,41 @@ export const sparkSessionMailMessageSchema = z.object({
   ackedAt: z.string().nullable(),
   source: z.enum(["cli", "tui", "tool"]),
   requestAdmission: sparkSessionMailRequestAdmissionSchema.optional(),
+  /** Execution envelope frozen at send time and replayed when a queued request drains. */
+  requestExecution: sparkSessionMailRequestExecutionSchema.optional(),
 });
 
-export const sparkSessionSendRequestSchema = z.object({
-  toSessionId: z.string().trim().min(1),
-  fromSessionId: z.string().trim().min(1),
-  kind: sparkSessionMailKindSchema,
-  intent: z.string().trim().min(1),
-  payload: sparkProtocolJsonObjectSchema.default({}),
-  correlationId: z.string().trim().min(1).optional(),
-  idempotencyKey: z.string().trim().min(1),
-  subject: z.string().nullable().optional(),
-  body: z.string(),
-  originBinding: sparkSessionMailOriginBindingSchema.optional(),
-  origin: z.object({
-    surface: z.enum(["local", "channel"]),
-    host: z.enum(["tui", "web", "channel", "daemon", "session"]),
-  }),
-  parentInvocationId: z.string().trim().min(1).optional(),
-  notifyOnCompletion: z.boolean().default(false),
-  source: z.enum(["cli", "tui", "tool"]).default("tool"),
-});
+export const sparkSessionSendRequestSchema = z
+  .object({
+    toSessionId: z.string().trim().min(1),
+    fromSessionId: z.string().trim().min(1),
+    kind: sparkSessionMailKindSchema,
+    intent: z.string().trim().min(1),
+    payload: sparkProtocolJsonObjectSchema.default({}),
+    correlationId: z.string().trim().min(1).optional(),
+    idempotencyKey: z.string().trim().min(1),
+    subject: z.string().nullable().optional(),
+    body: z.string(),
+    originBinding: sparkSessionMailOriginBindingSchema.optional(),
+    origin: z.object({
+      surface: z.enum(["local", "channel"]),
+      host: z.enum(["tui", "web", "channel", "daemon", "session"]),
+    }),
+    parentInvocationId: z.string().trim().min(1).optional(),
+    /** Explicit behavior when the target session is active; omission fails closed. */
+    onActive: z.enum(["queue", "interrupt"]).optional(),
+    wake: z.boolean().optional(),
+    /** Compatibility input only; canonical output is `wake`. */
+    notifyOnCompletion: z.boolean().optional(),
+    source: z.enum(["cli", "tui", "tool"]).default("tool"),
+  })
+  .transform((request) => {
+    const { notifyOnCompletion, wake, ...rest } = request;
+    return {
+      ...rest,
+      wake: wake ?? notifyOnCompletion ?? false,
+    };
+  });
 
 export const sparkSessionSendResultSchema = z
   .object({
@@ -101,7 +120,7 @@ export const sparkSessionSendResultSchema = z
     filePath: z.string().min(1),
     created: z.boolean(),
     executionTriggered: z.boolean(),
-    target: sparkSessionRegistryRecordSchema,
+    target: sparkSessionProjectionSchema,
     submitted: sparkTurnSubmitResultSchema.optional(),
   })
   .superRefine((result, context) => {
@@ -148,6 +167,9 @@ export type SparkSessionMailOriginBinding = z.infer<typeof sparkSessionMailOrigi
 export type SparkSessionMailDeliveryReceipt = z.infer<typeof sparkSessionMailDeliveryReceiptSchema>;
 export type SparkSessionMailRequestAdmission = z.infer<
   typeof sparkSessionMailRequestAdmissionSchema
+>;
+export type SparkSessionMailRequestExecution = z.infer<
+  typeof sparkSessionMailRequestExecutionSchema
 >;
 export type SparkSessionMailMessage = z.infer<typeof sparkSessionMailMessageSchema>;
 export type SparkSessionSendRequest = z.infer<typeof sparkSessionSendRequestSchema>;

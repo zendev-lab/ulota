@@ -1,40 +1,27 @@
 import type {
   ExtensionInteractionRequest,
   ExtensionInteractionResponse,
-} from "@zendev-lab/spark-core";
+} from "@zendev-lab/spark-invocation";
 import {
   defaultSparkAskChoice,
   formatSparkAskAnswerForDisplay,
-  hasRequiredSparkAskGateSelections,
   hasRequiredSparkAskSelections,
   hasSparkAskAnswerContent,
   hasSubmittedRequiredSparkAskAnswers,
-  hasSubmittedRequiredSparkAskGateAnswers,
   inferSparkAskSubmitStatus,
   isSparkAskGateMode,
   missingRequiredSparkAskAnswerIds,
-  missingRequiredSparkAskGateAnswerIds,
   nextActionForSparkAskSubmit,
   parseSparkAskChoice,
   requiresExplicitSparkAskGateSelection,
-} from "@zendev-lab/spark-protocol/interaction";
-import {
-  type SparkAskAnswerValuesLike,
   type SparkAskOptionLike,
-  type SparkAskQuestionType,
-  type SparkAskRequestLike,
-  type SparkGateQuestionLike,
   type SparkParsedAskChoice,
 } from "@zendev-lab/spark-protocol/interaction";
 
 import { SENTINEL_LABELS } from "./schema.ts";
 
-export type AskQuestionTypeLike = SparkAskQuestionType;
 export type AskOptionLike = SparkAskOptionLike;
 export type ParsedAskChoice = SparkParsedAskChoice;
-export type GateQuestionLike = SparkGateQuestionLike;
-export type AskRequestLike = SparkAskRequestLike;
-export type AnswerValuesLike = SparkAskAnswerValuesLike;
 
 export interface SelectWithCustomResult {
   value?: string;
@@ -86,12 +73,9 @@ export const defaultAskChoice = defaultSparkAskChoice;
 export const isGateMode = isSparkAskGateMode;
 export const requiresExplicitSelectionForGate = requiresExplicitSparkAskGateSelection;
 export const hasAskAnswerContent = hasSparkAskAnswerContent;
-export const hasSubmittedRequiredGateAnswers = hasSubmittedRequiredSparkAskGateAnswers;
 export const hasSubmittedRequiredAskAnswers = hasSubmittedRequiredSparkAskAnswers;
-export const hasRequiredGateSelections = hasRequiredSparkAskGateSelections;
 export const hasRequiredAskSelections = hasRequiredSparkAskSelections;
 export const inferAskSubmitStatus = inferSparkAskSubmitStatus;
 export const missingRequiredAskAnswerIds = missingRequiredSparkAskAnswerIds;
-export const missingRequiredGateAnswerIds = missingRequiredSparkAskGateAnswerIds;
 export const nextActionForAskSubmit = nextActionForSparkAskSubmit;
 export const formatAskAnswerForDisplay = formatSparkAskAnswerForDisplay;

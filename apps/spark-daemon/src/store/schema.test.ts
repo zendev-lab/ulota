@@ -1,59 +1,41 @@
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
+import { LOOP_EXECUTION_SESSION_IDS_QUERY } from "./invocations.js";
 import { migrateSparkDaemonDatabase } from "./schema.js";
 
 describe("migrateSparkDaemonDatabase", () => {
-  it("creates durable Workbench bindings, typed checkpoints, and action receipts", () => {
+  it("creates the daemon-owned Repro v10 store without legacy runtime tables", () => {
     const db = new DatabaseSync(":memory:");
     try {
       migrateSparkDaemonDatabase(db);
       migrateSparkDaemonDatabase(db);
-      expect(tableExists(db, "workbench_artifact_bindings")).toBe(true);
-      expect(tableExists(db, "workbench_checkpoints")).toBe(true);
-      expect(tableExists(db, "workbench_action_receipts")).toBe(true);
-      expect(columnNames(db, "workbench_artifact_bindings")).toEqual(
-        expect.arrayContaining([
-          "owner_session_id",
-          "goal_id",
-          "workflow_run_id",
-          "loop_id",
-          "artifact_ref",
-          "revision",
-          "artifact_hash",
-          "generation",
-          "lifecycle",
-        ]),
-      );
-      expect(primaryKeyColumns(db, "workbench_checkpoints")).toEqual([
-        "binding_id",
-        "checkpoint_id",
-      ]);
+      expect(tableExists(db, "daemon_repro_runs")).toBe(true);
+      expect(tableExists(db, "daemon_repro_projections")).toBe(true);
+      expect(tableExists(db, "workbench_artifact_bindings")).toBe(false);
+      expect(tableExists(db, "workbench_checkpoints")).toBe(false);
+      expect(tableExists(db, "workbench_action_receipts")).toBe(false);
+      expect(tableExists(db, "daemon_repro_formal_evidence_receipts")).toBe(false);
     } finally {
       db.close();
     }
   });
 
-  it("migrates the draft-global Workbench checkpoint key to binding scope", () => {
+  it("drops legacy Repro runtime tables during the v10 hard migration", () => {
     const db = new DatabaseSync(":memory:");
     try {
-      db.exec(`CREATE TABLE workbench_checkpoints (
-        checkpoint_id TEXT PRIMARY KEY,
-        binding_id TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        stage TEXT NOT NULL,
-        artifact_ref TEXT NOT NULL UNIQUE,
-        revision INTEGER NOT NULL,
-        artifact_hash TEXT NOT NULL,
-        summary_json TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      )`);
+      db.exec(`
+        CREATE TABLE workbench_artifact_bindings (binding_id TEXT PRIMARY KEY);
+        CREATE TABLE workbench_checkpoints (checkpoint_id TEXT PRIMARY KEY);
+        CREATE TABLE workbench_action_receipts (idempotency_key TEXT PRIMARY KEY);
+        CREATE TABLE daemon_repro_formal_evidence_receipts (receipt_key TEXT PRIMARY KEY);
+      `);
 
       migrateSparkDaemonDatabase(db);
 
-      expect(primaryKeyColumns(db, "workbench_checkpoints")).toEqual([
-        "binding_id",
-        "checkpoint_id",
-      ]);
+      expect(tableExists(db, "workbench_artifact_bindings")).toBe(false);
+      expect(tableExists(db, "workbench_checkpoints")).toBe(false);
+      expect(tableExists(db, "workbench_action_receipts")).toBe(false);
+      expect(tableExists(db, "daemon_repro_formal_evidence_receipts")).toBe(false);
     } finally {
       db.close();
     }
@@ -398,20 +380,44 @@ describe("migrateSparkDaemonDatabase", () => {
           "invocations_status_idx",
           "invocations_session_status_idx",
           "invocations_session_updated_idx",
+          "invocations_workspace_updated_idx",
+          "invocations_legacy_workspace_delivery_idx",
+          "invocations_loop_execution_owner_idx",
         ]),
       );
+      expect(indexColumns(db, "invocations_workspace_updated_idx")).toEqual([
+        "workspace_binding_id",
+        "updated_at",
+        "created_at",
+        "status",
+        "id",
+      ]);
       expect(indexNames(db, "invocation_events")).toEqual(
         expect.arrayContaining([
           "invocation_events_cursor_idx",
           "invocation_events_delivery_order_idx",
+          "invocation_events_delivery_head_idx",
         ]),
       );
+      expect(indexColumns(db, "invocation_events_delivery_head_idx")).toEqual([
+        "invocation_id",
+        "sequence",
+        "created_at",
+        "kind",
+      ]);
       expect(indexColumns(db, "invocation_events_delivery_order_idx")).toEqual([
         "created_at",
         "invocation_id",
         "sequence",
       ]);
       expect(() => migrateSparkDaemonDatabase(db)).not.toThrow();
+      expect(indexColumns(db, "invocations_workspace_updated_idx")).toEqual([
+        "workspace_binding_id",
+        "updated_at",
+        "created_at",
+        "status",
+        "id",
+      ]);
       expect(indexColumns(db, "invocation_events_delivery_order_idx")).toEqual([
         "created_at",
         "invocation_id",
@@ -422,6 +428,44 @@ describe("migrateSparkDaemonDatabase", () => {
       );
       expect(indexNames(db, "runtime_command_receipts")).toContain(
         "runtime_command_receipts_terminal_idx",
+      );
+    } finally {
+      db.close();
+    }
+  });
+
+  it("adds the Loop execution owner index to legacy invocation tables", () => {
+    const db = new DatabaseSync(":memory:");
+    try {
+      db.exec(`
+        CREATE TABLE invocations (
+          id TEXT PRIMARY KEY,
+          command_id TEXT,
+          status TEXT NOT NULL,
+          prompt TEXT,
+          task_json TEXT,
+          source_kind TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO invocations (
+          id, status, task_json, source_kind, created_at, updated_at
+        ) VALUES (
+          'inv-unrelated', 'succeeded', '{"type":"session.run"}', 'loop.tick',
+          '2026-08-13T00:00:00.000Z', '2026-08-13T00:00:00.000Z'
+        );
+      `);
+
+      migrateSparkDaemonDatabase(db);
+      migrateSparkDaemonDatabase(db);
+
+      expect(indexNames(db, "invocations")).toContain("invocations_loop_execution_owner_idx");
+      expect(db.prepare("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
+      const plan = db
+        .prepare(`EXPLAIN QUERY PLAN ${LOOP_EXECUTION_SESSION_IDS_QUERY}`)
+        .all("owner-session", "owner-session") as unknown as Array<{ detail: string }>;
+      expect(plan.map((row) => row.detail).join("\n")).toContain(
+        "invocations_loop_execution_owner_idx",
       );
     } finally {
       db.close();
@@ -627,18 +671,6 @@ function workspaceColumns(db: DatabaseSync, table: string): string[] {
 
 function columnNames(db: DatabaseSync, table: string): string[] {
   return workspaceColumns(db, table);
-}
-
-function primaryKeyColumns(db: DatabaseSync, table: string): string[] {
-  return (
-    db.prepare(`PRAGMA table_info(${table})`).all() as unknown as Array<{
-      name: string;
-      pk: number;
-    }>
-  )
-    .filter((column) => column.pk > 0)
-    .sort((left, right) => left.pk - right.pk)
-    .map((column) => column.name);
 }
 
 function indexNames(db: DatabaseSync, table: string): string[] {

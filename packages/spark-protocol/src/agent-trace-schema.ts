@@ -42,6 +42,8 @@ export const sparkAgentTraceOutcomeSchema = z.enum(SPARK_AGENT_TRACE_OUTCOMES);
 
 export const SPARK_AGENT_TOOL_EFFECTS = [
   "read",
+  "network_read",
+  "control",
   "local_write",
   "external_write",
   "destructive",
@@ -326,7 +328,7 @@ export const sparkAgentToolCallStartedTraceEventSchema = childEventSchema
     modelOrigin: sparkAgentToolModelOriginSchema.optional(),
     effect: sparkAgentToolEffectSchema,
     executionMode: z.enum(["parallel", "sequential", "unknown"]),
-    approval: z.enum(["none", "required", "unknown"]),
+    approval: z.enum(["none", "manual_only", "required", "unknown"]),
     argumentFingerprint: sparkAgentArgumentFingerprintSchema.optional(),
     argumentBytes: z.number().int().nonnegative().optional(),
     parallelBatchId: idSchema.optional(),

@@ -14,6 +14,7 @@ export const sparkActionIntentOptions = [
   "thinking.select",
   "settings.inspect",
   "settings.providers",
+  "settings.enabled-models",
   "status.inspect",
   "session.select",
   "session.create",
@@ -21,7 +22,7 @@ export const sparkActionIntentOptions = [
   "queue.inspect",
   "turn.stop",
   "turn.retry",
-  "mode.select",
+  "directive.run",
   "goal.status",
   "goal.start",
   "goal.restart",
@@ -32,7 +33,6 @@ export const sparkActionIntentOptions = [
   "loop.stop",
   "repro.status",
   "repro.start",
-  "repro.restart",
   "repro.stop",
   "workflow.open",
   "workflow.inspect",
@@ -63,6 +63,13 @@ export const sparkActionBarViewSchema = z
     id: z.string().trim().min(1),
     title: z.string().trim().min(1),
     description: z.string().trim().min(1).optional(),
+    /**
+     * Action a host may run when this bar is used as a command shorthand.
+     *
+     * When omitted, the bar itself is the destination. Presentation fields
+     * such as `tone` never imply a default action.
+     */
+    defaultActionId: z.string().trim().min(1).optional(),
     actions: z.array(sparkActionViewSchema).min(1),
   })
   .strict()
@@ -77,6 +84,13 @@ export const sparkActionBarViewSchema = z
         });
       }
       seen.add(action.id);
+    }
+    if (bar.defaultActionId && !seen.has(bar.defaultActionId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["defaultActionId"],
+        message: `Action bar ${bar.id} default action ${bar.defaultActionId} is not present`,
+      });
     }
   });
 
@@ -152,6 +166,7 @@ const modelActionBar = actionBar({
   id: "model",
   title: "Model controls",
   description: "Choose the active model or inspect configured providers.",
+  defaultActionId: "select-model",
   actions: [
     action("select-model", "Choose model", "model.select", "primary"),
     action("choose-thinking", "Thinking level", "thinking.select"),
@@ -163,23 +178,22 @@ const thinkingActionBar = actionBar({
   id: "thinking",
   title: "Thinking level",
   description: "Choose the reasoning effort for subsequent turns.",
-  actions: [
-    ...sparkThinkingLevelOptions.map((thinkingLevel) =>
-      action(
-        `thinking-${thinkingLevel}`,
-        thinkingLevel,
-        "thinking.select",
-        thinkingLevel === DEFAULT_SPARK_THINKING_LEVEL ? "primary" : undefined,
-        { thinkingLevel },
-      ),
+  actions: sparkThinkingLevelOptions.map((thinkingLevel) =>
+    action(
+      `thinking-${thinkingLevel}`,
+      thinkingLevel,
+      "thinking.select",
+      thinkingLevel === DEFAULT_SPARK_THINKING_LEVEL ? "primary" : undefined,
+      { thinkingLevel },
     ),
-  ],
+  ),
 });
 
 const settingsActionBar = actionBar({
   id: "settings",
   title: "Session settings",
   description: "Inspect settings and open the controls most often changed during a session.",
+  defaultActionId: "inspect-settings",
   actions: [
     action("inspect-settings", "Overview", "settings.inspect", "primary"),
     action("inspect-providers", "Providers", "settings.providers"),
@@ -191,6 +205,7 @@ const settingsActionBar = actionBar({
 const statusActionBar = actionBar({
   id: "status",
   title: "Runtime status",
+  defaultActionId: "inspect-status",
   actions: [
     action("inspect-status", "Refresh status", "status.inspect", "primary"),
     action("inspect-queue", "Queue", "queue.inspect"),
@@ -201,6 +216,7 @@ const queueActionBar = actionBar({
   id: "queue",
   title: "Turn queue",
   description: "Inspect pending input or control the current turn.",
+  defaultActionId: "inspect-queue",
   actions: [
     action("inspect-queue", "Show queue", "queue.inspect", "primary"),
     action("retry-turn", "Retry", "turn.retry"),
@@ -208,27 +224,34 @@ const queueActionBar = actionBar({
   ],
 });
 
-const scopedModelsActionBar = actionBar({
-  id: "scoped-models",
-  title: "Available models",
+const enabledModelsActionBar = actionBar({
+  id: "enabled-models",
+  title: "Enabled models",
+  defaultActionId: "edit-enabled",
   actions: [
-    action("select-model", "Choose model", "model.select", "primary"),
+    action("edit-enabled", "Edit enabled models", "settings.enabled-models", "primary"),
     action("inspect-providers", "Provider settings", "settings.providers"),
   ],
 });
 
-function modeActionBar(mode: "plan" | "execute" | "fleet", title: string): SparkActionBarView {
+function directiveActionBar(
+  directive: "plan" | "execute" | "fleet",
+  title: string,
+): SparkActionBarView {
   return actionBar({
-    id: `mode-${mode}`,
+    id: `directive-${directive}`,
     title,
-    description: `Enter Spark ${mode} mode for this Session.`,
-    actions: [action(`enter-${mode}`, `Enter ${title}`, "mode.select", "primary", { mode })],
+    description: `Run the one-shot /${directive} command for this Session's next turn.`,
+    defaultActionId: `run-${directive}`,
+    actions: [
+      action(`run-${directive}`, `Run /${directive}`, "directive.run", "primary", { directive }),
+    ],
   });
 }
 
-const planModeActionBar = modeActionBar("plan", "Plan");
-const executeModeActionBar = modeActionBar("execute", "Execute");
-const fleetModeActionBar = modeActionBar("fleet", "Fleet");
+const planDirectiveActionBar = directiveActionBar("plan", "Plan");
+const executeDirectiveActionBar = directiveActionBar("execute", "Execute");
+const fleetDirectiveActionBar = directiveActionBar("fleet", "Fleet");
 
 const goalActionBar = lifecycleActionBar("goal", "Goal controls", {
   status: "Inspect goal",
@@ -244,17 +267,22 @@ const loopActionBar = lifecycleActionBar("loop", "Loop controls", {
   stop: "Stop loop",
 });
 
-const reproActionBar = lifecycleActionBar("repro", "Reproduction controls", {
-  status: "Inspect repro",
-  start: "Start repro",
-  restart: "Restart repro",
-  stop: "Stop repro",
+const reproActionBar = actionBar({
+  id: "repro",
+  title: "Reproduction controls",
+  defaultActionId: "repro-status",
+  actions: [
+    action("repro-status", "Inspect repro", "repro.status", "primary"),
+    action("repro-start", "Start repro", "repro.start"),
+    action("repro-stop", "Stop repro", "repro.stop", "danger"),
+  ],
 });
 
 const workflowActionBar = actionBar({
   id: "workflow",
   title: "Workflow runs",
   description: "Open the run board or inspect the selected workflow run.",
+  defaultActionId: "open-workflows",
   actions: [
     action("open-workflows", "Open runs", "workflow.open", "primary"),
     action("inspect-workflow", "Inspect selected", "workflow.inspect"),
@@ -264,6 +292,7 @@ const workflowActionBar = actionBar({
 const helpActionBar = actionBar({
   id: "help",
   title: "Spark help",
+  defaultActionId: "show-commands",
   actions: [
     action("show-commands", "Commands", "help.commands", "primary"),
     action("show-hotkeys", "Hotkeys", "help.hotkeys"),
@@ -273,6 +302,7 @@ const helpActionBar = actionBar({
 const hotkeysActionBar = actionBar({
   id: "hotkeys",
   title: "Keyboard controls",
+  defaultActionId: "show-hotkeys",
   actions: [
     action("show-hotkeys", "Hotkeys", "help.hotkeys", "primary"),
     action("show-commands", "Commands", "help.commands"),
@@ -291,10 +321,10 @@ export const sparkSlashCommandDescriptors: readonly SparkSlashCommandDescriptor[
   slashCommand("settings", settingsActionBar),
   slashCommand("status", statusActionBar),
   slashCommand("queue", queueActionBar),
-  slashCommand("scoped-models", scopedModelsActionBar),
-  slashCommand("plan", planModeActionBar),
-  slashCommand("execute", executeModeActionBar),
-  slashCommand("fleet", fleetModeActionBar),
+  slashCommand("enabled-models", enabledModelsActionBar, ["enabled"], ["enabled"]),
+  slashCommand("plan", planDirectiveActionBar),
+  slashCommand("execute", executeDirectiveActionBar),
+  slashCommand("fleet", fleetDirectiveActionBar),
   slashCommand("goal", goalActionBar),
   slashCommand("loop", loopActionBar),
   slashCommand("repro", reproActionBar),
@@ -366,6 +396,12 @@ export function sparkSlashActionBarForInput(input: string): SparkActionBarView |
   return sparkSlashActionBarCatalog[parsed.command];
 }
 
+/** Resolve the protocol-declared shorthand action without consulting presentation styling. */
+export function sparkActionBarDefaultAction(view: SparkActionBarView): SparkActionView | undefined {
+  if (!view.defaultActionId) return undefined;
+  return view.actions.find((action) => action.id === view.defaultActionId);
+}
+
 function action(
   id: string,
   label: string,
@@ -381,13 +417,14 @@ function actionBar(input: z.input<typeof sparkActionBarViewSchema>): SparkAction
 }
 
 function lifecycleActionBar(
-  resource: "goal" | "loop" | "repro",
+  resource: "goal" | "loop",
   title: string,
   labels: { status: string; start: string; restart: string; stop: string },
 ): SparkActionBarView {
   return actionBar({
     id: resource,
     title,
+    defaultActionId: `${resource}-status`,
     actions: [
       action(`${resource}-status`, labels.status, `${resource}.status`, "primary"),
       action(`${resource}-start`, labels.start, `${resource}.start`),

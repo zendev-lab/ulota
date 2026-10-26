@@ -16,7 +16,7 @@ import type {
 } from "@zendev-lab/spark-protocol/daemon";
 import type { SparkDaemonEvent } from "@zendev-lab/spark-protocol/presentation";
 import type { SparkSessionMailStore } from "@zendev-lab/spark-session";
-import type { SparkPaths } from "@zendev-lab/spark-system";
+import type { SparkPaths } from "@zendev-lab/spark-platform-node";
 import type { DaemonChannelIngressRuntime } from "../channels/ingress.ts";
 import type {
   SparkDaemonHumanInteractionResponder,
@@ -27,7 +27,6 @@ import type { SparkDaemonHumanWaitRegistry } from "../core/human-waits.ts";
 import type { SparkDaemonLeaseTransferBroker } from "../core/lease-transfer.ts";
 import type { SparkDaemonModelControl } from "../model-control.ts";
 import type { SparkDaemonRelocationRequest, SparkDaemonRelocationResult } from "../relocation.ts";
-import type { SparkReproFormalEvidenceVerifier } from "../repro-formal-evidence-verifier.ts";
 import type { DaemonSessionRegistry } from "../session-registry.ts";
 import type { SessionSupervisor } from "../session-supervisor.ts";
 import type { SessionNotificationDeliveryQueue } from "../session-notification-delivery.ts";
@@ -85,6 +84,11 @@ export interface LocalDaemonStatusResult {
   }>;
   invocations: Record<"queued" | "running" | "succeeded" | "failed" | "cancelled", number>;
   invocationHealth: { oldestQueuedAt?: string; oldestRunningAt?: string };
+  execution?: {
+    backend: "in_process";
+    rootConcurrency: number;
+    questionOverflow: 1;
+  };
   channelDeliveries?: SparkChannelDeliverySummary;
   lifecycle: SparkDaemonLifecycleSnapshot;
   buildFingerprint?: string;
@@ -98,11 +102,6 @@ export type LocalTurnResult = SparkTurnResult;
 export type LocalTurnSubmitResult = SparkTurnSubmitResult;
 export type LocalTurnStatusResult = SparkTurnStatusResult;
 export type LocalTurnStreamResult = SparkTurnStreamPage;
-
-export interface LocalTurnCancelRequest {
-  invocationId: string;
-  reason?: string;
-}
 
 export type LocalTurnCancelResult = SparkTurnCancelResult;
 
@@ -160,7 +159,13 @@ export type LocalRpcMailStore = Pick<SparkSessionMailStore, "list"> &
   Partial<
     Pick<
       SparkSessionMailStore,
-      "ack" | "get" | "read" | "recordChannelDelivery" | "recordRequestAdmission" | "send"
+      | "ack"
+      | "get"
+      | "read"
+      | "recordChannelDelivery"
+      | "recordRequestAdmission"
+      | "send"
+      | "pendingRequestsForSession"
     >
   >;
 
@@ -173,7 +178,6 @@ export interface LocalRpcHandlerOptions {
   sessionSupervisor?: SessionSupervisor;
   modelControl?: SparkDaemonModelControl;
   humanWaits?: SparkDaemonHumanWaitRegistry;
-  reproFormalEvidenceVerifier?: SparkReproFormalEvidenceVerifier;
   respondHumanInteraction?: SparkDaemonHumanInteractionResponder;
   leaseTransfers?: SparkDaemonLeaseTransferBroker;
   onHumanRequestOutboxReady?: () => void;
@@ -188,6 +192,7 @@ export interface LocalRpcHandlerOptions {
   onUplinkReconfigure?: (serverUrl?: string) => void;
   getLifecycle?: () => SparkDaemonLifecycleSnapshot;
   getBuildFingerprint?: () => string;
+  getExecutionStatus?: () => NonNullable<LocalDaemonStatusResult["execution"]>;
   /** Startup fence: before this opens, only readiness/status and stop are admitted. */
   isReady?: () => boolean;
   eventBus?: SparkDaemonLocalEventBus;
@@ -223,20 +228,11 @@ export function parseLocalRpcServiceOutput<Method extends SparkLocalRpcMethod>(
 /** Temporary 0.1.x NDJSON envelope; method/input correlation remains protocol-owned. */
 export type LocalRpcRequest = { id: string } & LocalRpcServiceRequest;
 
-export type LocalTurnCancelParams = LocalTurnCancelRequest;
-
 export type LocalHumanInteractionListParams = SparkLocalRpcParsedInput<"human.interaction.list">;
 export type LocalHumanInteractionListResult = SparkLocalRpcOutput<"human.interaction.list">;
 
-export interface LocalHumanInteractionRespondParams {
-  interactionRequestId: string;
-  sessionId?: string;
-  invocationId?: string;
-  humanResponseId?: string;
-  status: "answered" | "cancelled";
-  answers: Record<string, unknown>;
-  responseArtifactRefs: string[];
-}
+export type LocalHumanInteractionRespondParams =
+  SparkLocalRpcParsedInput<"human.interaction.respond">;
 
 export type LocalHumanInteractionRespondResult = SparkLocalRpcOutput<"human.interaction.respond">;
 
@@ -251,26 +247,9 @@ export type LocalRpcResponse =
   | { id: string; ok: true; result: unknown }
   | { id: string; ok: false; error: LocalRpcErrorPayload };
 
-export type LocalTurnSubmitParams = {
-  sessionId: string;
-  prompt: string;
-  idempotencyKey?: string;
-  reset?: boolean;
-  assignment?: SparkAssignment;
-  messageMetadata?: Record<string, unknown>;
-};
+export type LocalTurnSubmitParams = SparkLocalRpcParsedInput<"turn.submit">;
 
-export type LocalWorkspaceRegisterParams = {
-  serverUrl: string;
-  allowInsecureHttp?: boolean;
-  localPath: string;
-  registrationToken?: string;
-  localWorkspaceKey?: string;
-  displayName?: string;
-  workspaceName?: string;
-  workspaceSlug?: string;
-  profile?: NonNullable<SparkDaemonWorkspace["profile"]>;
-};
+export type LocalWorkspaceRegisterParams = SparkLocalRpcParsedInput<"workspace.register">;
 
 export type LocalWorkspaceEnsureLocalParams = LocalWorkspaceEnsureLocalRequest;
 export type LocalWorkspaceClientAttachParams = LocalWorkspaceClientAttachRequest;

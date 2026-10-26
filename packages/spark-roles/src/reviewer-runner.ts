@@ -20,9 +20,10 @@ import {
   type ProjectRef,
   type RoleRef,
   type RunRef,
-  type Task,
   type TaskRef,
-} from "@zendev-lab/spark-core";
+} from "@zendev-lab/spark-invocation";
+import { type Task } from "@zendev-lab/spark-tasks";
+import { DEFAULT_SPARK_THINKING_LEVEL } from "@zendev-lab/spark-protocol/model-control";
 import {
   withRoleNativeExecutorCompatibilityFallback,
   type RoleNativeExecutorCompatibilityFallbackDeps,
@@ -297,7 +298,7 @@ export interface SparkRolesReviewerRunnerOptions {
 
 const REVIEWER_TIMEOUT_MS_ENV = "SPARK_REVIEWER_TIMEOUT_MS";
 const DEFAULT_REVIEWER_TIMEOUT_MS = 1_200_000;
-export const DEFAULT_REVIEWER_THINKING_LEVEL: ReviewerThinkingLevel = "medium";
+export const DEFAULT_REVIEWER_THINKING_LEVEL: ReviewerThinkingLevel = DEFAULT_SPARK_THINKING_LEVEL;
 
 const REVIEWER_THINKING_RANK: Record<ReviewerThinkingLevel, number> = {
   off: 0,
@@ -310,7 +311,7 @@ const REVIEWER_THINKING_RANK: Record<ReviewerThinkingLevel, number> = {
 
 export function capReviewerThinkingLevel(value: unknown): ReviewerThinkingLevel {
   if (!isReviewerThinkingLevel(value)) return DEFAULT_REVIEWER_THINKING_LEVEL;
-  return REVIEWER_THINKING_RANK[value] <= REVIEWER_THINKING_RANK.medium
+  return REVIEWER_THINKING_RANK[value] <= REVIEWER_THINKING_RANK[DEFAULT_REVIEWER_THINKING_LEVEL]
     ? value
     : DEFAULT_REVIEWER_THINKING_LEVEL;
 }
@@ -451,14 +452,15 @@ export class SparkRolesReviewerRunner implements ReviewerRunner {
         roleRevision: role.revision,
         roleSource: role.source,
         roleCapabilities: role.capabilities,
+        roleSkills: role.skills,
         roleModelType: role.modelType,
-        roleInstantiation: "owned",
         systemPrompt: buildReadOnlyReviewerSystemPrompt(role.systemPrompt),
         model: resolvedModel,
         thinking: this.#reviewerThinkingLevel,
         instruction: renderReviewerInstruction(input),
         runGuidance: REVIEWER_JSON_SCHEMA,
         allowedTools: reviewerGateAllowedTools(role.allowedTools),
+        allowedToolEffects: role.allowedToolEffects,
         noExtensions: true,
         launch: "fresh",
         sessionDir: this.#sessionDir,
@@ -573,14 +575,15 @@ export class SparkRolesReviewerRunner implements ReviewerRunner {
         roleRevision: role.revision,
         roleSource: role.source,
         roleCapabilities: role.capabilities,
+        roleSkills: role.skills,
         roleModelType: role.modelType,
-        roleInstantiation: "owned",
         systemPrompt: buildReadOnlyReviewerSystemPrompt(role.systemPrompt),
         model: resolvedModel,
         thinking: this.#reviewerThinkingLevel,
         instruction: renderAskAutoAnswerInstruction(input),
         runGuidance: ASK_AUTO_ANSWER_JSON_SCHEMA,
         allowedTools: reviewerGateAllowedTools(role.allowedTools),
+        allowedToolEffects: role.allowedToolEffects,
         noExtensions: true,
         launch: "fresh",
         sessionDir: this.#sessionDir,

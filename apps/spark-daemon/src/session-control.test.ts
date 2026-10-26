@@ -1,26 +1,472 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { openMemoryDatabase } from "@zendev-lab/spark-hub-db";
-import { loadSparkSessionWorkspaceState } from "@zendev-lab/spark-loop";
-import { resolveSparkPaths } from "@zendev-lab/spark-system";
+import { openMemoryDatabase } from "@zendev-lab/spark-hub-storage-sqlite";
+import { resolveSparkPaths } from "@zendev-lab/spark-platform-node";
 import {
   sparkSessionSnapshotPageSchema,
   type SparkSessionSnapshotPage,
 } from "@zendev-lab/spark-protocol";
+import { SparkSessionRegistry, defaultSparkSessionRegistryRoot } from "@zendev-lab/spark-session";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SparkDaemonModelControl } from "./model-control.ts";
+import { SPARK_SESSION_COMPACT_PROMPT } from "./core/types.ts";
 import { createDaemonSessionRegistry } from "./session-registry.ts";
 import { channelReplyDeliveryForCompletion } from "./spark/session-run.ts";
+import { quiesceLoopsForClosingSession } from "./loop-session-lifecycle.ts";
 import { executeSparkDaemonSessionControl } from "./session-control.ts";
 import { SessionSupervisor } from "./session-supervisor.ts";
 import { SparkInvocationStore } from "./store/invocations.ts";
+import { SparkLoopStore } from "./store/loops.ts";
 import { migrateSparkDaemonDatabase } from "./store/schema.ts";
 import { registerWorkspace } from "./store/workspaces.ts";
+import { createDaemonWorkspaceSession } from "../../../test/support/session-fixtures.ts";
 
 describe("daemon session control admission", () => {
+  it("lists only daemon Channel Sessions on a daemon-scoped route", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-session-daemon-list-"));
+    const db = openMemoryDatabase();
+    migrateSparkDaemonDatabase(db);
+    const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
+    const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"), {
+      daemonId: "daemon-list-test",
+      resolveWorkspaceCwd: () => root,
+      resolveChannelSessionCwd: async (sessionId) => {
+        const cwd = join(root, "channels", "sessions", sessionId, "workspace");
+        mkdirSync(cwd, { recursive: true, mode: 0o700 });
+        return cwd;
+      },
+    });
+    await createDaemonWorkspaceSession(sessionRegistry, {
+      sessionId: "session-workspace-hidden",
+      workspaceId: "workspace-hidden",
+      cwd: root,
+    });
+    const channel = await sessionRegistry.resolveChannelSession({
+      externalKey: "infoflow:user:daemon-list",
+      adapterId: "infoflow-primary",
+      adapterAccountIdentity: "channel-account:infoflow:daemon-list",
+    });
+
+    try {
+      const response = await executeSparkDaemonSessionControl(
+        { paths, db, sessionRegistry, actor: "spark-daemon-runtime-ws" },
+        {
+          kind: "session.list.request",
+          scope: "daemon",
+          payload: { scope: { kind: "daemon" }, includeArchived: true },
+        },
+      );
+
+      expect(response.result.sessions).toEqual([
+        expect.objectContaining({
+          sessionId: channel.sessionId,
+          scope: { kind: "daemon", daemonId: "daemon-list-test" },
+          purpose: "channel",
+        }),
+      ]);
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reconciles closing Session content through the lifecycle owner", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-session-closing-reconcile-"));
+    const db = openMemoryDatabase();
+    migrateSparkDaemonDatabase(db);
+    const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
+    const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"), {
+      resolveWorkspaceCwd: () => root,
+    });
+    const invocations = new SparkInvocationStore(db);
+    const loops = new SparkLoopStore(db, invocations);
+    const administrator = await sessionRegistry.ensureWorkspaceAdministrator("ws-reconcile");
+    const owner = await sessionRegistry.createSupervised({
+      sessionId: "session-closing-reconcile",
+      scope: { kind: "workspace", workspaceId: "ws-reconcile" },
+      cwd: root,
+      lineage: {
+        kind: "child",
+        parentSessionId: administrator.sessionId,
+        origin: { kind: "session" },
+      },
+      visibility: "internal",
+      retention: "discard_on_close",
+      purpose: "task_run",
+    });
+    loops.start({
+      loopId: "closing-reconcile-loop",
+      ownerSessionId: owner.sessionId,
+      sessionLifetime: "driver_tick",
+      cwd: root,
+      prompt: "private Loop payload",
+      dueAt: "2026-08-13T00:00:00.000Z",
+    });
+    const invocation = (await loops.materializeDue("2026-08-13T00:00:00.000Z"))?.invocation;
+    if (!invocation?.sessionId) throw new Error("test Loop invocation has no Session route");
+    await sessionRegistry.markClosing({ sessionId: owner.sessionId });
+    const supervisor = new SessionSupervisor({
+      registry: sessionRegistry,
+      invocations,
+      quiesceOwnedLoops: (session, reason) =>
+        quiesceLoopsForClosingSession(loops, invocations, session, reason),
+    });
+
+    try {
+      await executeSparkDaemonSessionControl(
+        { paths, db, sessionRegistry, actor: "spark-daemon-local-rpc" },
+        { kind: "session.list.request", scope: "any", payload: {} },
+      );
+      await expect(sessionRegistry.get(owner.sessionId)).resolves.toMatchObject({
+        lifecycle: "closing",
+      });
+      expect(loops.require("closing-reconcile-loop")).toMatchObject({ status: "running" });
+
+      await executeSparkDaemonSessionControl(
+        {
+          paths,
+          db,
+          sessionRegistry,
+          sessionSupervisor: supervisor,
+          actor: "spark-daemon-local-rpc",
+        },
+        { kind: "session.list.request", scope: "any", payload: {} },
+      );
+
+      await expect(sessionRegistry.get(owner.sessionId)).resolves.toMatchObject({
+        lifecycle: "closed",
+        placement: "archived",
+      });
+      expect(loops.require("closing-reconcile-loop")).toMatchObject({ status: "stopped" });
+      expect(invocations.require(invocation.invocationId)).toMatchObject({
+        status: "cancelled",
+        payloadRedactedAt: expect.any(String),
+      });
+      expect(invocations.require(invocation.invocationId)).not.toHaveProperty("prompt");
+      expect(invocations.require(invocation.invocationId)).not.toHaveProperty("task");
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a turn cancellation after durable transcript commit begins", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-session-cancel-commit-"));
+    const db = openMemoryDatabase();
+    migrateSparkDaemonDatabase(db);
+    const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
+    const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"));
+    const invocations = new SparkInvocationStore(db);
+    const invocation = invocations.submit({
+      sessionId: "session-commit",
+      prompt: "compact",
+      task: { type: "session.run", sessionId: "session-commit", prompt: "compact" },
+    });
+    expect(invocations.claimNext("worker")?.invocationId).toBe(invocation.invocationId);
+    invocations.markDurableCommitStarted(invocation.invocationId);
+    const cancel = vi.fn(() => false);
+    const supervisor = new SessionSupervisor({
+      registry: sessionRegistry,
+      invocations,
+      scheduler: {
+        cancel,
+        executeStructured: vi.fn(),
+        isSessionActive: () => false,
+        waitForSessionIdle: async () => undefined,
+      },
+    });
+    try {
+      await createDaemonWorkspaceSession(sessionRegistry, {
+        sessionId: "session-commit",
+        workspaceId: "workspace-commit",
+      });
+      await sessionRegistry.recordTurnQueued("session-commit");
+      const result = await executeSparkDaemonSessionControl(
+        {
+          paths,
+          db,
+          sessionRegistry,
+          sessionSupervisor: supervisor,
+          actor: "spark-daemon-local-rpc",
+        },
+        {
+          kind: "turn.cancel.request",
+          scope: "any",
+          payload: { invocationId: invocation.invocationId, reason: "too late" },
+        },
+      );
+
+      expect(result.result).toMatchObject({ status: "running", cancelRequested: false });
+      expect(cancel).toHaveBeenCalledWith(invocation.invocationId, "too late");
+      expect(invocations.require(invocation.invocationId)).toMatchObject({ status: "running" });
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("queues one idempotent daemon-owned compaction with frozen session routing", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-session-compact-admission-"));
+    const db = openMemoryDatabase();
+    migrateSparkDaemonDatabase(db);
+    const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
+    const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"), {
+      daemonId: "compact-admission-test",
+      daemonCwd: root,
+    });
+    await createDaemonWorkspaceSession(sessionRegistry, {
+      sessionId: "session-compact",
+      workspaceId: "workspace-compact",
+      cwd: root,
+    });
+    const effectiveModel = vi.fn(async () => ({ providerName: "provider-a", modelId: "model-a" }));
+    const prepareModel = vi.fn(async () => undefined);
+    const modelControl = {
+      effectiveModel,
+      prepareModel,
+    } as unknown as SparkDaemonModelControl;
+    const onInvocationQueued = vi.fn();
+    const options = {
+      paths,
+      db,
+      sessionRegistry,
+      modelControl,
+      onInvocationQueued,
+      actor: "spark-daemon-local-rpc" as const,
+    };
+    const request = {
+      kind: "session.compact.request" as const,
+      scope: "any" as const,
+      sessionId: "session-compact",
+      idempotencyKey: "compact-once",
+      payload: {
+        sessionId: "session-compact",
+        customInstructions: " preserve decisions ",
+        idempotencyKey: "compact-once",
+      },
+    };
+    try {
+      const submitted = await executeSparkDaemonSessionControl(options, request);
+      const replayed = await executeSparkDaemonSessionControl(options, request);
+      const invocation = new SparkInvocationStore(db).require(submitted.invocationId!);
+
+      expect(replayed).toEqual(submitted);
+      expect(invocation).toMatchObject({
+        sessionId: "session-compact",
+        sourceKind: "session.compact",
+        idempotencyKey: "compact-once",
+        task: {
+          type: "session.compact",
+          sessionId: "session-compact",
+          sessionIncarnation: 1,
+          operationId: expect.any(String),
+          customInstructions: "preserve decisions",
+          model: "provider-a/model-a",
+          cwd: root,
+          workspaceId: "workspace-compact",
+        },
+      });
+      expect(effectiveModel).toHaveBeenCalledOnce();
+      expect(prepareModel).toHaveBeenCalledOnce();
+      expect(onInvocationQueued).toHaveBeenCalledOnce();
+      expect(await sessionRegistry.get("session-compact")).toMatchObject({
+        lifecycle: "open",
+        placement: "active",
+      });
+
+      await expect(
+        executeSparkDaemonSessionControl(options, {
+          ...request,
+          payload: { ...request.payload, customInstructions: "discard decisions" },
+        }),
+      ).rejects.toThrow(/idempotency conflict/u);
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects compaction only for closed Sessions", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-session-compact-boundary-"));
+    const db = openMemoryDatabase();
+    migrateSparkDaemonDatabase(db);
+    const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
+    const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"), {
+      daemonId: "compact-boundary-test",
+      daemonCwd: root,
+    });
+    await createDaemonWorkspaceSession(sessionRegistry, {
+      sessionId: "session-compact-parent",
+      workspaceId: "workspace-compact",
+      cwd: root,
+    });
+    await createDaemonWorkspaceSession(sessionRegistry, {
+      sessionId: "session-compact-closed",
+      workspaceId: "workspace-compact",
+      cwd: root,
+    });
+    await sessionRegistry.archive("session-compact-closed");
+    const sideThread = await sessionRegistry.ensureSideThread({
+      parentSessionId: "session-compact-parent",
+      sessionId: "session-compact-side",
+      mode: "tangent",
+    });
+    const compact = (sessionId: string) =>
+      executeSparkDaemonSessionControl(
+        { paths, db, sessionRegistry, actor: "spark-daemon-local-rpc" },
+        {
+          kind: "session.compact.request",
+          scope: "any",
+          sessionId,
+          payload: { sessionId },
+        },
+      );
+    try {
+      await expect(compact("session-compact-closed")).rejects.toMatchObject({
+        code: "session_archived",
+      });
+      const sideThreadCompaction = await compact(sideThread.sessionId);
+      expect(sideThreadCompaction.result).toMatchObject({ status: "queued" });
+      expect(new SparkInvocationStore(db).list()).toEqual([
+        expect.objectContaining({ sessionId: sideThread.sessionId }),
+      ]);
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps invocation status behind immutable Session scope and owner visibility", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-session-invocation-visibility-"));
+    const db = openMemoryDatabase();
+    migrateSparkDaemonDatabase(db);
+    const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
+    const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"));
+    try {
+      const ordinary = await createDaemonWorkspaceSession(sessionRegistry, {
+        sessionId: "visibility-ordinary",
+        workspaceId: "workspace-visible",
+      });
+      const parent = await createDaemonWorkspaceSession(sessionRegistry, {
+        sessionId: "visibility-parent",
+        workspaceId: "workspace-visible",
+      });
+      const sideThread = await sessionRegistry.ensureSideThread({
+        parentSessionId: parent.sessionId,
+        sessionId: "visibility-side-thread",
+        mode: "contextual",
+      });
+      // Invocations become reachable only after their owning Sessions are
+      // durably created; the visibility fast path relies on this ordering.
+      const store = new SparkInvocationStore(db);
+      const ordinaryInvocation = store.submit({
+        sessionId: ordinary.sessionId,
+        prompt: "status",
+        task: { type: "session.run", sessionId: ordinary.sessionId, prompt: "status" },
+      });
+      const sideThreadInvocation = store.submit({
+        sessionId: sideThread.sessionId,
+        prompt: "status",
+        task: { type: "session.run", sessionId: sideThread.sessionId, prompt: "status" },
+      });
+      const ordinaryGet = vi
+        .spyOn(sessionRegistry, "get")
+        .mockRejectedValue(new Error("invocation visibility must not wait for ordinary get"));
+
+      await expect(
+        executeSparkDaemonSessionControl(
+          { paths, db, sessionRegistry, actor: "spark-daemon-runtime-ws" },
+          {
+            kind: "turn.status.request",
+            scope: "workspace",
+            workspaceId: "workspace-other",
+            payload: { invocationId: ordinaryInvocation.invocationId },
+          },
+        ),
+      ).rejects.toMatchObject({ code: "session_scope_mismatch" });
+      const sideThreadStatus = await executeSparkDaemonSessionControl(
+        { paths, db, sessionRegistry, actor: "spark-daemon-local-rpc" },
+        {
+          kind: "turn.status.request",
+          scope: "any",
+          payload: { invocationId: sideThreadInvocation.invocationId },
+        },
+      );
+      expect(sideThreadStatus.result).toMatchObject({
+        invocationId: sideThreadInvocation.invocationId,
+        sessionId: sideThread.sessionId,
+      });
+      expect(ordinaryGet).not.toHaveBeenCalled();
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      name: "turn",
+      request: (sessionId: string) => ({
+        kind: "turn.submit.request" as const,
+        scope: "any" as const,
+        sessionId,
+        payload: { sessionId, prompt: "must lose to closing" },
+      }),
+    },
+    {
+      name: "compaction",
+      request: (sessionId: string) => ({
+        kind: "session.compact.request" as const,
+        scope: "any" as const,
+        sessionId,
+        payload: { sessionId },
+      }),
+    },
+  ])("does not admit a $name after Session closing wins", async ({ name, request }) => {
+    const root = mkdtempSync(join(tmpdir(), `spark-session-${name}-closing-`));
+    const db = openMemoryDatabase();
+    migrateSparkDaemonDatabase(db);
+    const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
+    const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"), {
+      resolveWorkspaceCwd: () => root,
+    });
+    const sessionId = `session-${name}-closing`;
+    await createDaemonWorkspaceSession(sessionRegistry, {
+      sessionId,
+      workspaceId: "workspace-closing-admission",
+      cwd: root,
+    });
+    const closingRegistry = {
+      ...sessionRegistry,
+      commitInvocationAdmission: async (
+        ...input: Parameters<typeof sessionRegistry.commitInvocationAdmission>
+      ) => {
+        await sessionRegistry.markClosing({ sessionId });
+        return await sessionRegistry.commitInvocationAdmission(...input);
+      },
+    };
+    try {
+      await expect(
+        executeSparkDaemonSessionControl(
+          {
+            paths,
+            db,
+            sessionRegistry: closingRegistry,
+            actor: "spark-daemon-local-rpc",
+          },
+          request(sessionId),
+        ),
+      ).rejects.toMatchObject({ code: "session_closing" });
+      expect(new SparkInvocationStore(db).list()).toHaveLength(0);
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("creates ordinary UI conversations as Administrator children of one workspace root", async () => {
     const root = mkdtempSync(join(tmpdir(), "spark-session-admin-root-"));
     const db = openMemoryDatabase();
@@ -40,6 +486,7 @@ describe("daemon session control admission", () => {
       invocations: new SparkInvocationStore(db),
     });
     try {
+      const administrator = await supervisor.ensureWorkspaceAdministrator(workspace.id);
       const create = async (sessionId: string, title: string) =>
         await executeSparkDaemonSessionControl(
           {
@@ -55,74 +502,32 @@ describe("daemon session control admission", () => {
             workspaceId: workspace.id,
             payload: {
               sessionId,
-              title,
+              name: title,
               scope: { kind: "workspace", workspaceId: workspace.id },
-              purpose: "interactive",
+              supervisorSessionId: administrator.sessionId,
+              roleBinding: { kind: "none" },
             },
           },
         );
       const first = await create("ui-admin-one", "Release planning");
       await create("ui-admin-two", "Architecture review");
       const sessions = await sessionRegistry.list({ includeArchived: true });
-      const workspaceRoot = sessions.find((session) => session.relation?.kind === "workspace_main");
+      const workspaceRoot = sessions.find((session) => session.lineage.kind === "root");
 
       expect(workspaceRoot).toBeTruthy();
-      expect(
-        sessions.filter((session) => session.relation?.kind === "workspace_main"),
-      ).toHaveLength(1);
+      expect(sessions.filter((session) => session.lineage.kind === "root")).toHaveLength(1);
       expect(first.result.session).toMatchObject({
         sessionId: "ui-admin-one",
-        title: "Release planning",
-        roleRef: "role:builtin-administrator",
-        modelType: "coordination",
-        lifetime: "persistent",
-        owner: { kind: "session", ref: workspaceRoot?.sessionId },
-        authority: { kind: "administrator", ref: "role:builtin-administrator" },
-        stateBinding: { kind: "session", ref: workspaceRoot?.sessionId },
+        name: "Release planning",
+        roleBinding: { kind: "none" },
+        lifetime: "scoped",
+        lineage: {
+          kind: "child",
+          parentSessionId: administrator.sessionId,
+          origin: { kind: "session" },
+        },
         lifecycle: "open",
       });
-    } finally {
-      db.close();
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("persists typed Fleet mode for the owning workspace Session", async () => {
-    const root = mkdtempSync(join(tmpdir(), "spark-session-mode-"));
-    const db = openMemoryDatabase();
-    migrateSparkDaemonDatabase(db);
-    const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
-    const workspace = registerWorkspace(db, {
-      serverUrl: "https://hub.example",
-      serverBindingId: "workspace-mode",
-      workspaceName: "mode",
-      localPath: root,
-    });
-    const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"), {
-      daemonId: "mode-test",
-      daemonCwd: root,
-    });
-    await sessionRegistry.create({
-      sessionId: "session-mode",
-      scope: { kind: "workspace", workspaceId: workspace.id },
-      workspaceId: workspace.id,
-      cwd: root,
-    });
-    try {
-      await expect(
-        executeSparkDaemonSessionControl(
-          { paths, db, sessionRegistry, actor: "spark-daemon-local-rpc" },
-          {
-            kind: "session.mode.set.request",
-            scope: "any",
-            sessionId: "session-mode",
-            payload: { sessionId: "session-mode", mode: "fleet" },
-          },
-        ),
-      ).resolves.toEqual({ result: { sessionId: "session-mode", mode: "fleet" } });
-      await expect(
-        loadSparkSessionWorkspaceState(root, { sessionId: "session-mode" }),
-      ).resolves.toMatchObject({ version: 3, mode: "fleet" });
     } finally {
       db.close();
       rmSync(root, { recursive: true, force: true });
@@ -153,9 +558,87 @@ describe("daemon session control admission", () => {
         ),
       ).rejects.toMatchObject({
         code: "invalid_scope",
-        message: "New top-level sessions must belong to a workspace.",
+        message: "New Sessions must belong to a workspace.",
       });
       await expect(sessionRegistry.get("session-retired-daemon-scope")).resolves.toBeUndefined();
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("projects every runtime child as a visible Session", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-session-ephemeral-visibility-"));
+    const db = openMemoryDatabase();
+    migrateSparkDaemonDatabase(db);
+    const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
+    const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"));
+    const workspaceId = "workspace-ephemeral-visibility";
+    const invocationId = "inv_EphemeralVisibility";
+    const ephemeralSessionId = "session-ephemeral-visibility";
+    try {
+      const administrator = await sessionRegistry.ensureWorkspaceAdministrator(workspaceId);
+      await sessionRegistry.createSupervised({
+        sessionId: ephemeralSessionId,
+        scope: { kind: "workspace", workspaceId },
+        cwd: root,
+        roleBinding: { kind: "explicit", roleRef: "role:builtin-executor" },
+        lineage: {
+          kind: "child",
+          parentSessionId: administrator.sessionId,
+          origin: { kind: "invocation", invocationId },
+        },
+        visibility: "internal",
+        retention: "discard_on_close",
+        purpose: "role_call",
+      });
+      const invocation = new SparkInvocationStore(db).submit({
+        invocationId,
+        sessionId: ephemeralSessionId,
+        prompt: "perform one ephemeral Role Invocation",
+      });
+      const options = {
+        paths,
+        db,
+        sessionRegistry,
+        actor: "spark-daemon-local-rpc" as const,
+      };
+
+      const listed = await executeSparkDaemonSessionControl(options, {
+        kind: "session.list.request",
+        scope: "any",
+        payload: {},
+      });
+      expect(listed.result.sessions).toEqual(
+        expect.arrayContaining([expect.objectContaining({ sessionId: ephemeralSessionId })]),
+      );
+      const detail = await executeSparkDaemonSessionControl(options, {
+        kind: "session.get.request",
+        scope: "any",
+        sessionId: ephemeralSessionId,
+        payload: { sessionId: ephemeralSessionId },
+      });
+      expect(detail.result.session).toMatchObject({ sessionId: ephemeralSessionId });
+      const closed = await executeSparkDaemonSessionControl(options, {
+        kind: "session.close.request",
+        scope: "any",
+        sessionId: ephemeralSessionId,
+        payload: { sessionId: ephemeralSessionId },
+      });
+      expect(closed.result.session).toMatchObject({
+        sessionId: ephemeralSessionId,
+        lifecycle: "closing",
+      });
+
+      const status = await executeSparkDaemonSessionControl(options, {
+        kind: "turn.status.request",
+        scope: "any",
+        payload: { invocationId: invocation.invocationId },
+      });
+      expect(status.result).toMatchObject({
+        invocationId: invocation.invocationId,
+        status: "queued",
+      });
     } finally {
       db.close();
       rmSync(root, { recursive: true, force: true });
@@ -186,9 +669,8 @@ describe("daemon session control admission", () => {
       workspaceName: "origin",
       localPath: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session-worker",
-      scope: { kind: "workspace", workspaceId: workspace.id },
       workspaceId: workspace.id,
       cwd: root,
     });
@@ -218,7 +700,6 @@ describe("daemon session control admission", () => {
       const invocation = new SparkInvocationStore(db).require(submitted.invocationId!);
       expect(invocation.task).toMatchObject({
         channelReply: {
-          workspaceId: "workspace-original",
           adapter: "qqbot",
           adapterId: "qq-account-original",
           adapterAccountIdentity: "channel-account:qqbot:original",
@@ -234,7 +715,6 @@ describe("daemon session control admission", () => {
           { assistantText: "delegated result" },
         ),
       ).toMatchObject({
-        workspaceId: "workspace-original",
         adapterId: "qq-account-original",
         adapterAccountIdentity: "channel-account:qqbot:original",
         externalKey: "qqbot:c2c:user-original",
@@ -273,9 +753,8 @@ describe("daemon session control admission", () => {
       daemonId: "local-origin-test",
       daemonCwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session-local",
-      scope: { kind: "workspace", workspaceId: "workspace-local" },
       workspaceId: "workspace-local",
       cwd: root,
     });
@@ -298,6 +777,229 @@ describe("daemon session control admission", () => {
     }
   });
 
+  it("keeps managed and ordinary turns bound to their own Session identity", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-session-state-binding-"));
+    const db = openMemoryDatabase();
+    migrateSparkDaemonDatabase(db);
+    const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
+    const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"), {
+      daemonId: "state-binding-test",
+      daemonCwd: root,
+    });
+    const administrator = await sessionRegistry.ensureWorkspaceAdministrator("workspace-managed");
+    const child = await sessionRegistry.createSupervised({
+      sessionId: "session-managed-child",
+      scope: { kind: "workspace", workspaceId: "workspace-managed" },
+      cwd: join(root, "isolated-worktree"),
+      lineage: {
+        kind: "child",
+        parentSessionId: administrator.sessionId,
+        origin: {
+          kind: "task_revision",
+          projectRef: "proj:managed",
+          taskRef: "task:managed",
+          revisionRef: "job:managed",
+          originatingRunRef: "run:managed",
+          sessionGoalId: "goal:managed",
+          roleRef: "role:builtin-executor",
+          jobId: "job:managed",
+          attempt: 1,
+        },
+      },
+      visibility: "public",
+      retention: "retain",
+      purpose: "interactive",
+    });
+    const ordinary = await sessionRegistry.createSupervised({
+      sessionId: "session-ordinary-child",
+      scope: { kind: "workspace", workspaceId: "workspace-managed" },
+      cwd: root,
+      lineage: {
+        kind: "child",
+        parentSessionId: administrator.sessionId,
+        origin: { kind: "session" },
+      },
+      visibility: "public",
+      retention: "retain",
+      purpose: "interactive",
+    });
+
+    try {
+      const submitted = await executeSparkDaemonSessionControl(
+        { paths, db, sessionRegistry, actor: "spark-daemon-local-rpc" },
+        {
+          kind: "turn.submit.request",
+          scope: "any",
+          sessionId: child.sessionId,
+          payload: { sessionId: child.sessionId, prompt: "complete the managed task" },
+        },
+      );
+      const invocation = new SparkInvocationStore(db).require(submitted.invocationId!);
+      expect(invocation.task).toMatchObject({ type: "session.run", sessionId: child.sessionId });
+      expect(invocation.serializationKey).toBe(child.sessionId);
+      const ordinarySubmission = await executeSparkDaemonSessionControl(
+        { paths, db, sessionRegistry, actor: "spark-daemon-local-rpc" },
+        {
+          kind: "turn.submit.request",
+          scope: "any",
+          sessionId: ordinary.sessionId,
+          payload: { sessionId: ordinary.sessionId, prompt: "continue ordinary work" },
+        },
+      );
+      const ordinaryInvocation = new SparkInvocationStore(db).require(
+        ordinarySubmission.invocationId!,
+      );
+      expect(ordinaryInvocation.serializationKey).toBe(ordinary.sessionId);
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("shares one durable serialization key between a driver child and its parent turns", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-session-driver-serialization-"));
+    const db = openMemoryDatabase();
+    migrateSparkDaemonDatabase(db);
+    const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
+    const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"), {
+      daemonId: "driver-serialization-test",
+      daemonCwd: root,
+    });
+    const administrator = await sessionRegistry.ensureWorkspaceAdministrator(
+      "workspace-driver-serialization",
+    );
+    const parent = await sessionRegistry.create({
+      sessionId: "session-driver-parent",
+      scope: { kind: "workspace", workspaceId: "workspace-driver-serialization" },
+      supervisorSessionId: administrator.sessionId,
+      cwd: root,
+    });
+    const driver = await sessionRegistry.createSupervised({
+      sessionId: "session-driver-child",
+      scope: parent.scope,
+      lineage: {
+        kind: "child",
+        parentSessionId: parent.sessionId,
+        origin: { kind: "driver", driverId: "driver:serialization", generation: 1 },
+      },
+      visibility: "internal",
+      retention: "discard_on_close",
+      purpose: "driver",
+    });
+
+    try {
+      const driverSubmission = await executeSparkDaemonSessionControl(
+        { paths, db, sessionRegistry, actor: "spark-daemon-local-rpc" },
+        {
+          kind: "turn.submit.request",
+          scope: "any",
+          sessionId: driver.sessionId,
+          payload: { sessionId: driver.sessionId, prompt: "scheduled driver work" },
+        },
+      );
+      const parentSubmission = await executeSparkDaemonSessionControl(
+        { paths, db, sessionRegistry, actor: "spark-daemon-local-rpc" },
+        {
+          kind: "turn.submit.request",
+          scope: "any",
+          sessionId: parent.sessionId,
+          payload: { sessionId: parent.sessionId, prompt: "manual parent turn" },
+        },
+      );
+      const store = new SparkInvocationStore(db);
+      const driverInvocation = store.require(driverSubmission.invocationId!);
+      const parentInvocation = store.require(parentSubmission.invocationId!);
+
+      expect(driverInvocation.serializationKey).toBe(parent.sessionId);
+      expect(parentInvocation.serializationKey).toBe(parent.sessionId);
+      expect(parentSubmission.result).toMatchObject({
+        blockedBySessionId: driver.sessionId,
+      });
+      expect(store.claimNext("driver-worker")?.invocationId).toBe(driverInvocation.invocationId);
+      expect(store.claimNext("parent-worker")).toBeUndefined();
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("filters children before pagination and projects bounded descendant activity", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-session-descendant-activity-"));
+    const db = openMemoryDatabase();
+    migrateSparkDaemonDatabase(db);
+    const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
+    const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"));
+    const administrator = await sessionRegistry.ensureWorkspaceAdministrator(
+      "workspace-descendant-activity",
+    );
+    if (administrator.scope.kind !== "workspace") {
+      throw new Error("test administrator must be workspace-scoped");
+    }
+    const parent = await sessionRegistry.create({
+      sessionId: "session-tree-parent",
+      scope: administrator.scope,
+      supervisorSessionId: administrator.sessionId,
+      cwd: root,
+    });
+    const createChild = (sessionId: string, parentSessionId: string) =>
+      sessionRegistry.createSupervised({
+        sessionId,
+        scope: parent.scope,
+        lineage: { kind: "child", parentSessionId, origin: { kind: "session" } },
+        visibility: "public",
+        retention: "retain",
+        purpose: "interactive",
+      });
+    const first = await createChild("session-tree-first", parent.sessionId);
+    const second = await createChild("session-tree-second", parent.sessionId);
+    const grandchild = await createChild("session-tree-grandchild", first.sessionId);
+    const store = new SparkInvocationStore(db);
+    const running = store.submit({ sessionId: first.sessionId, prompt: "running descendant" });
+    store.claimNext("descendant-worker");
+    store.submit({ sessionId: grandchild.sessionId, prompt: "queued descendant" });
+
+    try {
+      const page = await executeSparkDaemonSessionControl(
+        { paths, db, sessionRegistry, actor: "spark-daemon-runtime-ws" },
+        {
+          kind: "session.list.request",
+          scope: "any",
+          payload: { parentSessionId: parent.sessionId, limit: 1 },
+        },
+      );
+      expect(page.result).toMatchObject({ hasMore: true });
+      expect(page.result.sessions).toHaveLength(1);
+      expect(page.result.sessions).toEqual([
+        expect.objectContaining({
+          lineage: expect.objectContaining({ parentSessionId: parent.sessionId }),
+        }),
+      ]);
+
+      const detail = await executeSparkDaemonSessionControl(
+        { paths, db, sessionRegistry, actor: "spark-daemon-local-rpc" },
+        {
+          kind: "session.get.request",
+          scope: "any",
+          sessionId: parent.sessionId,
+          payload: { sessionId: parent.sessionId },
+        },
+      );
+      expect(detail.result.session).toMatchObject({
+        activity: "idle",
+        descendantActivity: {
+          activity: "running",
+          descendantCount: 3,
+          activeCount: 2,
+        },
+      });
+      expect(store.require(running.invocationId).status).toBe("running");
+      expect(second.sessionId).toBe("session-tree-second");
+    } finally {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("persists an explicit causal parent for a child turn and rejects replay ancestry drift", async () => {
     const root = mkdtempSync(join(tmpdir(), "spark-session-parent-invocation-"));
     const db = openMemoryDatabase();
@@ -307,9 +1009,8 @@ describe("daemon session control admission", () => {
       daemonId: "parent-invocation-test",
       daemonCwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session-child",
-      scope: { kind: "workspace", workspaceId: "workspace-parent" },
       workspaceId: "workspace-parent",
       cwd: root,
     });
@@ -378,9 +1079,8 @@ describe("daemon session control admission", () => {
       daemonId: "admission-test",
       daemonCwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session-race",
-      scope: { kind: "workspace", workspaceId: "workspace-race" },
       workspaceId: "workspace-race",
       cwd: root,
     });
@@ -429,7 +1129,10 @@ describe("daemon session control admission", () => {
         invocationId: winningClaimant.invocationId,
         task: { model: "provider-b/model-b" },
       });
-      expect(await sessionRegistry.get(request.sessionId)).toMatchObject({ status: "running" });
+      expect(await sessionRegistry.get(request.sessionId)).toMatchObject({
+        lifecycle: "open",
+      });
+      expect(await sessionRegistry.get(request.sessionId)).not.toHaveProperty("activity");
       expect(onInvocationQueued).toHaveBeenCalledTimes(1);
     } finally {
       db.close();
@@ -458,9 +1161,8 @@ describe("daemon session control admission", () => {
     const sessionId = "session-pending-truth";
 
     try {
-      await sessionRegistry.create({
+      await createDaemonWorkspaceSession(sessionRegistry, {
         sessionId,
-        scope: { kind: "workspace", workspaceId: "workspace-pending" },
         workspaceId: "workspace-pending",
         cwd: root,
       });
@@ -481,7 +1183,7 @@ describe("daemon session control admission", () => {
           payload: { sessionId },
         },
       );
-      expect(queuedOnlySession.result.session).toMatchObject({ status: "running" });
+      expect(queuedOnlySession.result.session).toMatchObject({ activity: "queued" });
       const queuedOnlyResponse = await executeSparkDaemonSessionControl(
         { paths, db, sessionRegistry, actor: "spark-daemon-runtime-ws" },
         {
@@ -503,6 +1205,19 @@ describe("daemon session control admission", () => {
         prompt: "actual follow-up",
         task: { type: "session.run", sessionId, prompt: "actual follow-up" },
         now: "2026-07-17T07:47:00.000Z",
+      });
+      const compact = store.submit({
+        sessionId,
+        prompt: SPARK_SESSION_COMPACT_PROMPT,
+        task: {
+          type: "session.compact",
+          sessionId,
+          sessionIncarnation: 1,
+          prompt: SPARK_SESSION_COMPACT_PROMPT,
+          operationId: "pending-compact",
+        },
+        sourceKind: "session.compact",
+        now: "2026-07-17T07:47:01.000Z",
       });
 
       const response = await executeSparkDaemonSessionControl(
@@ -531,11 +1246,35 @@ describe("daemon session control admission", () => {
           status: "queued",
           createdAt: "2026-07-17T07:47:00.000Z",
         },
+        {
+          invocationId: compact.invocationId,
+          prompt: SPARK_SESSION_COMPACT_PROMPT,
+          status: "queued",
+          createdAt: "2026-07-17T07:47:01.000Z",
+        },
       ]);
+      // Compaction is visible as daemon work, never as a synthetic user turn.
       expect(page.snapshot.messages.map((message) => message.metadata.invocationStatus)).toEqual([
         "running",
         "queued",
       ]);
+      const pendingCursor = page.snapshot.messages.at(-1)?.id;
+      expect(pendingCursor).toBe(`invocation:${queued.invocationId}`);
+      const beforePendingResponse = await executeSparkDaemonSessionControl(
+        { paths, db, sessionRegistry, actor: "spark-daemon-runtime-ws" },
+        {
+          kind: "session.snapshot.request",
+          scope: "any",
+          sessionId,
+          payload: { sessionId, messageLimit: 32, beforeMessageId: pendingCursor },
+        },
+      );
+      const beforePending = sparkSessionSnapshotPageSchema.parse(beforePendingResponse.result);
+      expect(beforePending.snapshot.messages.map(({ id }) => id)).toEqual([
+        `invocation:${running.invocationId}`,
+      ]);
+      expect(beforePending.history).toMatchObject({ laterMessages: 1, earlierMessages: 0 });
+      expect(beforePending.snapshot.pendingTurns).toHaveLength(3);
 
       store.complete(running.invocationId, {
         status: "succeeded",
@@ -550,7 +1289,7 @@ describe("daemon session control admission", () => {
           payload: { sessionId },
         },
       );
-      expect(queuedFollowerSession.result.session).toMatchObject({ status: "running" });
+      expect(queuedFollowerSession.result.session).toMatchObject({ activity: "queued" });
 
       const queuedFollowerSnapshot = await executeSparkDaemonSessionControl(
         { paths, db, sessionRegistry, actor: "spark-daemon-runtime-ws" },
@@ -565,7 +1304,10 @@ describe("daemon session control admission", () => {
         sparkSessionSnapshotPageSchema.parse(queuedFollowerSnapshot.result).snapshot,
       ).toMatchObject({
         status: "queued",
-        pendingTurns: [{ invocationId: queued.invocationId, status: "queued" }],
+        pendingTurns: [
+          { invocationId: queued.invocationId, status: "queued" },
+          { invocationId: compact.invocationId, status: "queued" },
+        ],
       });
     } finally {
       db.close();
@@ -573,31 +1315,34 @@ describe("daemon session control admission", () => {
     }
   });
 
-  it("rolls owned child Invocation activity into the parent Session without exposing its prompt", async () => {
+  it("keeps child Invocation activity out of the parent Session", async () => {
     const root = mkdtempSync(join(tmpdir(), "spark-session-owned-activity-"));
     const db = openMemoryDatabase();
     migrateSparkDaemonDatabase(db);
     const paths = resolveSparkPaths({ app: "daemon", env: { HOME: root } });
     const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"));
     try {
+      const administrator =
+        await sessionRegistry.ensureWorkspaceAdministrator("workspace-activity");
       const parent = await sessionRegistry.create({
         sessionId: "activity-parent",
         scope: { kind: "workspace", workspaceId: "workspace-activity" },
-        workspaceId: "workspace-activity",
+        supervisorSessionId: administrator.sessionId,
         cwd: root,
       });
       const child = await sessionRegistry.createSupervised({
         sessionId: "activity-child",
         scope: parent.scope,
-        lifetime: "owned",
-        owner: { kind: "driver", ref: "loop:activity" },
-        authority: { kind: "driver", ref: "loop:activity" },
-        stateBinding: { kind: "session", ref: parent.sessionId },
+        lineage: {
+          kind: "child",
+          parentSessionId: parent.sessionId,
+          origin: { kind: "driver", driverId: "loop:activity", generation: 1 },
+        },
         visibility: "internal",
         retention: "discard_on_close",
         purpose: "driver",
       });
-      const invocation = new SparkInvocationStore(db).submit({
+      new SparkInvocationStore(db).submit({
         sessionId: child.sessionId,
         prompt: "private managed prompt",
         task: {
@@ -617,7 +1362,7 @@ describe("daemon session control admission", () => {
           payload: { sessionId: parent.sessionId },
         },
       );
-      expect(detail.result.session).toMatchObject({ status: "running" });
+      expect(detail.result.session).toMatchObject({ activity: "idle" });
 
       const response = await executeSparkDaemonSessionControl(
         { paths, db, sessionRegistry, actor: "spark-daemon-local-rpc" },
@@ -629,13 +1374,7 @@ describe("daemon session control admission", () => {
         },
       );
       const snapshot = sparkSessionSnapshotPageSchema.parse(response.result).snapshot;
-      expect(snapshot.pendingTurns).toMatchObject([
-        {
-          invocationId: invocation.invocationId,
-          status: "queued",
-          prompt: "Owned Session activity (loop.tick)",
-        },
-      ]);
+      expect(snapshot.pendingTurns).toEqual([]);
       expect(JSON.stringify(snapshot.messages)).not.toContain("private managed prompt");
     } finally {
       db.close();
@@ -674,10 +1413,9 @@ describe("daemon session control admission", () => {
     const sessionId = "session-binding-route";
 
     try {
-      await sessionRegistry.create({
+      await createDaemonWorkspaceSession(sessionRegistry, {
         sessionId,
         workspaceId,
-        scope: { kind: "workspace", workspaceId },
       });
       const response = await executeSparkDaemonSessionControl(
         { paths, db, sessionRegistry, actor: "spark-daemon-runtime-ws" },
@@ -746,21 +1484,18 @@ describe("daemon session control admission", () => {
       daemonId: "workspace-alias-test",
       daemonCwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session-local-tui",
-      scope: { kind: "workspace", workspaceId: localWorkspace.id },
       workspaceId: localWorkspace.id,
       cwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session-hub",
-      scope: { kind: "workspace", workspaceId: hubWorkspaceId },
-      workspaceId: hubWorkspaceId,
+      workspaceId: hubBindingId,
       cwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session-other-hub",
-      scope: { kind: "workspace", workspaceId: otherWorkspaceId },
       workspaceId: otherWorkspaceId,
       cwd: root,
     });
@@ -777,13 +1512,19 @@ describe("daemon session control admission", () => {
         },
       );
 
-      expect(response.result.sessions).toEqual([
-        expect.objectContaining({
-          sessionId: "session-hub",
-          scope: { kind: "workspace", workspaceId: hubWorkspaceId },
-          workspaceId: hubWorkspaceId,
-        }),
-      ]);
+      expect(response.result.sessions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            sessionId: "session-hub",
+            scope: { kind: "workspace", workspaceId: hubWorkspaceId },
+          }),
+          expect.objectContaining({
+            lineage: { kind: "root" },
+            roleBinding: { kind: "explicit", roleRef: "role:builtin-administrator" },
+          }),
+        ]),
+      );
+      expect(response.result.sessions).toHaveLength(2);
     } finally {
       db.close();
       rmSync(root, { recursive: true, force: true });
@@ -814,7 +1555,7 @@ describe("daemon session control admission", () => {
     const entries = [
       {
         type: "session",
-        version: 3,
+        version: 4,
         id: sessionId,
         timestamp: "2026-07-17T00:00:00.000Z",
         cwd: root,
@@ -837,9 +1578,8 @@ describe("daemon session control admission", () => {
     );
 
     try {
-      await sessionRegistry.create({
+      await createDaemonWorkspaceSession(sessionRegistry, {
         sessionId,
-        scope: { kind: "workspace", workspaceId: "workspace-snapshot" },
         workspaceId: "workspace-snapshot",
         cwd: root,
       });
@@ -886,6 +1626,164 @@ describe("daemon session control admission", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("keeps child transcript usage out of the parent snapshot", async () => {
+    const harness = await createUsageSnapshotHarness("spark-session-usage-rollup-");
+    try {
+      const parent = await createDaemonWorkspaceSession(harness.sessionRegistry, {
+        sessionId: "session-usage-parent",
+        workspaceId: "workspace-usage",
+        cwd: harness.root,
+      });
+      const child = await harness.sessionRegistry.createSupervised({
+        sessionId: "session-usage-child",
+        scope: { kind: "workspace", workspaceId: "workspace-usage" },
+        cwd: harness.root,
+        lineage: { kind: "child", parentSessionId: parent.sessionId, origin: { kind: "session" } },
+      });
+      const parentTranscript = join(harness.root, "parent.jsonl");
+      const childTranscript = join(harness.root, "child.jsonl");
+      writeAssistantUsageTranscript(parentTranscript, parent.sessionId, {
+        input: 100,
+        output: 20,
+        cacheRead: 50,
+        cacheWrite: 10,
+        totalTokens: 999,
+        cost: 0.1,
+      });
+      writeAssistantUsageTranscript(childTranscript, child.sessionId, {
+        input: 40,
+        output: 10,
+        cacheRead: 160,
+        cacheWrite: 5,
+        totalTokens: 210,
+        cost: 0.2,
+      });
+      await harness.sessionRegistry.recordRun({
+        sessionId: parent.sessionId,
+        sessionPath: parentTranscript,
+      });
+      await harness.sessionRegistry.recordRun({
+        sessionId: child.sessionId,
+        sessionPath: childTranscript,
+      });
+
+      const page = await requestSessionSnapshot(harness, parent.sessionId);
+      expect(page.snapshot.usage).toMatchObject({
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheReadTokens: 50,
+        cacheWriteTokens: 10,
+        contextTokens: 999,
+      });
+      expect(page.snapshot.usage?.costUsd).toBeCloseTo(0.1);
+      expect(page.snapshot.usage?.latestCacheHitPercent).toBeCloseTo((50 / 160) * 100);
+      expect(page.snapshot.usage).not.toHaveProperty("contextTokenSource");
+    } finally {
+      harness.close();
+    }
+  });
+
+  it("keeps parent-only usage when the owner tree has no child transcripts", async () => {
+    const harness = await createUsageSnapshotHarness("spark-session-usage-parent-only-");
+    try {
+      const parent = await createDaemonWorkspaceSession(harness.sessionRegistry, {
+        sessionId: "session-usage-solo",
+        workspaceId: "workspace-usage-solo",
+        cwd: harness.root,
+      });
+      const parentTranscript = join(harness.root, "solo.jsonl");
+      writeAssistantUsageTranscript(parentTranscript, parent.sessionId, {
+        input: 100,
+        output: 20,
+        cacheRead: 50,
+        cacheWrite: 10,
+        totalTokens: 999,
+        cost: 0.1,
+      });
+      await harness.sessionRegistry.recordRun({
+        sessionId: parent.sessionId,
+        sessionPath: parentTranscript,
+      });
+
+      const page = await requestSessionSnapshot(harness, parent.sessionId);
+      expect(page.snapshot.usage).toMatchObject({
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheReadTokens: 50,
+        cacheWriteTokens: 10,
+        contextTokens: 999,
+      });
+      expect(page.snapshot.usage?.costUsd).toBeCloseTo(0.1);
+    } finally {
+      harness.close();
+    }
+  });
+
+  it("keeps closed child transcript usage out of the parent snapshot", async () => {
+    const harness = await createUsageSnapshotHarness("spark-session-usage-closed-child-");
+    try {
+      const parent = await createDaemonWorkspaceSession(harness.sessionRegistry, {
+        sessionId: "session-usage-closed-parent",
+        workspaceId: "workspace-usage-closed",
+        cwd: harness.root,
+      });
+      const child = await harness.sessionRegistry.createSupervised({
+        sessionId: "session-usage-closed-child",
+        scope: { kind: "workspace", workspaceId: "workspace-usage-closed" },
+        cwd: harness.root,
+        lineage: { kind: "child", parentSessionId: parent.sessionId, origin: { kind: "session" } },
+      });
+      const parentTranscript = join(harness.root, "parent.jsonl");
+      const childTranscript = join(harness.root, "child.jsonl");
+      writeAssistantUsageTranscript(parentTranscript, parent.sessionId, {
+        input: 12,
+        output: 4,
+        cacheRead: 8,
+        cacheWrite: 2,
+        totalTokens: 400,
+        cost: 0.05,
+      });
+      writeAssistantUsageTranscript(childTranscript, child.sessionId, {
+        input: 3,
+        output: 7,
+        cacheRead: 9,
+        cacheWrite: 1,
+        totalTokens: 50,
+        cost: 0.02,
+      });
+      await harness.sessionRegistry.recordRun({
+        sessionId: parent.sessionId,
+        sessionPath: parentTranscript,
+      });
+      await harness.sessionRegistry.recordRun({
+        sessionId: child.sessionId,
+        sessionPath: childTranscript,
+      });
+      await harness.sessionRegistry.close({ sessionId: child.sessionId });
+      const rawRegistry = new SparkSessionRegistry({
+        rootDir: defaultSparkSessionRegistryRoot(join(harness.root, ".spark")),
+      });
+      await rawRegistry.finalizeClose(child.sessionId);
+      await expect(harness.sessionRegistry.get(child.sessionId)).resolves.toMatchObject({
+        lifecycle: "closed",
+        placement: "archived",
+      });
+
+      const page = await requestSessionSnapshot(harness, parent.sessionId);
+      expect(page.snapshot.usage).toMatchObject({
+        inputTokens: 12,
+        outputTokens: 4,
+        cacheReadTokens: 8,
+        cacheWriteTokens: 2,
+        contextTokens: 400,
+      });
+      expect(page.snapshot.usage?.costUsd).toBeCloseTo(0.05);
+    } finally {
+      harness.close();
+    }
+  });
+
   it("propagates explicit --model from CLI through to frozen invocation task", async () => {
     const root = mkdtempSync(join(tmpdir(), "spark-session-model-propagation-"));
     const db = openMemoryDatabase();
@@ -904,9 +1802,8 @@ describe("daemon session control admission", () => {
       daemonId: "model-propagation-test",
       daemonCwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session-model",
-      scope: { kind: "workspace", workspaceId: "workspace-model" },
       workspaceId: "workspace-model",
       cwd: root,
     });
@@ -956,9 +1853,8 @@ describe("daemon session control admission", () => {
       daemonId: "model-validation-test",
       daemonCwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session-invalid-model",
-      scope: { kind: "workspace", workspaceId: "workspace-invalid-model" },
       workspaceId: "workspace-invalid-model",
       cwd: root,
     });
@@ -1004,11 +1900,11 @@ describe("daemon session control admission", () => {
       daemonId: "model-fallback-test",
       daemonCwd: root,
     });
-    await sessionRegistry.create({
+    await createDaemonWorkspaceSession(sessionRegistry, {
       sessionId: "session-fallback",
-      scope: { kind: "workspace", workspaceId: "workspace-fallback" },
       workspaceId: "workspace-fallback",
       cwd: root,
+      maxOutputTokens: 777,
     });
 
     const effectiveModel = vi.fn(async () => ({ providerName: "openai", modelId: "gpt-4o" }));
@@ -1032,7 +1928,10 @@ describe("daemon session control admission", () => {
         },
       );
       const invocation = new SparkInvocationStore(db).require(submitted.invocationId!);
-      expect(invocation.task).toMatchObject({ model: "openai/gpt-4o" });
+      expect(invocation.task).toMatchObject({
+        model: "openai/gpt-4o",
+        maxOutputTokens: 777,
+      });
       expect(effectiveModel).toHaveBeenCalledTimes(1);
     } finally {
       db.close();
@@ -1050,4 +1949,109 @@ function deferred<T>(): {
     resolve = done;
   });
   return { promise, resolve };
+}
+
+async function createUsageSnapshotHarness(prefix: string) {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  const db = openMemoryDatabase();
+  migrateSparkDaemonDatabase(db);
+  const paths = resolveSparkPaths({
+    app: "daemon",
+    env: { HOME: root },
+    overrides: {
+      dataDir: join(root, "data"),
+      cacheDir: join(root, "cache"),
+      stateDir: join(root, "state"),
+      runtimeDir: join(root, "run"),
+    },
+  });
+  const sessionRegistry = createDaemonSessionRegistry(join(root, ".spark"), {
+    daemonId: "usage-rollup-test",
+    daemonCwd: root,
+  });
+  return {
+    root,
+    db,
+    paths,
+    sessionRegistry,
+    close() {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    },
+  };
+}
+
+async function requestSessionSnapshot(
+  harness: Awaited<ReturnType<typeof createUsageSnapshotHarness>>,
+  sessionId: string,
+): Promise<SparkSessionSnapshotPage> {
+  const response = await executeSparkDaemonSessionControl(
+    {
+      paths: harness.paths,
+      db: harness.db,
+      sessionRegistry: harness.sessionRegistry,
+      actor: "spark-daemon-runtime-ws",
+    },
+    {
+      kind: "session.snapshot.request",
+      scope: "any",
+      sessionId,
+      payload: { sessionId },
+    },
+  );
+  return sparkSessionSnapshotPageSchema.parse(response.result);
+}
+
+function writeAssistantUsageTranscript(
+  transcriptPath: string,
+  sessionId: string,
+  usage: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    totalTokens: number;
+    cost: number;
+  },
+): void {
+  const entries = [
+    {
+      type: "session",
+      version: 4,
+      id: sessionId,
+      timestamp: "2026-08-17T00:00:00.000Z",
+      cwd: "/workspace/demo",
+    },
+    {
+      type: "message",
+      id: `${sessionId}-user`,
+      parentId: null,
+      timestamp: "2026-08-17T00:00:01.000Z",
+      message: { role: "user", content: "prompt" },
+    },
+    {
+      type: "message",
+      id: `${sessionId}-assistant`,
+      parentId: `${sessionId}-user`,
+      timestamp: "2026-08-17T00:00:02.000Z",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "response" }],
+        stopReason: "stop",
+        usage: {
+          input: usage.input,
+          output: usage.output,
+          cacheRead: usage.cacheRead,
+          cacheWrite: usage.cacheWrite,
+          totalTokens: usage.totalTokens,
+          cost: { total: usage.cost },
+        },
+      },
+    },
+  ];
+  writeFileSync(
+    transcriptPath,
+    `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+    "utf8",
+  );
 }

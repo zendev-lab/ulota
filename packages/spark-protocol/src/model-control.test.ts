@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   parseSparkAuthFlow,
+  parseSparkEnabledModelsSetRequest,
   parseSparkModelControlSnapshot,
+  parseSparkModelConnectivityTestResult,
   sparkDefaultModelSetRequestSchema,
+  sparkEnabledModelsSetRequestSchema,
+  sparkUserInitiatedEnabledModelsIntent,
 } from "./model-control.ts";
 import {
-  parseSparkSessionRegistryRecord,
+  parseSparkSessionProjection,
   parseSparkSessionSetModelRequest,
 } from "./session-assignment.ts";
 
@@ -43,12 +47,12 @@ describe("Spark model-control protocol", () => {
         },
       ],
       defaultModel: model,
-      scopedModels: [model],
+      enabledModels: [model],
       session: { sessionId: "sess_demo", model },
     });
 
     expect(snapshot.providers[0]?.auth.reference).toBe("openai-codex");
-    expect(snapshot.scopedModels).toEqual([model]);
+    expect(snapshot.enabledModels).toEqual([model]);
     expect(snapshot.session?.model).toEqual(model);
     expect(snapshot.diagnostics).toEqual([]);
   });
@@ -79,18 +83,86 @@ describe("Spark model-control protocol", () => {
 
   it("uses the same model ref for default and session set requests and records", () => {
     expect(sparkDefaultModelSetRequestSchema.parse({ model })).toEqual({ model });
+    expect(
+      sparkEnabledModelsSetRequestSchema.parse({
+        models: [model],
+        intent: sparkUserInitiatedEnabledModelsIntent("cli"),
+      }),
+    ).toEqual({
+      models: [model],
+      intent: sparkUserInitiatedEnabledModelsIntent("cli"),
+    });
     expect(parseSparkSessionSetModelRequest({ sessionId: "sess_demo", model })).toEqual({
       sessionId: "sess_demo",
       model,
     });
     expect(
-      parseSparkSessionRegistryRecord({
+      parseSparkSessionProjection({
         sessionId: "sess_demo",
-        workspaceId: "ws_demo",
+        scope: { kind: "workspace", workspaceId: "ws_demo" },
+        lifecycle: "open",
+        placement: "active",
+        lifetime: "scoped",
+        activity: "idle",
+        roleBinding: { kind: "none" },
+        lineage: {
+          kind: "child",
+          parentSessionId: "sess_admin_ws_demo",
+          origin: { kind: "session" },
+        },
+        incarnation: 1,
+        visibility: "public",
+        retention: "retain",
+        purpose: "interactive",
+        bindings: [],
         model,
         createdAt: "2026-07-10T06:00:00.000Z",
         updatedAt: "2026-07-10T06:00:00.000Z",
       }).model,
     ).toEqual(model);
   });
+
+  it("fails closed when model.enabled.set has no explicit user-initiated intent", () => {
+    expect(() => parseSparkEnabledModelsSetRequest({ models: [model] })).toThrow(
+      /enabledModels writes require explicit user-initiated intent/u,
+    );
+  });
+
+  it("keeps quick-test results credential-free and reason-coded", () => {
+    expect(
+      parseSparkModelConnectivityTestResult({
+        status: "unreachable",
+        model,
+        latencyMs: 250,
+        checkedAt: "2026-07-10T06:00:01.000Z",
+        reasonCode: "model-not-enabled",
+        providerMessage: "secret upstream detail",
+      }),
+    ).toEqual({
+      status: "unreachable",
+      model,
+      latencyMs: 250,
+      checkedAt: "2026-07-10T06:00:01.000Z",
+      reasonCode: "model-not-enabled",
+    });
+  });
+});
+
+it("round-trips explicit model rules and rejects ambiguous writes", () => {
+  const intent = sparkUserInitiatedEnabledModelsIntent("settings-ui");
+  expect(
+    parseSparkEnabledModelsSetRequest({ models: [], patterns: ["baidu-oneapi/gpt-*"], intent })
+      .patterns,
+  ).toEqual(["baidu-oneapi/gpt-*"]);
+  expect(
+    sparkEnabledModelsSetRequestSchema.safeParse({ models: [model], patterns: ["*"], intent })
+      .success,
+  ).toBe(false);
+  expect(
+    sparkEnabledModelsSetRequestSchema.safeParse({ models: [], patterns: [" "], intent }).success,
+  ).toBe(false);
+  expect(
+    parseSparkModelControlSnapshot({ enabledModelPatterns: ["baidu-oneapi/gpt-*"] })
+      .enabledModelPatterns,
+  ).toEqual(["baidu-oneapi/gpt-*"]);
 });

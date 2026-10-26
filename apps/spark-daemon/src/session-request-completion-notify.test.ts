@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { SparkSessionMailStore } from "@zendev-lab/spark-session";
-import type { SparkSessionRegistryRecord } from "@zendev-lab/spark-protocol";
+import type { SparkSessionProjection } from "@zendev-lab/spark-protocol";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -12,12 +12,14 @@ import {
   reconcileSessionRequestCompletions,
   SESSION_REQUEST_COMPLETION_SOURCE_KIND,
 } from "./session-request-completion-notify.ts";
+import type { DaemonSessionRegistry } from "./session-registry.ts";
 import { SessionRequestCompletionDeliveryStore } from "./store/session-request-completion-deliveries.ts";
 import { SparkInvocationStore } from "./store/invocations.ts";
 import { migrateSparkDaemonDatabase } from "./store/schema.ts";
+import { workspaceSessionRecord } from "../../../test/support/session-fixtures.ts";
 
 describe("session request completion notify", () => {
-  it("submits one durable sender continuation for wait=accepted request completions", async () => {
+  it("submits one durable sender continuation for wake=true request completions", async () => {
     const harness = createHarness();
     const sender = localSession("sess_sender", harness.cwd);
     const target = localSession("sess_target", harness.cwd);
@@ -43,7 +45,7 @@ describe("session request completion notify", () => {
             intent: "work.request",
             fromSessionId: sender.sessionId,
             toSessionId: target.sessionId,
-            notifyOnCompletion: true,
+            wake: true,
           },
         },
       },
@@ -54,10 +56,10 @@ describe("session request completion notify", () => {
         notifySessionRequestCompletion(
           {
             invocationStore: harness.store,
-            sessionRegistry: {
-              get: async (sessionId) => (sessionId === sender.sessionId ? sender : target),
+            sessionRegistry: completionRegistry(
+              async (sessionId) => (sessionId === sender.sessionId ? sender : target),
               recordTurnQueued,
-            },
+            ),
             modelControl,
           },
           {
@@ -99,10 +101,10 @@ describe("session request completion notify", () => {
         notifySessionRequestCompletion(
           {
             invocationStore: harness.store,
-            sessionRegistry: {
-              get: async (sessionId) => (sessionId === sender.sessionId ? sender : target),
+            sessionRegistry: completionRegistry(
+              async (sessionId) => (sessionId === sender.sessionId ? sender : target),
               recordTurnQueued,
-            },
+            ),
           },
           {
             invocation: source,
@@ -120,7 +122,7 @@ describe("session request completion notify", () => {
     }
   });
 
-  it("skips wake when notifyOnCompletion is false", async () => {
+  it("skips wake when wake is false", async () => {
     const harness = createHarness();
     const sender = localSession("sess_sender", harness.cwd);
     const target = localSession("sess_target", harness.cwd);
@@ -137,7 +139,7 @@ describe("session request completion notify", () => {
             kind: "request",
             fromSessionId: sender.sessionId,
             toSessionId: target.sessionId,
-            notifyOnCompletion: false,
+            wake: false,
           },
         },
       },
@@ -148,10 +150,101 @@ describe("session request completion notify", () => {
         notifySessionRequestCompletion(
           {
             invocationStore: harness.store,
-            sessionRegistry: {
-              get: async (sessionId) => (sessionId === sender.sessionId ? sender : target),
-              recordTurnQueued: async () => sender,
-            },
+            sessionRegistry: completionRegistry(async (sessionId) =>
+              sessionId === sender.sessionId ? sender : target,
+            ),
+          },
+          {
+            invocation: source,
+            task: source.task as never,
+            completion: { status: "succeeded", result: { assistantText: "done" } },
+          },
+        ),
+      ).resolves.toMatchObject({ submitted: false, skippedReason: "notify_disabled" });
+      expect(harness.store.listPendingForSession(sender.sessionId)).toHaveLength(0);
+    } finally {
+      harness.close();
+    }
+  });
+
+  it("still wakes in-flight tasks that only persist notifyOnCompletion", async () => {
+    const harness = createHarness();
+    const sender = localSession("sess_sender", harness.cwd);
+    const target = localSession("sess_target", harness.cwd);
+    const source = harness.store.submit({
+      sessionId: target.sessionId,
+      prompt: "legacy request",
+      task: {
+        type: "session.run",
+        sessionId: target.sessionId,
+        prompt: "legacy request",
+        cwd: harness.cwd,
+        messageMetadata: {
+          sessionMail: {
+            messageId: "mail:req-legacy",
+            kind: "request",
+            fromSessionId: sender.sessionId,
+            toSessionId: target.sessionId,
+            notifyOnCompletion: true,
+          },
+        },
+      },
+    });
+
+    try {
+      await expect(
+        notifySessionRequestCompletion(
+          {
+            invocationStore: harness.store,
+            sessionRegistry: completionRegistry(async (sessionId) =>
+              sessionId === sender.sessionId ? sender : target,
+            ),
+          },
+          {
+            invocation: source,
+            task: source.task as never,
+            completion: { status: "succeeded", result: { assistantText: "legacy done" } },
+          },
+        ),
+      ).resolves.toMatchObject({ submitted: true });
+      expect(harness.store.listPendingForSession(sender.sessionId)).toHaveLength(1);
+    } finally {
+      harness.close();
+    }
+  });
+
+  it("lets explicit wake=false win over notifyOnCompletion=true", async () => {
+    const harness = createHarness();
+    const sender = localSession("sess_sender", harness.cwd);
+    const target = localSession("sess_target", harness.cwd);
+    const source = harness.store.submit({
+      sessionId: target.sessionId,
+      prompt: "explicit false",
+      task: {
+        type: "session.run",
+        sessionId: target.sessionId,
+        prompt: "explicit false",
+        messageMetadata: {
+          sessionMail: {
+            messageId: "mail:req-wake-wins",
+            kind: "request",
+            fromSessionId: sender.sessionId,
+            toSessionId: target.sessionId,
+            wake: false,
+            notifyOnCompletion: true,
+          },
+        },
+      },
+    });
+
+    try {
+      await expect(
+        notifySessionRequestCompletion(
+          {
+            invocationStore: harness.store,
+            sessionRegistry: completionRegistry(async (sessionId) =>
+              sessionId === sender.sessionId ? sender : target,
+            ),
           },
           {
             invocation: source,
@@ -183,10 +276,10 @@ describe("session request completion notify", () => {
         notifySessionRequestCompletion(
           {
             invocationStore: harness.store,
-            sessionRegistry: {
-              get: async (sessionId) => (sessionId === sender.sessionId ? sender : target),
+            sessionRegistry: completionRegistry(
+              async (sessionId) => (sessionId === sender.sessionId ? sender : target),
               recordTurnQueued,
-            },
+            ),
             modelControl: {
               effectiveModel: async () => ({ providerName: "provider", modelId: "model" }),
               effectiveThinkingLevel: async () => "low" as const,
@@ -232,11 +325,11 @@ describe("session request completion notify", () => {
       invocationStore: harness.store,
       deliveryStore,
       mailStore,
-      sessionRegistry: {
-        get: async (sessionId: string) =>
+      sessionRegistry: completionRegistry(
+        async (sessionId: string) =>
           sessionId === sender.sessionId ? (senderAvailable ? sender : undefined) : target,
         recordTurnQueued,
-      },
+      ),
     };
 
     try {
@@ -267,7 +360,7 @@ describe("session request completion notify", () => {
     }
   });
 
-  it("retries a persisted wake when turn queue projection fails without resubmitting", async () => {
+  it("retries a persisted wake when its Session admission fence fails", async () => {
     const harness = createHarness();
     const sender = localSession("sess_sender_wake_retry", harness.cwd);
     const target = localSession("sess_target_wake_retry", harness.cwd);
@@ -293,10 +386,7 @@ describe("session request completion notify", () => {
       invocationStore: harness.store,
       deliveryStore,
       mailStore,
-      sessionRegistry: {
-        get: async () => sender,
-        recordTurnQueued,
-      },
+      sessionRegistry: completionRegistry(async () => sender, recordTurnQueued),
     };
 
     try {
@@ -305,7 +395,7 @@ describe("session request completion notify", () => {
         delivered: 0,
         failed: 1,
       });
-      expect(harness.store.listPendingForSession(sender.sessionId)).toHaveLength(1);
+      expect(harness.store.listPendingForSession(sender.sessionId)).toHaveLength(0);
       failWake = false;
       await expect(reconcileSessionRequestCompletions(deps)).resolves.toEqual({
         attempted: 1,
@@ -333,13 +423,13 @@ describe("session request completion notify", () => {
     const deps = {
       invocationStore: harness.store,
       mailStore,
-      sessionRegistry: {
-        get: async () => sender,
-        recordTurnQueued: async () => {
+      sessionRegistry: completionRegistry(
+        async () => sender,
+        async () => {
           senderWakeCount += 1;
           return sender;
         },
-      },
+      ),
     };
 
     try {
@@ -378,13 +468,13 @@ describe("session request completion notify", () => {
           invocationStore: harness.store,
           deliveryStore: restartedStore,
           mailStore,
-          sessionRegistry: {
-            get: async () => sender,
-            recordTurnQueued: async () => {
+          sessionRegistry: completionRegistry(
+            async () => sender,
+            async () => {
               senderWakeCount += 1;
               return sender;
             },
-          },
+          ),
         }),
       ).resolves.toEqual({ attempted: 1, delivered: 1, failed: 0 });
       expect(await mailStore.list(sender.sessionId, { includeAcked: true })).toHaveLength(1);
@@ -408,13 +498,13 @@ describe("session request completion notify", () => {
       invocationStore: harness.store,
       deliveryStore,
       mailStore,
-      sessionRegistry: {
-        get: async () => sender,
-        recordTurnQueued: async () => {
+      sessionRegistry: completionRegistry(
+        async () => sender,
+        async () => {
           senderWakeCount += 1;
           return sender;
         },
-      },
+      ),
     };
 
     try {
@@ -432,6 +522,24 @@ describe("session request completion notify", () => {
     }
   });
 });
+
+function completionRegistry(
+  get: (sessionId: string) => Promise<SparkSessionProjection | undefined>,
+  beforeAdmission?: (sessionId: string) => Promise<unknown>,
+) {
+  return {
+    get,
+    commitInvocationAdmission: async (
+      sessionId: string,
+      admit: Parameters<DaemonSessionRegistry["commitInvocationAdmission"]>[1],
+    ) => {
+      const session = await get(sessionId);
+      if (!session) throw new Error(`unknown test Session: ${sessionId}`);
+      await beforeAdmission?.(sessionId);
+      return admit(session);
+    },
+  };
+}
 
 function completedRequest(
   harness: ReturnType<typeof createHarness>,
@@ -467,20 +575,17 @@ function createHarness() {
   };
 }
 
-function localSession(sessionId: string, cwd: string): SparkSessionRegistryRecord {
-  return {
+function localSession(sessionId: string, cwd: string): SparkSessionProjection {
+  return workspaceSessionRecord({
     sessionId,
-    scope: { kind: "workspace", workspaceId: "workspace-test" },
     workspaceId: "workspace-test",
     cwd,
-    status: "ready",
-    bindings: [],
     createdAt: "2026-07-20T00:00:00.000Z",
     updatedAt: "2026-07-20T00:00:00.000Z",
-  };
+  });
 }
 
-function requestMailTask(fromSessionId: string, toSessionId: string, notifyOnCompletion: boolean) {
+function requestMailTask(fromSessionId: string, toSessionId: string, wake: boolean) {
   return {
     type: "session.run" as const,
     sessionId: toSessionId,
@@ -491,7 +596,7 @@ function requestMailTask(fromSessionId: string, toSessionId: string, notifyOnCom
         kind: "request",
         fromSessionId,
         toSessionId,
-        notifyOnCompletion,
+        wake,
       },
     },
   };

@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it } from "vitest";
 import { createId, runtimeProtocolVersion } from "@zendev-lab/spark-protocol";
-import { migrate, openMemoryDatabase } from "@zendev-lab/spark-hub-db";
+import { migrate, openMemoryDatabase } from "@zendev-lab/spark-hub-storage-sqlite";
 import {
   createWorkspaceWithLease,
   queueCommandForWorkspaceLease,
@@ -135,30 +135,34 @@ describe("runtime WebSocket handling", () => {
     ).run(runtimeId, "install-test", "Test runtime", runtimeProtocolVersion, now, now);
     for (const token of [
       {
-        id: "rttok_access",
+        id: "rtdc_access",
+        kind: "access",
         secret: accessToken,
         scopes: ["runtime:connect"],
         expiresAt: "2999-01-01T00:00:00.000Z",
       },
       {
-        id: "rttok_refresh",
+        id: "rtdc_refresh",
+        kind: "refresh",
         secret: refreshToken,
         scopes: ["runtime:refresh"],
         expiresAt: "2999-01-01T00:00:00.000Z",
       },
       {
-        id: "rttok_expired",
+        id: "rtdc_expired",
+        kind: "access",
         secret: expiredToken,
         scopes: ["runtime:connect"],
         expiresAt: "2000-01-01T00:00:00.000Z",
       },
     ]) {
       db.prepare(
-        `INSERT INTO runtime_tokens
-          (id, runtime_id, token_hash, label, scopes_json, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO daemon_credentials
+          (id, family, kind, runtime_id, token_hash, label, scopes_json, created_at, expires_at)
+         VALUES (?, 'hub-daemon', ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         token.id,
+        token.kind,
         runtimeId,
         hashSecret(token.secret),
         token.id,
@@ -168,9 +172,14 @@ describe("runtime WebSocket handling", () => {
       );
     }
 
-    expect(authenticateRuntimeToken(db, runtimeId, `Bearer ${accessToken}`)).toBe("rttok_access");
+    expect(authenticateRuntimeToken(db, runtimeId, `Bearer ${accessToken}`)).toBe("rtdc_access");
+    // A refresh credential is a renewal vehicle, not an uplink credential.
     expect(authenticateRuntimeToken(db, runtimeId, `Bearer ${refreshToken}`)).toBeNull();
     expect(authenticateRuntimeToken(db, runtimeId, `Bearer ${expiredToken}`)).toBeNull();
+    // A daemon-user token from the daemon-owned family never attaches an uplink.
+    expect(
+      authenticateRuntimeToken(db, runtimeId, "Bearer sdu_00000000000000000000000000000000"),
+    ).toBeNull();
     db.close();
   });
 
@@ -1514,6 +1523,11 @@ describe("runtime WebSocket handling", () => {
         projects: [{ projectId, title: "MVP", status: "running" }],
         unresolvedInboxCount: 1,
         activeInvocationCount: 1,
+        administratorProvisioning: {
+          state: "failed",
+          error: "registry unavailable",
+          retryCount: 2,
+        },
         latestArtifactIds: [],
       },
     });
@@ -1629,9 +1643,26 @@ describe("runtime WebSocket handling", () => {
 
     const binding = db
       .prepare(
-        "SELECT display_name AS displayName, last_snapshot_at AS lastSnapshotAt FROM runtime_workspace_bindings WHERE id = ?",
+        `SELECT display_name AS displayName, last_snapshot_at AS lastSnapshotAt,
+                administrator_provisioning_state AS provisioningState,
+                administrator_provisioning_error AS provisioningError,
+                administrator_provisioning_retry_count AS provisioningRetryCount
+         FROM runtime_workspace_bindings WHERE id = ?`,
       )
-      .get(workspaceBindingId) as { displayName: string; lastSnapshotAt: string | null };
+      .get(workspaceBindingId) as {
+      displayName: string;
+      lastSnapshotAt: string | null;
+      provisioningState: string;
+      provisioningError: string | null;
+      provisioningRetryCount: number;
+    };
+    const workspaceProvisioning = db
+      .prepare(
+        `SELECT provisioning_state AS state, provisioning_error AS error,
+                provisioning_retry_count AS retryCount
+         FROM workspaces WHERE id = ?`,
+      )
+      .get(workspace.id);
     const inboxCount = db.prepare("SELECT COUNT(*) AS count FROM inbox_items").get() as {
       count: number;
     };
@@ -1647,6 +1678,16 @@ describe("runtime WebSocket handling", () => {
 
     expect(binding.displayName).toBe("local-default");
     expect(binding.lastSnapshotAt).not.toBeNull();
+    expect(binding).toMatchObject({
+      provisioningState: "failed",
+      provisioningError: "registry unavailable",
+      provisioningRetryCount: 2,
+    });
+    expect(workspaceProvisioning).toEqual({
+      state: "failed",
+      error: "registry unavailable",
+      retryCount: 2,
+    });
     expect(inboxCount.count).toBe(1);
     expect(taskCount.count).toBe(1);
     expect(logCount.count).toBe(1);

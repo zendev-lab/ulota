@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveSparkPaths } from "@zendev-lab/spark-system";
+import { resolveSparkPaths } from "@zendev-lab/spark-platform-node";
 import { SparkDaemonControlError } from "./control-error.ts";
 import {
   desiredUplinkServerUrls,
@@ -15,7 +15,12 @@ import {
 } from "./uplink.js";
 import { upsertSparkDaemonServerProfile } from "./server-profiles.js";
 import { openSparkDaemonDatabase } from "./store/schema.js";
-import { attachWorkspaceClient, getWorkspaceById, registerWorkspace } from "./store/workspaces.js";
+import {
+  attachWorkspaceClient,
+  getWorkspaceById,
+  registerWorkspace,
+  stopWorkspace,
+} from "./store/workspaces.js";
 
 const roots: string[] = [];
 
@@ -153,7 +158,7 @@ describe("daemon uplink park/prefer", () => {
       runtimeId: "rt_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       runtimeToken: "spark_rt_access_00000000000000000000000000000000",
     });
-    registerWorkspace(db, {
+    const workspace = registerWorkspace(db, {
       serverUrl,
       localPath: workspacePath,
       localWorkspaceKey: "checkout",
@@ -171,6 +176,41 @@ describe("daemon uplink park/prefer", () => {
       desired: false,
     });
     await unparkSparkDaemonUplink(paths, serverUrl);
+    expect([...desiredUplinkServerUrls(paths, db)]).toEqual([serverUrl]);
+    stopWorkspace(db, { id: workspace.id });
+    expect([...desiredUplinkServerUrls(paths, db)]).toEqual([serverUrl]);
+    db.close();
+  });
+
+  it("schedules Hub uplink from daemon login even when workspaces are local-only", async () => {
+    const root = mkdtempSync(join(tmpdir(), "spark-daemon-uplink-local-"));
+    roots.push(root);
+    const paths = resolveSparkPaths({
+      app: "daemon",
+      env: { HOME: root },
+      overrides: {
+        dataDir: join(root, "data"),
+        cacheDir: join(root, "cache"),
+        stateDir: join(root, "state"),
+        runtimeDir: join(root, "run"),
+        configFile: join(root, "config", "daemon.toml"),
+      },
+    });
+    const db = openSparkDaemonDatabase(paths);
+    const workspacePath = join(root, "checkout");
+    mkdirSync(workspacePath, { recursive: true });
+    const serverUrl = "http://127.0.0.1:5173/";
+    await upsertSparkDaemonServerProfile(paths, {
+      serverUrl,
+      runtimeId: "rt_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      runtimeToken: "spark_rt_access_00000000000000000000000000000000",
+    });
+    registerWorkspace(db, {
+      localPath: workspacePath,
+      localWorkspaceKey: "checkout",
+      displayName: "checkout",
+    });
+
     expect([...desiredUplinkServerUrls(paths, db)]).toEqual([serverUrl]);
     db.close();
   });

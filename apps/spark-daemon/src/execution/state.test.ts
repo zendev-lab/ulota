@@ -3,11 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { migrateSparkDaemonDatabase } from "../store/schema.ts";
 import { SparkInvocationStore } from "../store/invocations.ts";
-import {
-  EXECUTION_ATTEMPT_ACCEPTED_CRASH_DELAYS_MS,
-  ExecutionAttemptStateError,
-  ExecutionAttemptStore,
-} from "./state.ts";
+import { EXECUTION_ATTEMPT_ACCEPTED_CRASH_DELAYS_MS, ExecutionAttemptStore } from "./state.ts";
 
 const databases: DatabaseSync[] = [];
 
@@ -180,6 +176,60 @@ describe("daemon-owned execution attempt state", () => {
     );
   });
 
+  it("rolls back both durable event rows when invocation event persistence fails", () => {
+    const invocationId = "inv_atomic_event_rollback";
+    const { attempts, db } = harness(invocationId);
+    const invocations = new SparkInvocationStore(db);
+    const current = attempts.create(invocationId, 1, "corr_atomic_rollback", at(0));
+    attempts.accept(current, at(1));
+    attempts.start(current, at(2));
+
+    expect(() =>
+      attempts.recordEventOutput(
+        current,
+        1,
+        { type: "daemon.view_event" },
+        () => {
+          invocations.appendEvent(invocationId, "daemon.view_event", { text: "tentative" }, at(3));
+          throw new Error("forced invocation append failure");
+        },
+        at(3),
+      ),
+    ).toThrow("forced invocation append failure");
+
+    expect(attempts.events(invocationId)).toEqual([]);
+    expect(invocations.eventPage(invocationId).events).toEqual([]);
+    expect(invocationEventCursor(db, invocationId)).toBe(0);
+    expect(db.isTransaction).toBe(false);
+  });
+
+  it("participates in an existing transaction without committing its owner", () => {
+    const invocationId = "inv_atomic_event_nested";
+    const { attempts, db } = harness(invocationId);
+    const invocations = new SparkInvocationStore(db);
+    const current = attempts.create(invocationId, 1, "corr_atomic_nested", at(0));
+    attempts.accept(current, at(1));
+    attempts.start(current, at(2));
+
+    db.exec("BEGIN IMMEDIATE");
+    const persisted = attempts.recordEventOutput(
+      current,
+      1,
+      { type: "daemon.view_event" },
+      () => invocations.appendEvent(invocationId, "daemon.view_event", { text: "nested" }, at(3)),
+      at(3),
+    );
+    expect(persisted).toMatchObject({ invocationId, sequence: 1, kind: "daemon.view_event" });
+    expect(db.isTransaction).toBe(true);
+    expect(attempts.events(invocationId)).toHaveLength(1);
+    expect(invocations.eventPage(invocationId).events).toHaveLength(1);
+
+    db.exec("ROLLBACK");
+    expect(attempts.events(invocationId)).toEqual([]);
+    expect(invocations.eventPage(invocationId).events).toEqual([]);
+    expect(invocationEventCursor(db, invocationId)).toBe(0);
+  });
+
   it("fails closed when a durable event payload is corrupt", () => {
     const { attempts, db } = harness("inv_corrupt");
     const current = attempts.create("inv_corrupt", 1, "corr_corrupt", at(0));
@@ -189,6 +239,26 @@ describe("daemon-owned execution attempt state", () => {
     expect(() => attempts.events("inv_corrupt")).toThrowError(
       expect.objectContaining({ code: "execution_attempt_corrupt_state" }),
     );
+  });
+
+  it("lists every live attempt instead of truncating recovery at one thousand rows", () => {
+    const db = database();
+    migrateSparkDaemonDatabase(db);
+    const invocations = new SparkInvocationStore(db);
+    const attempts = new ExecutionAttemptStore(db);
+    for (let index = 0; index < 1_001; index += 1) {
+      const invocationId = `inv_live_${String(index).padStart(4, "0")}`;
+      invocations.submit({
+        invocationId,
+        sessionId: `session-live-${index}`,
+        prompt: "fixture",
+        task: { type: "fixture" },
+        now: at(index),
+      });
+      attempts.create(invocationId, 1, `corr_live_${index}`, at(index));
+    }
+
+    expect(attempts.listNonTerminalAttempts()).toHaveLength(1_001);
   });
 
   it("migrates execution attempt tables idempotently", () => {
@@ -243,5 +313,12 @@ function requiredString(value: string | undefined): string {
   if (!value) throw new Error("expected string");
   return value;
 }
-
-expect(ExecutionAttemptStateError).toBeDefined();
+function invocationEventCursor(db: DatabaseSync, invocationId: string): number {
+  return Number(
+    (
+      db.prepare("SELECT event_cursor FROM invocations WHERE id = ?").get(invocationId) as {
+        event_cursor: number;
+      }
+    ).event_cursor,
+  );
+}

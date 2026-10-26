@@ -1,11 +1,18 @@
-// Root barrel remains only for source compatibility. New production imports
-// must use the domain/daemon/runtime/interaction/presentation subpaths.
+// Compatibility entry point. Production consumers use the contract-domain subpaths.
 export * from "./protocol.ts";
+export * from "./artifact-control.ts";
+export * from "./agent-catalog.ts";
+export * from "./session-activity.ts";
+export * from "./session-live-cursor.ts";
+export * from "./session-projection.ts";
 export * from "./agent-tracing.ts";
 export * from "./conversation.ts";
 export * from "./local-rpc-orpc-contract.ts";
 export * from "./task-claim.ts";
 export * from "./memory-approval.ts";
-export * from "./repro-formal-evidence.ts";
+export * from "./repro.ts";
+export * from "./repro-lane.ts";
 export * from "./a2ui.ts";
 export * from "./role-session.ts";
+export * from "./runtime-v1/diagnostics.ts";
+export * from "./web-workbench-control.ts";

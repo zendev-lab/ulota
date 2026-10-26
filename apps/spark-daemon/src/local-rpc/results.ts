@@ -1,7 +1,11 @@
 import { sparkTurnSubmitResultSchema } from "@zendev-lab/spark-protocol/daemon";
 import { SPARK_PROTOCOL_VERSION } from "@zendev-lab/spark-protocol/domain";
 import type { DaemonChannelIngressStatus } from "../channels/ingress.ts";
-import type { SparkDaemonLifecycleSnapshot } from "../core/index.ts";
+import type {
+  SparkDaemonDrainPauseState,
+  SparkDaemonDrainWork,
+  SparkDaemonLifecycleSnapshot,
+} from "../core/index.ts";
 import type { SparkChannelDeliverySummary } from "../store/channel-deliveries.ts";
 import { SparkDaemonControlError } from "../control-error.ts";
 import { RegistrationGrantRefusedError } from "../registration.js";
@@ -72,12 +76,31 @@ export function daemonStatus(value: unknown): LocalDaemonStatusResult {
     servers: value.servers.map(daemonServerSummary),
     invocations: invocationCountsResult(value.invocations),
     invocationHealth: invocationHealthResult(value.invocationHealth),
+    ...(value.execution !== undefined ? { execution: daemonExecutionStatus(value.execution) } : {}),
     channelDeliveries: channelDeliverySummary(value.channelDeliveries),
     lifecycle: parseSparkDaemonLifecycleSnapshot(value.lifecycle),
     ...(typeof value.buildFingerprint === "string"
       ? { buildFingerprint: value.buildFingerprint }
       : {}),
     observedAt: typeof value.observedAt === "string" ? value.observedAt : new Date().toISOString(),
+  };
+}
+
+function daemonExecutionStatus(value: unknown): NonNullable<LocalDaemonStatusResult["execution"]> {
+  if (
+    !isRecord(value) ||
+    value.backend !== "in_process" ||
+    !Number.isSafeInteger(value.rootConcurrency) ||
+    Number(value.rootConcurrency) < 1 ||
+    Number(value.rootConcurrency) > 64 ||
+    value.questionOverflow !== 1
+  ) {
+    throw new Error("Invalid local RPC daemon execution status.");
+  }
+  return {
+    backend: "in_process",
+    rootConcurrency: Number(value.rootConcurrency),
+    questionOverflow: 1,
   };
 }
 
@@ -193,7 +216,7 @@ export function daemonDrainProgress(value: unknown): SparkDaemonLifecycleSnapsho
   ) {
     throw new Error("Invalid local RPC daemon drain progress.");
   }
-  const work = (entry: unknown) => {
+  const work = (entry: unknown): SparkDaemonDrainWork => {
     if (
       !isRecord(entry) ||
       typeof entry.invocationId !== "string" ||
@@ -203,15 +226,23 @@ export function daemonDrainProgress(value: unknown): SparkDaemonLifecycleSnapsho
       typeof entry.startedAt !== "string" ||
       entry.startedAt.length === 0 ||
       (entry.sessionId !== undefined &&
-        (typeof entry.sessionId !== "string" || entry.sessionId.length === 0))
+        (typeof entry.sessionId !== "string" || entry.sessionId.length === 0)) ||
+      (entry.pauseState !== undefined &&
+        entry.pauseState !== "busy" &&
+        entry.pauseState !== "human-wait")
     ) {
       throw new Error("Invalid local RPC daemon drain work item.");
     }
+    const pauseState: SparkDaemonDrainPauseState | undefined =
+      entry.pauseState === "busy" || entry.pauseState === "human-wait"
+        ? entry.pauseState
+        : undefined;
     return {
       invocationId: entry.invocationId,
       kind: entry.kind,
       startedAt: entry.startedAt,
       ...(typeof entry.sessionId === "string" ? { sessionId: entry.sessionId } : {}),
+      ...(pauseState ? { pauseState } : {}),
     };
   };
   return {
@@ -230,7 +261,6 @@ export function channelIngressStatus(value: unknown): DaemonChannelIngressStatus
     value.plane !== "daemon" ||
     value.resource !== "channel" ||
     value.available !== true ||
-    typeof value.workspaceId !== "string" ||
     typeof value.configPath !== "string" ||
     typeof value.configured !== "boolean" ||
     typeof value.ingressEnabled !== "boolean" ||
@@ -244,7 +274,6 @@ export function channelIngressStatus(value: unknown): DaemonChannelIngressStatus
   return {
     plane: "daemon",
     resource: "channel",
-    workspaceId: value.workspaceId,
     configPath: value.configPath,
     available: true,
     configured: value.configured,
@@ -437,9 +466,7 @@ export function sparkDaemonWorkspace(value: unknown): SparkDaemonWorkspace {
   const hubBindingState =
     value.hubBindingState === "bound" || value.hubBindingState === "unbound"
       ? value.hubBindingState
-      : value.cockpitBindingState === "bound" || value.cockpitBindingState === "unbound"
-        ? value.cockpitBindingState
-        : undefined;
+      : undefined;
   const workspace: SparkDaemonWorkspace = {
     id: value.id,
     ...(typeof value.serverWorkspaceId === "string"
@@ -495,20 +522,6 @@ export function sparkDaemonWorkspace(value: unknown): SparkDaemonWorkspace {
       : {}),
     ...(typeof value.sessionCount === "number" ? { sessionCount: value.sessionCount } : {}),
     ...(typeof value.lastSessionAt === "string" ? { lastSessionAt: value.lastSessionAt } : {}),
-    ...(isRecord(value.workspaceAuthorization) &&
-    typeof value.workspaceAuthorization.workspaceId === "string" &&
-    typeof value.workspaceAuthorization.workspaceSlug === "string" &&
-    typeof value.workspaceAuthorization.oneTimeToken === "string" &&
-    typeof value.workspaceAuthorization.expiresAt === "string"
-      ? {
-          workspaceAuthorization: {
-            workspaceId: value.workspaceAuthorization.workspaceId,
-            workspaceSlug: value.workspaceAuthorization.workspaceSlug,
-            oneTimeToken: value.workspaceAuthorization.oneTimeToken,
-            expiresAt: value.workspaceAuthorization.expiresAt,
-          },
-        }
-      : {}),
     ...(Array.isArray(value.recentSessions)
       ? { recentSessions: value.recentSessions.map(sparkDaemonWorkspaceRecentSession) }
       : {}),

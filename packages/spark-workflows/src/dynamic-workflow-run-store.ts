@@ -4,13 +4,15 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 
+import { newRef, nowIso, type RunRef } from "@zendev-lab/spark-invocation";
 import {
-  newRef,
-  nowIso,
   readJsonFileOptional,
-  type RunRef,
   writeJsonFileAtomic,
-} from "@zendev-lab/spark-core";
+} from "@zendev-lab/spark-platform-node/json-files";
+import {
+  sparkWorkspaceStatePath,
+  type SparkStateRootContext,
+} from "@zendev-lab/spark-platform-node/paths";
 import { parseWorkflowScript } from "./metadata.ts";
 import type {
   WorkflowAgentTelemetry,
@@ -71,6 +73,12 @@ export interface SparkDynamicWorkflowRunSavedWorkflow {
   scope?: SparkDynamicWorkflowSaveScope;
 }
 
+export interface SparkDynamicWorkflowApprovedRoleBinding {
+  selector?: string;
+  roleRef: string;
+  roleRevision: string;
+}
+
 export interface SparkDynamicWorkflowRunApproval {
   status: "approved";
   method: "dependency" | "reviewer" | "ui";
@@ -95,6 +103,8 @@ export interface SparkDynamicWorkflowRunApproval {
     };
     tools: string[];
     roles: string[];
+    /** Exact selector resolutions frozen into this approval and run record. */
+    roleBindings?: SparkDynamicWorkflowApprovedRoleBinding[];
     isolation: string[];
     base?: SparkDynamicWorkflowRunBaseMetadata;
   };
@@ -489,13 +499,16 @@ export class SparkDynamicWorkflowRunStore {
   }
 }
 
-export function sparkDynamicWorkflowRunStorePath(cwd: string): string {
-  return join(cwd, ".spark", "dynamic-workflow-runs.json");
+export function sparkDynamicWorkflowRunStorePath(cwd: string, ctx?: SparkStateRootContext): string {
+  return sparkWorkspaceStatePath(cwd, ["dynamic-workflow-runs.json"], ctx);
 }
 
 /** Legacy v1 import helper. Prefer defaultSparkDynamicWorkflowEventStore for active code. */
-export function defaultSparkDynamicWorkflowRunStore(cwd: string): SparkDynamicWorkflowRunStore {
-  return new SparkDynamicWorkflowRunStore(sparkDynamicWorkflowRunStorePath(cwd));
+export function defaultSparkDynamicWorkflowRunStore(
+  cwd: string,
+  ctx?: SparkStateRootContext,
+): SparkDynamicWorkflowRunStore {
+  return new SparkDynamicWorkflowRunStore(sparkDynamicWorkflowRunStorePath(cwd, ctx));
 }
 
 export function hashWorkflowScript(script: string): string {
@@ -679,12 +692,25 @@ function normalizeWorkflowApproval(value: unknown): SparkDynamicWorkflowRunAppro
         : { stageCount: 0, phaseCount: 0, agentCallSites: 0, timeoutMs: [] },
       tools: stringArray(summary.tools),
       roles: stringArray(summary.roles),
+      roleBindings: normalizeApprovedRoleBindings(summary.roleBindings),
       isolation: stringArray(summary.isolation),
       ...(isRecord(summary.base)
         ? { base: summary.base as unknown as SparkDynamicWorkflowRunBaseMetadata }
         : {}),
     },
   };
+}
+
+function normalizeApprovedRoleBindings(value: unknown): SparkDynamicWorkflowApprovedRoleBinding[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    const roleRef = typeof entry.roleRef === "string" ? entry.roleRef.trim() : "";
+    const roleRevision = typeof entry.roleRevision === "string" ? entry.roleRevision.trim() : "";
+    const selector = typeof entry.selector === "string" ? entry.selector.trim() : "";
+    if (!roleRef || !roleRevision) return [];
+    return [{ ...(selector ? { selector } : {}), roleRef, roleRevision }];
+  });
 }
 
 function normalizeAgentTelemetryArray(value: unknown): SparkDynamicWorkflowAgentTelemetry[] {

@@ -1,10 +1,33 @@
 import { type ContractRouterClient, type ErrorMap, oc } from "@orpc/contract";
 import { z } from "zod";
 import {
+  sparkArtifactListRequestSchema,
+  sparkArtifactListResultSchema,
+  sparkArtifactReadRequestSchema,
+  sparkArtifactReadResultSchema,
+} from "./artifact-control.ts";
+import {
+  sparkRoleCreateRequestSchema,
+  sparkRoleCreateResultSchema,
+  sparkRoleListRequestSchema,
+  sparkRoleListResultSchema,
+  sparkRoleModelDeleteRequestSchema,
+  sparkRoleModelDeleteResultSchema,
+  sparkRoleModelGetRequestSchema,
+  sparkRoleModelGetResultSchema,
+  sparkRoleModelListRequestSchema,
+  sparkRoleModelListResultSchema,
+  sparkRoleModelSetRequestSchema,
+  sparkRoleModelSetResultSchema,
+  sparkSkillListRequestSchema,
+  sparkSkillListResultSchema,
+} from "./agent-catalog.ts";
+import {
   sparkDirectAnswerProvenanceSchema,
   sparkEvidenceAnswerEventSchema,
   sparkEvidenceRequestBindingSchema,
   sparkHumanInteractionDeliveryOutcomeSchema,
+  sparkHumanWaitRespondentSchema,
 } from "./human-interaction.ts";
 import {
   localRpcMethodToSparkCommandKind,
@@ -13,7 +36,6 @@ import {
 } from "./command-events.ts";
 import {
   sparkLoopListResultSchema,
-  sparkLoopControlRequestSchema,
   sparkLoopMutationRequestSchema,
   sparkLoopMutationResultSchema,
   sparkLoopScheduleRequestSchema,
@@ -55,11 +77,11 @@ import {
   sparkAuthImportReportSchema,
   sparkAuthFlowSchema,
   sparkDefaultModelSetRequestSchema,
+  sparkEnabledModelsSetRequestSchema,
   sparkModelControlSnapshotSchema,
   sparkPiAuthImportRequestSchema,
 } from "./model-control.ts";
 import { isoDateTimeSchema, prefixedIdSchema } from "./refs.ts";
-import { sparkSessionModeResultSchema, sparkSessionSetModeRequestSchema } from "./session-mode.ts";
 import {
   executorClientProjectionSchema,
   runtimeWorkspaceBindingStatusSchema,
@@ -68,15 +90,24 @@ import {
   workspaceClientProjectionSchema,
   workspaceClientStatusSchema,
 } from "./runtime-v1/messages.ts";
-import { workspaceBrowserAuthorizationSchema } from "./runtime-v1/registration.ts";
 import {
   sparkAssignmentSchema,
   sparkSessionArchiveRequestSchema,
   sparkSessionBindRequestSchema,
+  sparkSessionCloseRequestSchema,
+  sparkSessionCompactRequestSchema,
   sparkSessionCreateRequestSchema,
+  sparkSessionForkRequestSchema,
   sparkSessionGetRequestSchema,
   sparkSessionListRequestSchema,
-  sparkSessionRegistryRecordSchema,
+  sparkSessionMediaReadRequestSchema,
+  sparkSessionMediaReadResultSchema,
+  sparkSessionPromptHistoryRequestSchema,
+  sparkSessionRetryTargetRequestSchema,
+  sparkSessionRetryTargetSchema,
+  sparkSessionPeerProjectionSchema,
+  sparkSessionProjectionSchema,
+  sparkSessionSpawnRequestSchema,
   sparkSessionSetModelRequestSchema,
   sparkSessionSetThinkingRequestSchema,
   sparkSessionSnapshotRequestSchema,
@@ -110,23 +141,36 @@ import {
   sparkTaskClaimReleaseRequestSchema,
 } from "./task-claim.ts";
 import {
-  sparkLegacyTokenUsageBackfillRequestSchema,
-  sparkLegacyTokenUsageBackfillResultSchema,
   sparkTokenUsageAggregateSchema,
-  sparkTokenUsageByPersistenceSchema,
-  sparkTokenUsagePersistenceRequestSchema,
   sparkTokenUsageSummaryRequestSchema,
 } from "./token-usage.ts";
 import {
-  sparkReproFormalEvidenceRecordRequestSchema,
-  sparkReproFormalEvidenceRecordResultSchema,
-} from "./repro-formal-evidence.ts";
-import { sparkSessionViewSchema } from "./protocol.ts";
+  sparkReproMutationResultSchema,
+  sparkReproStartRequestSchema,
+  sparkReproStatusRequestSchema,
+  sparkReproStatusResultSchema,
+  sparkReproStopRequestSchema,
+} from "./repro.ts";
+import {
+  sparkSessionPromptHistorySchema,
+  sparkSessionSnapshotPageSchema,
+  sparkSessionViewSchema,
+} from "./protocol.ts";
 import { SPARK_PROTOCOL_VERSION } from "./version.ts";
 import {
   workspaceDelegationExecuteRequestSchema,
   workspaceDelegationExecuteResultSchema,
 } from "./workspace-delegation.ts";
+import {
+  sparkGlobalSearchRequestSchema,
+  sparkGlobalSearchResultSchema,
+  sparkSessionExportRequestSchema,
+  sparkSessionExportResultSchema,
+  sparkSessionSearchRequestSchema,
+  sparkSessionSearchResultSchema,
+  sparkWorkspaceDirectoryListRequestSchema,
+  sparkWorkspaceDirectoryListResultSchema,
+} from "./web-workbench-control.ts";
 
 export type SparkLocalRpcMethod = keyof typeof localRpcMethodToSparkCommandKind;
 /** @deprecated Prefer {@link SparkLocalRpcMethod}. */
@@ -157,7 +201,7 @@ export const sparkLocalRpcReadinessOrpcErrors = {
 
 export const sparkLocalRpcDelegationOrpcErrors = {
   ...sparkLocalRpcReadinessOrpcErrors,
-  workspace_main_session_required: { status: 403 },
+  workspace_administrator_session_required: { status: 403 },
   delegation_action_invalid: { status: 422 },
   delegation_not_found: { status: 404 },
   delegation_state_conflict: { status: 409 },
@@ -180,7 +224,6 @@ export const sparkLocalRpcSessionOrpcErrors = {
   invalid_registry: { status: 500 },
   invalid_scope: { status: 422 },
   invalid_session_path: { status: 422 },
-  invalid_session_relation: { status: 422 },
   invalid_session_role: { status: 422 },
   invalid_session_tag: { status: 422 },
   invalid_session_snapshot: { status: 500 },
@@ -196,15 +239,22 @@ export const sparkLocalRpcSessionOrpcErrors = {
   session_mail_not_notification: { status: 422 },
   session_mail_not_user_visible: { status: 422 },
   session_mail_origin_binding_required: { status: 422 },
+  session_mail_queue_full: { status: 429 },
   session_mail_self_target: { status: 422 },
   session_mail_store_unavailable: { status: 503 },
+  session_mail_target_active: { status: 409 },
   session_mail_target_archived: { status: 409 },
   session_mail_target_not_local: { status: 422 },
   session_mail_workspace_scope_mismatch: { status: 403 },
   session_media_invalid: { status: 422 },
   session_media_not_found: { status: 404 },
+  invalid_session_name: { status: 422 },
+  session_closed: { status: 409 },
+  session_closing: { status: 409 },
   session_not_found: { status: 404 },
   session_owner_invalid: { status: 409 },
+  session_owner_not_found: { status: 404 },
+  session_owner_scope_mismatch: { status: 409 },
   session_registry_conflict: { status: 409 },
   session_registry_unavailable: { status: 503 },
   session_restore_forbidden: { status: 403 },
@@ -213,10 +263,11 @@ export const sparkLocalRpcSessionOrpcErrors = {
   session_snapshot_mismatch: { status: 409 },
   session_storage_unavailable: { status: 503 },
   session_transcript_cas_failed: { status: 409 },
+  session_transcript_changed: { status: 409 },
   session_transcript_conflict: { status: 409 },
   side_thread_config_empty: { status: 422 },
   workspace_cwd_unavailable: { status: 422 },
-  workspace_main_session_mutation_forbidden: { status: 403 },
+  workspace_administrator_session_mutation_forbidden: { status: 403 },
   ...sparkLocalRpcSideThreadOrpcErrors,
 } as const satisfies Record<SparkSessionRegistryErrorCode, { status: number }>;
 
@@ -261,10 +312,6 @@ export const sparkLocalRpcLoopOrpcErrors = {
   loop_not_found: { status: 404 },
   loop_schedule_invalid: { status: 422 },
   loop_generation_conflict: { status: 409 },
-  workbench_binding_not_found: { status: 404 },
-  workbench_action_stale: { status: 409 },
-  workbench_action_untrusted: { status: 403 },
-  workbench_action_conflict: { status: 409 },
 } as const satisfies Record<SparkLoopRpcErrorCode, SparkLocalRpcErrorSpec>;
 
 export const sparkLocalRpcInvocationOrpcErrors = {
@@ -280,7 +327,8 @@ export const sparkLocalRpcModelOrpcErrors = {
   model_control_unavailable: { status: 503 },
   role_model_type_unconfigured: { status: 422 },
   model_not_found: { status: 404 },
-  model_out_of_scope: { status: 422 },
+  model_not_enabled: { status: 422 },
+  enabled_models_intent_required: { status: 403 },
   model_unavailable: { status: 422 },
   provider_not_found: { status: 404 },
   provider_auth_method_unsupported: { status: 422 },
@@ -289,6 +337,13 @@ export const sparkLocalRpcModelOrpcErrors = {
   provider_oauth_prompt_conflict: { status: 409 },
   provider_oauth_response_invalid: { status: 422 },
 } as const satisfies Record<SparkModelRpcErrorCode, SparkLocalRpcErrorSpec>;
+
+export const sparkLocalRpcRoleModelOrpcErrors = {
+  model_control_unavailable: sparkLocalRpcModelOrpcErrors.model_control_unavailable,
+  role_not_found: { status: 404 },
+  model_not_found: sparkLocalRpcModelOrpcErrors.model_not_found,
+  model_unavailable: sparkLocalRpcModelOrpcErrors.model_unavailable,
+} as const;
 
 export const sparkLocalRpcTaskClaimOrpcErrors = {
   task_claim_lease_invalid: { status: 403 },
@@ -340,9 +395,20 @@ export const sparkLocalRpcWorkspaceOrpcErrors = {
   workspace_transfer_not_found: { status: 404 },
 } as const satisfies Record<SparkWorkspaceRpcErrorCode, SparkLocalRpcErrorSpec>;
 
+const sparkLocalRpcWorkspaceRoleModelSetOrpcErrors = {
+  ...sparkLocalRpcWorkspaceOrpcErrors,
+  ...sparkLocalRpcRoleModelOrpcErrors,
+} as const;
+
+const sparkLocalRpcWorkspaceRoleModelDeleteOrpcErrors = {
+  ...sparkLocalRpcWorkspaceOrpcErrors,
+  role_not_found: sparkLocalRpcRoleModelOrpcErrors.role_not_found,
+} as const;
+
 export const sparkLocalRpcHumanOrpcErrors = {
   human_interaction_not_found: { status: 404 },
   human_interaction_ambiguous: { status: 409 },
+  human_interaction_forbidden: { status: 403 },
   human_wait_registry_unavailable: { status: 503 },
   human_interaction_responder_unavailable: { status: 503 },
 } as const satisfies Record<SparkHumanRpcErrorCode, SparkLocalRpcErrorSpec>;
@@ -356,6 +422,7 @@ export const sparkLocalRpcCommonOrpcErrors = {
   ...sparkLocalRpcLoopOrpcErrors,
   ...sparkLocalRpcInvocationOrpcErrors,
   ...sparkLocalRpcModelOrpcErrors,
+  ...sparkLocalRpcRoleModelOrpcErrors,
   ...sparkLocalRpcUplinkOrpcErrors,
   ...sparkLocalRpcWorkspaceOrpcErrors,
   ...sparkLocalRpcTaskClaimOrpcErrors,
@@ -396,6 +463,18 @@ const sparkLocalRpcSessionSnapshotOrpcErrors = {
   session_storage_unavailable: sparkLocalRpcSessionOrpcErrors.session_storage_unavailable,
 } as const;
 
+const sparkLocalRpcSessionExportOrpcErrors = {
+  ...sparkLocalRpcSessionSnapshotOrpcErrors,
+  session_transcript_changed: sparkLocalRpcSessionOrpcErrors.session_transcript_changed,
+} as const;
+
+const sparkLocalRpcSessionPromptHistoryOrpcErrors = {
+  ...sparkLocalRpcSessionGetOrpcErrors,
+  invalid_session_snapshot: sparkLocalRpcSessionOrpcErrors.invalid_session_snapshot,
+  session_snapshot_mismatch: sparkLocalRpcSessionOrpcErrors.session_snapshot_mismatch,
+  session_storage_unavailable: sparkLocalRpcSessionOrpcErrors.session_storage_unavailable,
+} as const;
+
 const sparkLocalRpcSessionCreateOrpcErrors = {
   ...sparkLocalRpcSessionRegistryBaseOrpcErrors,
   create_required: sparkLocalRpcSessionOrpcErrors.create_required,
@@ -407,6 +486,23 @@ const sparkLocalRpcSessionCreateOrpcErrors = {
   session_exists: sparkLocalRpcSessionOrpcErrors.session_exists,
   session_local_path_forbidden: sparkLocalRpcSessionOrpcErrors.session_local_path_forbidden,
   session_scope_mismatch: sparkLocalRpcSessionOrpcErrors.session_scope_mismatch,
+  workspace_cwd_unavailable: sparkLocalRpcSessionOrpcErrors.workspace_cwd_unavailable,
+} as const;
+
+const sparkLocalRpcManagedChildSessionOrpcErrors = {
+  ...sparkLocalRpcSessionRegistryBaseOrpcErrors,
+  invalid_scope: sparkLocalRpcSessionOrpcErrors.invalid_scope,
+  invalid_session_role: sparkLocalRpcSessionOrpcErrors.invalid_session_role,
+  session_archived: sparkLocalRpcSessionOrpcErrors.session_archived,
+  session_channel_bound: sparkLocalRpcSessionOrpcErrors.session_channel_bound,
+  session_closed: sparkLocalRpcSessionOrpcErrors.session_closed,
+  session_closing: sparkLocalRpcSessionOrpcErrors.session_closing,
+  session_exists: sparkLocalRpcSessionOrpcErrors.session_exists,
+  session_owner_not_found: sparkLocalRpcSessionOrpcErrors.session_owner_not_found,
+  session_owner_scope_mismatch: sparkLocalRpcSessionOrpcErrors.session_owner_scope_mismatch,
+  session_storage_unavailable: sparkLocalRpcSessionOrpcErrors.session_storage_unavailable,
+  session_transcript_changed: sparkLocalRpcSessionOrpcErrors.session_transcript_changed,
+  session_transcript_conflict: sparkLocalRpcSessionOrpcErrors.session_transcript_conflict,
   workspace_cwd_unavailable: sparkLocalRpcSessionOrpcErrors.workspace_cwd_unavailable,
 } as const;
 
@@ -437,6 +533,19 @@ const sparkLocalRpcSessionArchiveOrpcErrors = {
   session_restore_forbidden: sparkLocalRpcSessionOrpcErrors.session_restore_forbidden,
   session_scope_mismatch: sparkLocalRpcSessionOrpcErrors.session_scope_mismatch,
   side_thread_mutation_forbidden: sparkLocalRpcSessionOrpcErrors.side_thread_mutation_forbidden,
+} as const;
+
+const sparkLocalRpcSessionCompactOrpcErrors = {
+  ...sparkLocalRpcSessionRegistryBaseOrpcErrors,
+  session_archived: sparkLocalRpcSessionOrpcErrors.session_archived,
+  session_cwd_unavailable: sparkLocalRpcSessionOrpcErrors.session_cwd_unavailable,
+  session_not_found: sparkLocalRpcSessionOrpcErrors.session_not_found,
+  session_scope_mismatch: sparkLocalRpcSessionOrpcErrors.session_scope_mismatch,
+  side_thread_mutation_forbidden: sparkLocalRpcSessionOrpcErrors.side_thread_mutation_forbidden,
+  invocation_idempotency_conflict:
+    sparkLocalRpcInvocationOrpcErrors.invocation_idempotency_conflict,
+  model_not_found: sparkLocalRpcModelOrpcErrors.model_not_found,
+  model_unavailable: sparkLocalRpcModelOrpcErrors.model_unavailable,
 } as const;
 
 const sparkLocalRpcSessionInboxOrpcErrors = {
@@ -501,16 +610,6 @@ const sparkLocalRpcReadinessLoopScheduleOrpcErrors = {
   loop_generation_conflict: sparkLocalRpcLoopOrpcErrors.loop_generation_conflict,
 } as const;
 
-const sparkLocalRpcReadinessLoopControlOrpcErrors = {
-  ...sparkLocalRpcReadinessLoopMutationOrpcErrors,
-  loop_schedule_invalid: sparkLocalRpcLoopOrpcErrors.loop_schedule_invalid,
-  loop_generation_conflict: sparkLocalRpcLoopOrpcErrors.loop_generation_conflict,
-  workbench_binding_not_found: sparkLocalRpcLoopOrpcErrors.workbench_binding_not_found,
-  workbench_action_stale: sparkLocalRpcLoopOrpcErrors.workbench_action_stale,
-  workbench_action_untrusted: sparkLocalRpcLoopOrpcErrors.workbench_action_untrusted,
-  workbench_action_conflict: sparkLocalRpcLoopOrpcErrors.workbench_action_conflict,
-} as const;
-
 const sparkLocalRpcSessionInvocationNotFoundOrpcErrors = {
   ...sparkLocalRpcSessionOrpcErrors,
   invocation_not_found: sparkLocalRpcInvocationOrpcErrors.invocation_not_found,
@@ -519,6 +618,7 @@ const sparkLocalRpcSessionInvocationNotFoundOrpcErrors = {
 const sparkLocalRpcTurnResultOrpcErrors = {
   invocation_not_found: sparkLocalRpcInvocationOrpcErrors.invocation_not_found,
   invocation_not_terminal: sparkLocalRpcInvocationOrpcErrors.invocation_not_terminal,
+  session_scope_mismatch: sparkLocalRpcSessionOrpcErrors.session_scope_mismatch,
 } as const;
 
 const sparkLocalRpcTurnStreamOrpcErrors = {
@@ -556,7 +656,9 @@ const sparkLocalRpcSessionSendOrpcErrors = {
   session_mail_not_found: sparkLocalRpcSessionOrpcErrors.session_mail_not_found,
   session_mail_origin_binding_required:
     sparkLocalRpcSessionOrpcErrors.session_mail_origin_binding_required,
+  session_mail_queue_full: sparkLocalRpcSessionOrpcErrors.session_mail_queue_full,
   session_mail_self_target: sparkLocalRpcSessionOrpcErrors.session_mail_self_target,
+  session_mail_target_active: sparkLocalRpcSessionOrpcErrors.session_mail_target_active,
   session_mail_store_unavailable: sparkLocalRpcSessionOrpcErrors.session_mail_store_unavailable,
   session_mail_target_archived: sparkLocalRpcSessionOrpcErrors.session_mail_target_archived,
   session_mail_target_not_local: sparkLocalRpcSessionOrpcErrors.session_mail_target_not_local,
@@ -575,7 +677,7 @@ const sparkLocalRpcReadinessSessionModelOrpcErrors = {
   side_thread_mutation_forbidden: sparkLocalRpcSessionOrpcErrors.side_thread_mutation_forbidden,
   model_control_unavailable: sparkLocalRpcModelOrpcErrors.model_control_unavailable,
   model_not_found: sparkLocalRpcModelOrpcErrors.model_not_found,
-  model_out_of_scope: sparkLocalRpcModelOrpcErrors.model_out_of_scope,
+  model_not_enabled: sparkLocalRpcModelOrpcErrors.model_not_enabled,
   model_unavailable: sparkLocalRpcModelOrpcErrors.model_unavailable,
 } as const;
 
@@ -601,10 +703,15 @@ const sparkLocalRpcModelCatalogOrpcErrors = {
   model_control_unavailable: sparkLocalRpcModelOrpcErrors.model_control_unavailable,
 } as const;
 
+const sparkLocalRpcEnabledModelsSetOrpcErrors = {
+  ...sparkLocalRpcModelCatalogOrpcErrors,
+  enabled_models_intent_required: sparkLocalRpcModelOrpcErrors.enabled_models_intent_required,
+} as const;
+
 const sparkLocalRpcModelSelectionOrpcErrors = {
   ...sparkLocalRpcModelCatalogOrpcErrors,
   model_not_found: sparkLocalRpcModelOrpcErrors.model_not_found,
-  model_out_of_scope: sparkLocalRpcModelOrpcErrors.model_out_of_scope,
+  model_not_enabled: sparkLocalRpcModelOrpcErrors.model_not_enabled,
   model_unavailable: sparkLocalRpcModelOrpcErrors.model_unavailable,
 } as const;
 
@@ -803,6 +910,13 @@ export const sparkLocalRpcDaemonStatusResultSchema = z.object({
     oldestQueuedAt: isoDateTimeSchema.optional(),
     oldestRunningAt: isoDateTimeSchema.optional(),
   }),
+  execution: z
+    .object({
+      backend: z.literal("in_process"),
+      rootConcurrency: z.number().int().min(1).max(64),
+      questionOverflow: z.literal(1),
+    })
+    .optional(),
   channelDeliveries: z
     .object({
       pending: z.number().int().nonnegative(),
@@ -836,6 +950,54 @@ export const sparkLocalRpcDaemonRestartResultSchema = z.object({
   targetVersion: z.string().min(1).optional(),
   targetBuildFingerprint: z.string().min(1).optional(),
   requestedAt: isoDateTimeSchema,
+});
+
+/**
+ * Daemon-owned `daemon-user` access tokens authenticate direct browser
+ * surfaces (native Spark Web and Web DSH) on every listener. The daemon stores
+ * only token hashes; the plaintext token is returned exactly once at creation.
+ * Verification collapses missing, malformed, expired, and
+ * revoked tokens into one boolean so adapters cannot probe failure causes.
+ */
+export const sparkLocalRpcDaemonAccessTokenMetadataSchema = z.object({
+  id: prefixedIdSchema("dut"),
+  label: z.string().min(1).optional(),
+  createdAt: isoDateTimeSchema,
+  expiresAt: isoDateTimeSchema.optional(),
+  revokedAt: isoDateTimeSchema.optional(),
+});
+
+export const sparkLocalRpcDaemonAccessCreateRequestSchema = z.object({
+  label: z.string().trim().min(1).max(120).optional(),
+  expiresAt: isoDateTimeSchema.optional(),
+});
+
+export const sparkLocalRpcDaemonAccessCreateResultSchema = z.object({
+  /** Plaintext token, returned only by this procedure. */
+  token: z.string().min(1),
+  record: sparkLocalRpcDaemonAccessTokenMetadataSchema,
+});
+
+export const sparkLocalRpcDaemonAccessListResultSchema = z.object({
+  tokens: z.array(sparkLocalRpcDaemonAccessTokenMetadataSchema),
+});
+
+export const sparkLocalRpcDaemonAccessRevokeRequestSchema = z.object({
+  id: z.string().trim().min(1),
+});
+
+export const sparkLocalRpcDaemonAccessRevokeResultSchema = z.object({
+  id: z.string().min(1),
+  /** True when the identified token exists and is revoked after the call. */
+  revoked: z.boolean(),
+});
+
+export const sparkLocalRpcDaemonAccessVerifyRequestSchema = z.object({
+  token: z.string().min(1),
+});
+
+export const sparkLocalRpcDaemonAccessVerifyResultSchema = z.object({
+  valid: z.boolean(),
 });
 
 const channelAdapterConfigSchema = z.discriminatedUnion("type", [
@@ -893,7 +1055,6 @@ export const sparkLocalRpcChannelsConfigSchema = z.object({
 export const sparkLocalRpcChannelStatusSchema = z.object({
   plane: z.literal("daemon"),
   resource: z.literal("channel"),
-  workspaceId: z.string().min(1),
   configPath: z.string().min(1),
   available: z.literal(true),
   configured: z.boolean(),
@@ -904,6 +1065,12 @@ export const sparkLocalRpcChannelStatusSchema = z.object({
       id: z.string().min(1),
       type: z.string().min(1),
       adapterAccountIdentity: z.string().min(1).optional(),
+      botProfile: z
+        .object({
+          displayName: z.string().optional(),
+          avatarUrl: z.url().startsWith("https://").optional(),
+        })
+        .optional(),
       running: z.boolean(),
       state: z.enum(["stopped", "connecting", "connected", "reconnecting", "degraded"]),
       error: z.string().optional(),
@@ -931,7 +1098,6 @@ const channelImageSourceSchema = z.object({
 });
 
 export const sparkLocalRpcChannelNotifyInputSchema = z.object({
-  workspaceId: z.string().trim().min(1),
   action: z.enum(["send", "list", "test"]),
   adapter: z.string().optional(),
   route: z.string().optional(),
@@ -1010,48 +1176,38 @@ const sparkLocalRpcWorkspaceLifecycleStateSchema = z.discriminatedUnion("state",
   }),
 ]);
 
-export const sparkLocalRpcWorkspaceSchema = z
-  .object({
-    id: z.string().min(1),
-    serverWorkspaceId: z.string().min(1).optional(),
-    serverBindingId: z.string().min(1).optional(),
-    hubBindingState: z.enum(["bound", "unbound"]).optional(),
-    cockpitBindingState: z.enum(["bound", "unbound"]).optional(),
-    workspaceAuthorization: workspaceBrowserAuthorizationSchema.optional(),
-    serverUrl: z.string(),
-    localWorkspaceKey: z.string(),
-    displayName: z.string(),
-    localPath: z.string().min(1),
-    status: runtimeWorkspaceBindingStatusSchema,
-    capabilities: sparkProtocolJsonObjectSchema,
-    diagnostics: sparkProtocolJsonObjectSchema,
-    profile: sparkLocalRpcWorkspaceProfileSchema.optional(),
-    borrowed: workspaceBorrowedStateSchema.optional(),
-    workspaceClients: z.array(workspaceClientProjectionSchema).optional(),
-    executor: executorClientProjectionSchema.optional(),
-    sessionCount: z.number().int().nonnegative().optional(),
-    lastSessionAt: isoDateTimeSchema.optional(),
-    recentSessions: z
-      .array(
-        z.object({
-          id: z.string().min(1),
-          project: z.string(),
-          model: z.string(),
-          lastActivityAt: isoDateTimeSchema,
-          state: z.string(),
-        }),
-      )
-      .optional(),
-    lifecycle: sparkLocalRpcWorkspaceLifecycleStateSchema.optional(),
-    updatedAt: isoDateTimeSchema,
-  })
-  .transform((workspace) => {
-    const bindingState = workspace.hubBindingState ?? workspace.cockpitBindingState;
-    return {
-      ...workspace,
-      ...(bindingState ? { hubBindingState: bindingState, cockpitBindingState: bindingState } : {}),
-    };
-  });
+export const sparkLocalRpcWorkspaceSchema = z.object({
+  id: z.string().min(1),
+  serverWorkspaceId: z.string().min(1).optional(),
+  serverBindingId: z.string().min(1).optional(),
+  hubBindingState: z.enum(["bound", "unbound"]).optional(),
+  serverUrl: z.string(),
+  localWorkspaceKey: z.string(),
+  displayName: z.string(),
+  localPath: z.string().min(1),
+  status: runtimeWorkspaceBindingStatusSchema,
+  capabilities: sparkProtocolJsonObjectSchema,
+  diagnostics: sparkProtocolJsonObjectSchema,
+  profile: sparkLocalRpcWorkspaceProfileSchema.optional(),
+  borrowed: workspaceBorrowedStateSchema.optional(),
+  workspaceClients: z.array(workspaceClientProjectionSchema).optional(),
+  executor: executorClientProjectionSchema.optional(),
+  sessionCount: z.number().int().nonnegative().optional(),
+  lastSessionAt: isoDateTimeSchema.optional(),
+  recentSessions: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        project: z.string(),
+        model: z.string(),
+        lastActivityAt: isoDateTimeSchema,
+        state: z.string(),
+      }),
+    )
+    .optional(),
+  lifecycle: sparkLocalRpcWorkspaceLifecycleStateSchema.optional(),
+  updatedAt: isoDateTimeSchema,
+});
 
 const sparkLocalRpcWorkspaceLifecycleMutationSchema = z.discriminatedUnion("action", [
   z.object({
@@ -1086,7 +1242,7 @@ const sparkLocalRpcWorkspaceLifecycleMutationResultSchema = z.object({
 });
 
 export const sparkLocalRpcWorkspaceRegisterRequestSchema = z.object({
-  serverUrl: z.string(),
+  serverUrl: z.string().optional(),
   allowInsecureHttp: z.boolean().optional(),
   localPath: z.string().min(1),
   registrationToken: z.string().min(1).optional(),
@@ -1188,7 +1344,7 @@ export const sparkLocalRpcLeaseTransferRequestSchema = z.object({
 export const sparkLocalRpcLeaseTransferSettlementSchema = z.object({
   transferId: z.string().min(1),
   decision: z.enum(["accept", "reject", "auto-authorize"]),
-  source: z.enum(["hub", "cockpit", "tui", "cli", "timeout", "unknown"]),
+  source: z.enum(["hub", "tui", "cli", "timeout", "unknown"]),
   settledAt: isoDateTimeSchema,
 });
 
@@ -1210,7 +1366,7 @@ export const sparkLocalRpcUplinkPreferResultSchema = z.object({
     .object({
       transferId: z.string().min(1),
       decision: z.enum(["accept", "reject", "auto-authorize"]),
-      source: z.enum(["hub", "cockpit", "tui", "cli", "timeout", "unknown"]),
+      source: z.enum(["hub", "tui", "cli", "timeout", "unknown"]),
     })
     .optional(),
 });
@@ -1229,34 +1385,32 @@ export const sparkLocalRpcUplinkStatusResultSchema = z.object({
   ),
 });
 
-export const sparkLocalRpcSessionNotificationDeliverResultSchema = z.object({
-  deliveries: z.array(
-    z.object({
-      adapter: z.string().min(1),
-      externalKey: z.string().min(1),
-      adapterId: z.string().min(1).optional(),
-      adapterAccountIdentity: z.string().min(1).optional(),
-      status: z.enum(["pending", "delivered", "failed", "uncertain"]),
-      attemptCount: z.number().int().nonnegative(),
-      receipt: sparkProtocolJsonValueSchema.optional(),
-      error: z.string().optional(),
-    }),
-  ),
-});
-
 export const sparkLocalRpcHumanInteractionListRequestSchema = z.object({
   sessionId: z.string().trim().min(1).optional(),
 });
 
-export const sparkLocalRpcHumanInteractionRespondRequestSchema = z.object({
-  interactionRequestId: z.string().trim().min(1),
-  sessionId: z.string().trim().min(1).optional(),
-  invocationId: z.string().trim().min(1).optional(),
-  humanResponseId: prefixedIdSchema("hres").optional(),
-  status: z.enum(["answered", "cancelled"]),
-  answers: sparkProtocolJsonObjectSchema.default({}),
-  responseArtifactRefs: z.array(z.string().trim().min(1)).default([]),
-});
+export const sparkLocalRpcHumanInteractionRespondRequestSchema = z
+  .object({
+    interactionRequestId: z.string().trim().min(1).optional(),
+    humanRequestId: z.string().trim().min(1).optional(),
+    sessionId: z.string().trim().min(1).optional(),
+    invocationId: z.string().trim().min(1).optional(),
+    respondentSessionId: z.string().trim().min(1).optional(),
+    humanResponseId: prefixedIdSchema("hres").optional(),
+    status: z.enum(["answered", "cancelled"]),
+    provenance: sparkDirectAnswerProvenanceSchema.optional(),
+    answers: sparkProtocolJsonObjectSchema.default({}),
+    responseArtifactRefs: z.array(z.string().trim().min(1)).default([]),
+  })
+  .superRefine((request, context) => {
+    if (!request.interactionRequestId && !request.humanRequestId) {
+      context.addIssue({
+        code: "custom",
+        path: ["interactionRequestId"],
+        message: "human.interaction.respond requires interactionRequestId or humanRequestId",
+      });
+    }
+  });
 
 const sparkLocalRpcHumanWaitSchema = z.object({
   humanRequestId: z.string().min(1),
@@ -1268,6 +1422,7 @@ const sparkLocalRpcHumanWaitSchema = z.object({
   projectId: z.string(),
   toolCallId: z.string(),
   delivery: z.enum(["blocking", "async"]),
+  mode: z.enum(["clarification", "decision", "approval", "unblock"]).optional(),
   evidenceRequest: sparkEvidenceRequestBindingSchema.optional(),
   kind: z.string().min(1),
   title: z.string(),
@@ -1275,6 +1430,7 @@ const sparkLocalRpcHumanWaitSchema = z.object({
   questions: z.array(sparkProtocolJsonObjectSchema),
   context: sparkProtocolJsonObjectSchema,
   contextArtifactRefs: z.array(z.string()),
+  respondent: sparkHumanWaitRespondentSchema.optional(),
   status: z.enum(["pending", "answered", "cancelled", "archived"]),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
@@ -1316,6 +1472,9 @@ export const sparkLocalRpcHumanInteractionRespondResultSchema = z.object({
 const workspaceIdInputSchema = z.object({ workspaceId: z.string().trim().min(1) });
 const invocationIdInputSchema = sparkTurnStatusRequestSchema;
 const sessionIdInputSchema = sparkSessionGetRequestSchema;
+const channelPeerSessionIdInputSchema = sparkSessionGetRequestSchema.extend({
+  callerSessionId: z.string().trim().min(1).optional(),
+});
 const providerNameInputSchema = z.object({ providerName: z.string().trim().min(1) });
 const flowIdInputSchema = z.object({ flowId: z.string().trim().min(1) });
 const workspaceIdMutationInputSchema = z.object({ id: z.string().min(1) });
@@ -1359,6 +1518,40 @@ export const sparkLocalRpcProcedureSchemas = {
     input: sparkLocalRpcEmptyInputSchema,
     output: sparkLocalRpcDaemonRestartResultSchema,
   },
+  "daemon.access.create": {
+    input: sparkLocalRpcDaemonAccessCreateRequestSchema,
+    output: sparkLocalRpcDaemonAccessCreateResultSchema,
+  },
+  "daemon.access.list": {
+    input: sparkLocalRpcEmptyInputSchema,
+    output: sparkLocalRpcDaemonAccessListResultSchema,
+  },
+  "daemon.access.revoke": {
+    input: sparkLocalRpcDaemonAccessRevokeRequestSchema,
+    output: sparkLocalRpcDaemonAccessRevokeResultSchema,
+  },
+  "daemon.access.session": {
+    input: z.object({
+      action: z.enum(["exchange", "verify", "refresh"]),
+      token: z.string().min(1),
+    }),
+    output: z.object({
+      valid: z.boolean(),
+      session: z
+        .object({
+          id: prefixedIdSchema("dut"),
+          sessionToken: z.string().min(1),
+          refreshToken: z.string().min(1),
+          expiresAt: isoDateTimeSchema,
+          refreshExpiresAt: isoDateTimeSchema,
+        })
+        .optional(),
+    }),
+  },
+  "daemon.access.verify": {
+    input: sparkLocalRpcDaemonAccessVerifyRequestSchema,
+    output: sparkLocalRpcDaemonAccessVerifyResultSchema,
+  },
   "file.execute": {
     input: sparkLocalRpcToolExecutionBaseInputSchema.extend({
       tool: z.enum(["read", "write", "edit", "grep", "find"]),
@@ -1369,6 +1562,33 @@ export const sparkLocalRpcProcedureSchemas = {
     input: sparkLocalRpcToolExecutionBaseInputSchema,
     output: sparkLocalRpcToolExecutionResultSchema,
   },
+  "artifact.list": {
+    input: sparkArtifactListRequestSchema,
+    output: sparkArtifactListResultSchema,
+  },
+  "artifact.read": {
+    input: sparkArtifactReadRequestSchema,
+    output: sparkArtifactReadResultSchema,
+  },
+  "role.list": { input: sparkRoleListRequestSchema, output: sparkRoleListResultSchema },
+  "role.create": { input: sparkRoleCreateRequestSchema, output: sparkRoleCreateResultSchema },
+  "role.model.list": {
+    input: sparkRoleModelListRequestSchema,
+    output: sparkRoleModelListResultSchema,
+  },
+  "role.model.get": {
+    input: sparkRoleModelGetRequestSchema,
+    output: sparkRoleModelGetResultSchema,
+  },
+  "role.model.set": {
+    input: sparkRoleModelSetRequestSchema,
+    output: sparkRoleModelSetResultSchema,
+  },
+  "role.model.delete": {
+    input: sparkRoleModelDeleteRequestSchema,
+    output: sparkRoleModelDeleteResultSchema,
+  },
+  "skill.list": { input: sparkSkillListRequestSchema, output: sparkSkillListResultSchema },
   "git.execute": {
     input: sparkLocalRpcToolExecutionBaseInputSchema,
     output: sparkLocalRpcToolExecutionResultSchema,
@@ -1377,15 +1597,20 @@ export const sparkLocalRpcProcedureSchemas = {
     input: sparkLocalRpcToolExecutionBaseInputSchema,
     output: sparkLocalRpcToolExecutionResultSchema,
   },
-  "channel.status": { input: workspaceIdInputSchema, output: sparkLocalRpcChannelStatusSchema },
+  "channel.status": {
+    input: sparkLocalRpcEmptyInputSchema,
+    output: sparkLocalRpcChannelStatusSchema,
+  },
   "channel.configure": {
     input: z.object({
-      workspaceId: z.string().trim().min(1),
       config: sparkLocalRpcChannelsConfigSchema,
     }),
     output: sparkLocalRpcChannelStatusSchema,
   },
-  "channel.reload": { input: workspaceIdInputSchema, output: sparkLocalRpcChannelStatusSchema },
+  "channel.reload": {
+    input: sparkLocalRpcEmptyInputSchema,
+    output: sparkLocalRpcChannelStatusSchema,
+  },
   "channel.notify": {
     input: sparkLocalRpcChannelNotifyInputSchema,
     output: sparkLocalRpcChannelNotifyResultSchema,
@@ -1418,17 +1643,17 @@ export const sparkLocalRpcProcedureSchemas = {
     input: sparkTokenUsageSummaryRequestSchema,
     output: sparkTokenUsageAggregateSchema,
   },
-  "usage.persistence": {
-    input: sparkTokenUsagePersistenceRequestSchema,
-    output: sparkTokenUsageByPersistenceSchema,
+  "repro.start": {
+    input: sparkReproStartRequestSchema,
+    output: sparkReproMutationResultSchema,
   },
-  "usage.backfill": {
-    input: sparkLegacyTokenUsageBackfillRequestSchema,
-    output: sparkLegacyTokenUsageBackfillResultSchema,
+  "repro.status": {
+    input: sparkReproStatusRequestSchema,
+    output: sparkReproStatusResultSchema,
   },
-  "repro.formal-evidence.record": {
-    input: sparkReproFormalEvidenceRecordRequestSchema,
-    output: sparkReproFormalEvidenceRecordResultSchema,
+  "repro.stop": {
+    input: sparkReproStopRequestSchema,
+    output: sparkReproMutationResultSchema,
   },
   "loop.start": { input: sparkLoopStartRequestSchema, output: sparkLoopMutationResultSchema },
   "loop.status": { input: sparkLoopStatusRequestSchema, output: sparkLoopListResultSchema },
@@ -1445,16 +1670,20 @@ export const sparkLocalRpcProcedureSchemas = {
     input: sparkLoopScheduleRequestSchema,
     output: sparkLoopMutationResultSchema,
   },
-  "loop.control": {
-    input: sparkLoopControlRequestSchema,
-    output: sparkLoopMutationResultSchema,
-  },
   "workspace.list": {
     input: z.object({ includeInactive: z.boolean().optional() }),
     output: z.object({
       workspaces: z.array(sparkLocalRpcWorkspaceSchema),
       observedAt: isoDateTimeSchema,
     }),
+  },
+  "workspace.directory.list": {
+    input: sparkWorkspaceDirectoryListRequestSchema,
+    output: sparkWorkspaceDirectoryListResultSchema,
+  },
+  "search.global": {
+    input: sparkGlobalSearchRequestSchema,
+    output: sparkGlobalSearchResultSchema,
   },
   "workspace.register": {
     input: sparkLocalRpcWorkspaceRegisterRequestSchema,
@@ -1548,30 +1777,74 @@ export const sparkLocalRpcProcedureSchemas = {
   },
   "session.list": {
     input: sparkSessionListRequestSchema,
-    output: z.array(sparkSessionRegistryRecordSchema),
+    output: z.array(sparkSessionProjectionSchema),
   },
-  "session.get": { input: sessionIdInputSchema, output: sparkSessionRegistryRecordSchema },
+  "session.get": { input: channelPeerSessionIdInputSchema, output: sparkSessionProjectionSchema },
+  "session.lookup": {
+    input: channelPeerSessionIdInputSchema,
+    output: sparkSessionPeerProjectionSchema,
+  },
   "session.snapshot": {
     input: sparkSessionSnapshotRequestSchema,
     output: z.lazy(() => sparkSessionViewSchema),
   },
+  "session.search": {
+    input: sparkSessionSearchRequestSchema,
+    output: sparkSessionSearchResultSchema,
+  },
+  "session.export": {
+    input: sparkSessionExportRequestSchema,
+    output: sparkSessionExportResultSchema,
+  },
+  "session.snapshot-page": {
+    input: sparkSessionSnapshotRequestSchema,
+    output: z.lazy(() => sparkSessionSnapshotPageSchema),
+  },
+  "session.media.read": {
+    input: sparkSessionMediaReadRequestSchema,
+    output: sparkSessionMediaReadResultSchema,
+  },
+  "session.prompt-history": {
+    input: sparkSessionPromptHistoryRequestSchema,
+    output: z.lazy(() => sparkSessionPromptHistorySchema),
+  },
+  "session.retry-target": {
+    input: sparkSessionRetryTargetRequestSchema,
+    output: sparkSessionRetryTargetSchema,
+  },
   "session.create": {
     input: sparkSessionCreateRequestSchema,
-    output: sparkSessionRegistryRecordSchema,
+    output: sparkSessionProjectionSchema,
+  },
+  "session.spawn": {
+    input: sparkSessionSpawnRequestSchema,
+    output: sparkSessionProjectionSchema,
+  },
+  "session.fork": {
+    input: sparkSessionForkRequestSchema,
+    output: sparkSessionProjectionSchema,
   },
   "session.bind": {
     input: sparkSessionBindRequestSchema,
-    output: sparkSessionRegistryRecordSchema,
+    output: sparkSessionProjectionSchema,
   },
   "session.unbind": {
     input: sparkSessionUnbindRequestSchema,
-    output: sparkSessionRegistryRecordSchema,
+    output: sparkSessionProjectionSchema,
   },
   "session.archive": {
     input: sparkSessionArchiveRequestSchema,
-    output: sparkSessionRegistryRecordSchema,
+    output: sparkSessionProjectionSchema,
   },
-  "session.restore": { input: sessionIdInputSchema, output: sparkSessionRegistryRecordSchema },
+  "session.restore": { input: sessionIdInputSchema, output: sparkSessionProjectionSchema },
+  "session.close": {
+    input: sparkSessionCloseRequestSchema,
+    output: sparkSessionProjectionSchema,
+  },
+  "session.compact": {
+    input: sparkSessionCompactRequestSchema,
+    output: sparkTurnSubmitResultSchema,
+  },
   "session.send": { input: sparkSessionSendRequestSchema, output: sparkSessionSendResultSchema },
   "session.inbox": { input: sparkSessionInboxRequestSchema, output: sparkSessionInboxResultSchema },
   "session.mail.read": {
@@ -1582,24 +1855,13 @@ export const sparkLocalRpcProcedureSchemas = {
     input: sparkSessionMailMutationRequestSchema,
     output: sparkSessionMailMutationResultSchema,
   },
-  "session.notification.deliver": {
-    input: z.object({
-      sessionId: z.string().min(1),
-      messageId: z.string().min(1),
-    }),
-    output: sparkLocalRpcSessionNotificationDeliverResultSchema,
-  },
   "session.model.set": {
     input: sparkSessionSetModelRequestSchema,
-    output: sparkSessionRegistryRecordSchema,
-  },
-  "session.mode.set": {
-    input: sparkSessionSetModeRequestSchema,
-    output: sparkSessionModeResultSchema,
+    output: sparkSessionProjectionSchema,
   },
   "session.thinking.set": {
     input: sparkSessionSetThinkingRequestSchema,
-    output: sparkSessionRegistryRecordSchema,
+    output: sparkSessionProjectionSchema,
   },
   "side-thread.ensure": {
     input: sparkSideThreadEnsureRequestSchema,
@@ -1631,6 +1893,10 @@ export const sparkLocalRpcProcedureSchemas = {
   },
   "model.default.set": {
     input: sparkDefaultModelSetRequestSchema,
+    output: sparkModelControlSnapshotSchema,
+  },
+  "model.enabled.set": {
+    input: sparkEnabledModelsSetRequestSchema,
     output: sparkModelControlSnapshotSchema,
   },
   "provider.auth.api-key.set": {
@@ -1687,6 +1953,32 @@ export const sparkLocalRpcOrpcLiveMethods = Object.keys(
   sparkLocalRpcProcedureSchemas,
 ) as SparkLocalRpcMethod[];
 
+/** New procedures intentionally excluded from the frozen 0.1.x NDJSON surface. */
+export const sparkLocalRpcOrpcOnlyMethods = [
+  "artifact.list",
+  "artifact.read",
+  "role.list",
+  "role.create",
+  "role.model.list",
+  "role.model.get",
+  "role.model.set",
+  "role.model.delete",
+  "skill.list",
+  "workspace.directory.list",
+  "search.global",
+  "session.search",
+  "session.export",
+  "session.snapshot-page",
+  "session.media.read",
+  "session.prompt-history",
+  "session.retry-target",
+  "daemon.access.create",
+  "daemon.access.list",
+  "daemon.access.revoke",
+  "daemon.access.verify",
+  "daemon.access.session",
+] as const satisfies readonly SparkLocalRpcMethod[];
+
 export type SparkLocalRpcInput<M extends SparkLocalRpcMethod> = z.input<
   (typeof sparkLocalRpcProcedureSchemas)[M]["input"]
 >;
@@ -1730,12 +2022,79 @@ export const sparkLocalRpcOrpcContract = {
       p["daemon.restart"],
       sparkLocalRpcReadinessDaemonOrpcErrors,
     ),
+    access: {
+      create: procedure(
+        "POST",
+        "/daemon/access/create",
+        p["daemon.access.create"],
+        sparkLocalRpcNoOrpcErrors,
+      ),
+      list: procedure(
+        "GET",
+        "/daemon/access/list",
+        p["daemon.access.list"],
+        sparkLocalRpcNoOrpcErrors,
+      ),
+      revoke: procedure(
+        "POST",
+        "/daemon/access/revoke",
+        p["daemon.access.revoke"],
+        sparkLocalRpcNoOrpcErrors,
+      ),
+      session: procedure(
+        "POST",
+        "/daemon/access/session",
+        p["daemon.access.session"],
+        sparkLocalRpcNoOrpcErrors,
+      ),
+      verify: procedure(
+        "POST",
+        "/daemon/access/verify",
+        p["daemon.access.verify"],
+        sparkLocalRpcNoOrpcErrors,
+      ),
+    },
   },
   file: {
     execute: procedure("POST", "/file/execute", p["file.execute"]),
   },
   artifact: {
     execute: procedure("POST", "/artifact/execute", p["artifact.execute"]),
+    list: procedure("GET", "/artifact/list", p["artifact.list"], sparkLocalRpcWorkspaceOrpcErrors),
+    read: procedure("GET", "/artifact/read", p["artifact.read"], sparkLocalRpcWorkspaceOrpcErrors),
+  },
+  role: {
+    list: procedure("GET", "/role/list", p["role.list"], sparkLocalRpcWorkspaceOrpcErrors),
+    create: procedure("POST", "/role/create", p["role.create"], sparkLocalRpcWorkspaceOrpcErrors),
+    model: {
+      list: procedure(
+        "GET",
+        "/role/model/list",
+        p["role.model.list"],
+        sparkLocalRpcWorkspaceOrpcErrors,
+      ),
+      get: procedure(
+        "GET",
+        "/role/model/get",
+        p["role.model.get"],
+        sparkLocalRpcWorkspaceOrpcErrors,
+      ),
+      set: procedure(
+        "POST",
+        "/role/model/set",
+        p["role.model.set"],
+        sparkLocalRpcWorkspaceRoleModelSetOrpcErrors,
+      ),
+      delete: procedure(
+        "POST",
+        "/role/model/delete",
+        p["role.model.delete"],
+        sparkLocalRpcWorkspaceRoleModelDeleteOrpcErrors,
+      ),
+    },
+  },
+  skill: {
+    list: procedure("GET", "/skill/list", p["skill.list"], sparkLocalRpcWorkspaceOrpcErrors),
   },
   git: {
     execute: procedure("POST", "/git/execute", p["git.execute"]),
@@ -1806,23 +2165,11 @@ export const sparkLocalRpcOrpcContract = {
   },
   usage: {
     summary: procedure("GET", "/usage/summary", p["usage.summary"], sparkLocalRpcNoOrpcErrors),
-    persistence: procedure(
-      "GET",
-      "/usage/persistence",
-      p["usage.persistence"],
-      sparkLocalRpcNoOrpcErrors,
-    ),
-    backfill: procedure("POST", "/usage/backfill", p["usage.backfill"], sparkLocalRpcNoOrpcErrors),
   },
   repro: {
-    formalEvidence: {
-      record: procedure(
-        "POST",
-        "/repro/formal-evidence/record",
-        p["repro.formal-evidence.record"],
-        sparkLocalRpcReadinessOrpcErrors,
-      ),
-    },
+    start: procedure("POST", "/repro/start", p["repro.start"], sparkLocalRpcReadinessOrpcErrors),
+    status: procedure("GET", "/repro/status", p["repro.status"], sparkLocalRpcReadinessOrpcErrors),
+    stop: procedure("POST", "/repro/stop", p["repro.stop"], sparkLocalRpcReadinessOrpcErrors),
   },
   loop: {
     start: procedure(
@@ -1856,12 +2203,6 @@ export const sparkLocalRpcOrpcContract = {
       p["loop.schedule"],
       sparkLocalRpcReadinessLoopScheduleOrpcErrors,
     ),
-    control: procedure(
-      "POST",
-      "/loop/control",
-      p["loop.control"],
-      sparkLocalRpcReadinessLoopControlOrpcErrors,
-    ),
   },
   workspace: {
     list: procedure(
@@ -1870,6 +2211,14 @@ export const sparkLocalRpcOrpcContract = {
       p["workspace.list"],
       sparkLocalRpcReadinessOrpcErrors,
     ),
+    directory: {
+      list: procedure(
+        "GET",
+        "/workspace/directory/list",
+        p["workspace.directory.list"],
+        sparkLocalRpcWorkspaceEnsureOrpcErrors,
+      ),
+    },
     register: procedure(
       "POST",
       "/workspace/register",
@@ -1955,6 +2304,14 @@ export const sparkLocalRpcOrpcContract = {
       ),
     },
   },
+  search: {
+    global: procedure(
+      "GET",
+      "/search/global",
+      p["search.global"],
+      sparkLocalRpcReadinessOrpcErrors,
+    ),
+  },
   delegation: {
     execute: procedure(
       "POST",
@@ -2009,17 +2366,73 @@ export const sparkLocalRpcOrpcContract = {
   session: {
     list: procedure("GET", "/session/list", p["session.list"], sparkLocalRpcSessionListOrpcErrors),
     get: procedure("GET", "/session/get", p["session.get"], sparkLocalRpcSessionGetOrpcErrors),
+    lookup: procedure(
+      "GET",
+      "/session/lookup",
+      p["session.lookup"],
+      sparkLocalRpcSessionGetOrpcErrors,
+    ),
     snapshot: procedure(
       "GET",
       "/session/snapshot",
       p["session.snapshot"],
       sparkLocalRpcSessionSnapshotOrpcErrors,
     ),
+    search: procedure(
+      "GET",
+      "/session/search",
+      p["session.search"],
+      sparkLocalRpcSessionSnapshotOrpcErrors,
+    ),
+    export: procedure(
+      "GET",
+      "/session/export",
+      p["session.export"],
+      sparkLocalRpcSessionExportOrpcErrors,
+    ),
+    snapshotPage: procedure(
+      "GET",
+      "/session/snapshot-page",
+      p["session.snapshot-page"],
+      sparkLocalRpcSessionSnapshotOrpcErrors,
+    ),
+    media: {
+      read: procedure(
+        "GET",
+        "/session/media/read",
+        p["session.media.read"],
+        sparkLocalRpcSessionSnapshotOrpcErrors,
+      ),
+    },
+    promptHistory: procedure(
+      "GET",
+      "/session/prompt-history",
+      p["session.prompt-history"],
+      sparkLocalRpcSessionPromptHistoryOrpcErrors,
+    ),
+    retryTarget: procedure(
+      "GET",
+      "/session/retry-target",
+      p["session.retry-target"],
+      sparkLocalRpcSessionGetOrpcErrors,
+    ),
     create: procedure(
       "POST",
       "/session/create",
       p["session.create"],
       sparkLocalRpcSessionCreateOrpcErrors,
+    ),
+    spawn: procedure(
+      "POST",
+      "/session/spawn",
+      p["session.spawn"],
+      sparkLocalRpcManagedChildSessionOrpcErrors,
+    ),
+    fork: procedure(
+      "POST",
+      "/session/fork",
+      p["session.fork"],
+      sparkLocalRpcManagedChildSessionOrpcErrors,
     ),
     bind: procedure("POST", "/session/bind", p["session.bind"], sparkLocalRpcSessionBindOrpcErrors),
     unbind: procedure(
@@ -2039,6 +2452,18 @@ export const sparkLocalRpcOrpcContract = {
       "/session/restore",
       p["session.restore"],
       sparkLocalRpcSessionArchiveOrpcErrors,
+    ),
+    close: procedure(
+      "POST",
+      "/session/close",
+      p["session.close"],
+      sparkLocalRpcSessionArchiveOrpcErrors,
+    ),
+    compact: procedure(
+      "POST",
+      "/session/compact",
+      p["session.compact"],
+      sparkLocalRpcSessionCompactOrpcErrors,
     ),
     send: procedure("POST", "/session/send", p["session.send"], sparkLocalRpcSessionSendOrpcErrors),
     inbox: procedure(
@@ -2061,27 +2486,11 @@ export const sparkLocalRpcOrpcContract = {
         sparkLocalRpcSessionMailMutationOrpcErrors,
       ),
     },
-    notification: {
-      deliver: procedure(
-        "POST",
-        "/session/notification/deliver",
-        p["session.notification.deliver"],
-        sparkLocalRpcReadinessSessionChannelOrpcErrors,
-      ),
-    },
     model: {
       set: procedure(
         "POST",
         "/session/model/set",
         p["session.model.set"],
-        sparkLocalRpcReadinessSessionModelOrpcErrors,
-      ),
-    },
-    mode: {
-      set: procedure(
-        "POST",
-        "/session/mode/set",
-        p["session.mode.set"],
         sparkLocalRpcReadinessSessionModelOrpcErrors,
       ),
     },
@@ -2115,6 +2524,14 @@ export const sparkLocalRpcOrpcContract = {
         "/model/default/set",
         p["model.default.set"],
         sparkLocalRpcModelSelectionOrpcErrors,
+      ),
+    },
+    enabled: {
+      set: procedure(
+        "POST",
+        "/model/enabled/set",
+        p["model.enabled.set"],
+        sparkLocalRpcEnabledModelsSetOrpcErrors,
       ),
     },
   },

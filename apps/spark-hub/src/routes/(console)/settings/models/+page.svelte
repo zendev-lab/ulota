@@ -1,18 +1,31 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
-  import { Icon } from "@zendev-lab/spark-ui";
   import { ModelPicker, type ModelPickerGroup } from "$lib/components/model-selector";
-  import { Button, Field, Input, PageHeader, Select } from "@zendev-lab/spark-ui";
+  import {
+    brandIconForModelProvider,
+    Button,
+    Field,
+    Icon,
+    Input,
+    PageHeader,
+    Select,
+  } from "@zendev-lab/spark-ui";
   import type { SparkModelCatalogProvider } from "@zendev-lab/spark-protocol/daemon";
 
   let { data, form } = $props();
   let copy = $derived(data.messages.modelSettings);
   let snapshot = $derived(data.control.snapshot);
   let flow = $derived(data.flow);
+  let enabledModelValues = $derived(
+    new Set((snapshot.enabledModels ?? []).map((model) => modelValue(model))),
+  );
   let availableModels = $derived(
     snapshot.providers.flatMap((provider: SparkModelCatalogProvider) =>
-      provider.models.filter((model) => model.available),
+      provider.models.filter(
+        (entry) =>
+          entry.available && enabledModelValues.has(modelValue(entry.model)),
+      ),
     ),
   );
   let defaultModelAvailable = $derived(
@@ -22,8 +35,14 @@
     ),
   );
   let selectedDefaultModel = $state("");
+  let testingModel = $state(false);
   let oauthPromptId = $state("");
   let oauthResponse = $state("");
+  let modelsHref = $derived(
+    data.workspaceSlug
+      ? `/settings/models?workspace=${encodeURIComponent(data.workspaceSlug)}`
+      : "/settings/models",
+  );
   let defaultModelGroups = $derived(buildModelGroups(snapshot.providers));
   let selectedDefaultModelAvailable = $derived(
     availableModels.some((entry) => modelValue(entry.model) === selectedDefaultModel),
@@ -73,8 +92,12 @@
     const groups: ModelPickerGroup[] = providers.map((provider) => ({
       id: provider.providerName,
       label: provider.label,
+      brandIcon: brandIconForModelProvider(provider.providerName),
       options: provider.models
-        .filter((entry) => entry.available)
+        .filter(
+          (entry) =>
+            entry.available && enabledModelValues.has(modelValue(entry.model)),
+        )
         .map((entry) => ({
           value: modelValue(entry.model),
           label: entry.model.modelLabel ?? entry.model.modelId,
@@ -128,18 +151,38 @@
     if (status === "cancelled") return copy.flowCancelled;
     return copy.flowPending;
   }
+
+  function connectivityReason(reasonCode: string | undefined) {
+    if (reasonCode === "aborted") return copy.connectivityReasons.aborted;
+    if (reasonCode === "timeout") return copy.connectivityReasons.timeout;
+    if (reasonCode === "authentication-unavailable") return copy.connectivityReasons.authenticationUnavailable;
+    if (reasonCode === "no-model") return copy.connectivityReasons.noModel;
+    if (reasonCode === "model-not-enabled") return copy.connectivityReasons.modelOutOfScope;
+    if (reasonCode === "model-binding-unavailable") return copy.connectivityReasons.modelBindingUnavailable;
+    if (reasonCode === "route-unavailable") return copy.connectivityReasons.routeUnavailable;
+    if (reasonCode === "host-unsupported") return copy.connectivityReasons.hostUnsupported;
+    if (reasonCode === "empty-response") return copy.connectivityReasons.emptyResponse;
+    return copy.connectivityReasons.modelCallFailed;
+  }
 </script>
 
 <svelte:head><title>{copy.headTitle}</title></svelte:head>
 
 <section class="models-settings" aria-labelledby="models-title">
-  <PageHeader id="models-title" eyebrow={copy.eyebrow} title={copy.title} lede={copy.lede} />
+  <PageHeader id="models-title" title={copy.title} lede={copy.lede} />
 
   {#if !data.control.available}
     <div class="notice error" role="alert"><Icon name="warning" size={18} />{copy.daemonUnavailable}</div>
   {/if}
 
-  {#if form?.message}<p class:success={form.success} class="form-message" role="status">{form.message}</p>{/if}
+  {#if form?.message}
+    <div class:success={form.success} class="form-message" role="status">
+      <p>{form.message}</p>
+      {#if form.intent === "testModel" && form.test?.status === "unreachable"}
+        <small>{connectivityReason(form.test.reasonCode)}</small>
+      {/if}
+    </div>
+  {/if}
 
   {#if flow || data.flowError}
     <section class="flow-card" aria-live="polite">
@@ -161,6 +204,7 @@
         {/if}
         {#if flow.prompt}
           <form method="POST" action="?/respondOAuth" class="prompt-form">
+            <input type="hidden" name="workspaceId" value={data.workspaceId} />
             <input type="hidden" name="flowId" value={flow.id} />
             <input type="hidden" name="promptId" value={flow.prompt.id} />
             <Field
@@ -193,9 +237,13 @@
         {#if flow.progress.length > 0}<p class="muted">{flow.progress.at(-1)}</p>{/if}
         {#if flow.error}<p class="error-text">{flow.error}</p>{/if}
         {#if flow.status === "succeeded"}
-          <Button variant="secondary" href="/settings/models">{copy.done} · {copy.close}</Button>
+          <Button variant="secondary" href={modelsHref}>{copy.done} · {copy.close}</Button>
         {:else if !terminal(flow.status)}
-          <form method="POST" action="?/cancelOAuth"><input type="hidden" name="flowId" value={flow.id} /><Button variant="secondary" type="submit">{copy.cancel}</Button></form>
+          <form method="POST" action="?/cancelOAuth">
+            <input type="hidden" name="workspaceId" value={data.workspaceId} />
+            <input type="hidden" name="flowId" value={flow.id} />
+            <Button variant="secondary" type="submit">{copy.cancel}</Button>
+          </form>
         {/if}
       {/if}
     </section>
@@ -207,6 +255,7 @@
     </div>
     {#if availableModels.length > 0}
       <form method="POST" action="?/setDefaultModel" class="inline-form" use:enhance>
+        <input type="hidden" name="workspaceId" value={data.workspaceId} />
         <div class="default-model-picker">
           <ModelPicker
           id="default-model"
@@ -226,11 +275,45 @@
         </div>
         <Button type="submit" disabled={!selectedDefaultModelAvailable}>{copy.saveDefault}</Button>
       </form>
+      <form
+        method="POST"
+        action="?/testModel"
+        class="test-form"
+        aria-busy={testingModel}
+        use:enhance={() => {
+          testingModel = true;
+          return async ({ update }) => {
+            try {
+              await update();
+            } finally {
+              testingModel = false;
+            }
+          };
+        }}
+      >
+        <input type="hidden" name="workspaceId" value={data.workspaceId} />
+        <input type="hidden" name="model" value={selectedDefaultModel} />
+        <Button
+          variant="secondary"
+          type="submit"
+          disabled={!selectedDefaultModelAvailable || testingModel}
+        >
+          <Icon name="activity" size={15} />{testingModel ? copy.testingModel : copy.testModel}
+        </Button>
+      </form>
     {:else}<p class="muted">{data.control.available ? copy.noAvailableModels : copy.daemonUnavailable}</p>{/if}
   </section>
 
   <section class="providers-section">
-    <div class="section-heading"><h2>{copy.providersTitle}</h2><p>{copy.providersBody}</p></div>
+    <div class="section-heading">
+      <div><h2>{copy.providersTitle}</h2><p>{copy.providersBody}</p></div>
+      <form method="POST" action="?/refreshCatalog" use:enhance>
+        <input type="hidden" name="workspaceId" value={data.workspaceId} />
+        <Button variant="secondary" size="compact" type="submit">
+          <Icon name="retry" size={15} />{copy.refreshCatalog}
+        </Button>
+      </form>
+    </div>
     <div class="provider-grid">
       {#each snapshot.providers as provider}
         <article class="provider-card">
@@ -250,6 +333,7 @@
               <details class="credential-editor" open={!provider.auth.configured}>
                 <summary>{provider.auth.configured ? copy.updateKey : copy.addKey}</summary>
                 <form method="POST" action="?/saveApiKey" class="credential-form" use:enhance>
+                  <input type="hidden" name="workspaceId" value={data.workspaceId} />
                   <input type="hidden" name="providerName" value={provider.providerName} />
                   <Field id={`api-key-${provider.providerName}`} label={copy.apiKey} required>
                     <Input
@@ -266,6 +350,7 @@
               </details>
               {#if provider.auth.source === "stored"}
                 <form method="POST" action="?/logout" use:enhance>
+                  <input type="hidden" name="workspaceId" value={data.workspaceId} />
                   <input type="hidden" name="providerName" value={provider.providerName} />
                   <Button variant="secondary" type="submit">{copy.logout}</Button>
                 </form>
@@ -275,11 +360,13 @@
             <div class="provider-actions">
               {#if provider.auth.configured}
                 <form method="POST" action="?/logout" use:enhance>
+                  <input type="hidden" name="workspaceId" value={data.workspaceId} />
                   <input type="hidden" name="providerName" value={provider.providerName} />
                   <Button variant="secondary" type="submit">{copy.logout}</Button>
                 </form>
               {:else}
                 <form method="POST" action="?/startOAuth">
+                  <input type="hidden" name="workspaceId" value={data.workspaceId} />
                   <input type="hidden" name="providerName" value={provider.providerName} />
                   <Button type="submit">{copy.login}</Button>
                 </form>
@@ -387,9 +474,21 @@
   }
 
   .providers-section,
-  .section-heading {
+  .section-heading > div {
     display: grid;
     gap: var(--spacing-xs);
+  }
+
+  .section-heading {
+    align-items: end;
+    display: flex;
+    gap: var(--spacing-sm);
+    justify-content: space-between;
+  }
+
+  .test-form {
+    display: flex;
+    justify-content: flex-end;
   }
 
   .provider-grid {
@@ -509,6 +608,8 @@
     background: var(--color-danger-weak);
     border: 1px solid var(--color-danger-soft);
     color: var(--color-danger);
+    display: grid;
+    gap: var(--spacing-xxs);
   }
 
   .form-message.success {
@@ -643,7 +744,8 @@
 
     .card-heading,
     .inline-form,
-    .provider-heading {
+    .provider-heading,
+    .section-heading {
       align-items: stretch;
       flex-direction: column;
     }

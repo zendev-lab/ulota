@@ -1,11 +1,13 @@
 import type { DatabaseSync } from "node:sqlite";
-import { ChannelDeliveryError, channelDeliveryFailureCertainty } from "@zendev-lab/spark-channels";
 import {
-  sparkInvocationListRequestSchema,
-  sparkInvocationListResultSchema,
+  ChannelDeliveryError,
+  channelDeliveryFailureCertainty,
+} from "@zendev-lab/dsh-channel-transports";
+import {
+  isSparkInvocationTerminalStatus,
   sparkTurnResultSchema,
+  type SparkInvocationStatus,
 } from "@zendev-lab/spark-protocol/daemon";
-import { type SparkInvocationStatus } from "@zendev-lab/spark-protocol/daemon";
 import {
   parseSparkSessionView,
   type SparkSessionMailChannelDeliveryView,
@@ -16,10 +18,10 @@ import {
   type SparkSessionMailDeliveryStatus,
   type SparkSessionMailMessage,
 } from "@zendev-lab/spark-session";
-import type { SparkPaths } from "@zendev-lab/spark-system";
+import type { SparkPaths } from "@zendev-lab/spark-platform-node";
 import { isRetryableInvocationError, SparkInvocationStore } from "../store/invocations.ts";
 import {
-  listWorkspaces,
+  getWorkspaceById,
   WorkspacePathConflictError,
   type SparkDaemonWorkspaceClient,
 } from "../store/workspaces.js";
@@ -36,18 +38,23 @@ import { SparkDaemonControlError } from "../control-error.ts";
 import { isRecord } from "./is-record.ts";
 import {
   SparkDaemonStillStartingError,
-  type LocalInvocationListResult,
   type LocalRpcErrorPayload,
   type LocalRpcHandlerOptions,
   type LocalTurnResult,
   type LocalWorkspaceClientResult,
 } from "./types.ts";
 
-export {
-  deliverSessionNotificationFromLocalRpc,
-  requireChannelIngress,
-  requireSessionRegistry,
-} from "./session-notification-helpers.ts";
+export function requireChannelIngress(
+  options: LocalRpcHandlerOptions,
+): NonNullable<LocalRpcHandlerOptions["channelIngress"]> {
+  if (!options.channelIngress) {
+    throw new SparkDaemonControlError(
+      "channel_runtime_unavailable",
+      "Spark daemon channel runtime is not available.",
+    );
+  }
+  return options.channelIngress;
+}
 
 export function isLocalRpcSafeWhileAdmissionClosed(method: string): boolean {
   return (
@@ -58,6 +65,7 @@ export function isLocalRpcSafeWhileAdmissionClosed(method: string): boolean {
     method === "turn.stream" ||
     method === "turn.cancel" ||
     method === "invocation.list" ||
+    method === "session.retry-target" ||
     method === "human.interaction.list" ||
     method === "human.interaction.respond"
   );
@@ -67,8 +75,8 @@ export function workspaceClientResult(
   db: DatabaseSync,
   client: SparkDaemonWorkspaceClient,
 ): LocalWorkspaceClientResult {
-  const workspace = listWorkspaces(db).find((candidate) => candidate.id === client.workspaceId);
-  if (!workspace) {
+  const workspace = getWorkspaceById(db, client.workspaceId);
+  if (!workspace || workspace.lifecycle) {
     throw new Error(`Unknown workspace connection: ${client.workspaceId}`);
   }
   return { client, workspace, observedAt: new Date().toISOString() };
@@ -221,7 +229,7 @@ export function invocationResult(
   invocationId: string,
 ): LocalTurnResult {
   const invocation = store.require(invocationId);
-  if (!isTerminalInvocationStatus(invocation.status)) {
+  if (!isSparkInvocationTerminalStatus(invocation.status)) {
     throw new SparkDaemonControlError(
       "invocation_not_terminal",
       `Invocation ${invocationId} is ${invocation.status}, not terminal.`,
@@ -249,24 +257,6 @@ export function boundedAssistantText(result: unknown): string | undefined {
   if (!isRecord(result) || typeof result.assistantText !== "string") return undefined;
   const text = result.assistantText.trim();
   return text ? text.slice(0, 262_144) : undefined;
-}
-
-export function invocationListResult(
-  store: SparkInvocationStore,
-  params: ReturnType<typeof sparkInvocationListRequestSchema.parse>,
-): LocalInvocationListResult {
-  const page = store.listSummaryPage(params);
-  return sparkInvocationListResultSchema.parse({
-    invocations: page.invocations.map((invocation) => ({
-      ...invocation,
-      errorMessage: invocation.errorMessage?.slice(0, 500),
-      retryable: isRetryableInvocationError(invocation.errorCode),
-    })),
-    total: page.total,
-    limit: page.limit,
-    offset: page.offset,
-    observedAt: new Date().toISOString(),
-  });
 }
 
 export function isTerminalInvocationStatus(status: SparkInvocationStatus): boolean {

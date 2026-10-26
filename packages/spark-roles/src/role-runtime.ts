@@ -1,21 +1,35 @@
 import type { ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
+  contentHash,
   stableId,
-  writeTextFileAtomic,
   type EvidenceRef,
   type ExtensionRoleRunInputController,
   type ExtensionRoleRunner,
   type RoleRunCompletionOutcome,
-} from "@zendev-lab/spark-core";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { resolveRoleNativeExecutor } from "./native-executor.ts";
-import { dirname, extname, join, relative, sep } from "node:path";
-import { resolveSparkUserPaths } from "@zendev-lab/spark-system";
+  type ToolEffect,
+} from "@zendev-lab/spark-invocation";
+import { writeTextFileAtomic } from "@zendev-lab/spark-platform-node/json-files";
 import {
-  parseSparkRoleSpec,
+  sparkWorkspaceStatePath,
+  type SparkStateRootContext,
+} from "@zendev-lab/spark-platform-node/paths";
+import { link, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
+import { resolveSparkUserPaths } from "@zendev-lab/spark-platform-node";
+import {
+  loadSparkSkillByName,
+  SparkSkillResolver,
+  type SparkLoadedSkill,
+} from "./skill-resolver-entry.ts";
+import {
+  defaultProjectResourceDirs,
+  orderedSparkResourceRoots,
+} from "@zendev-lab/spark-platform-node/resource-paths";
+import { dirname, extname, join, relative, sep } from "node:path";
+import { resolveRoleNativeExecutor } from "./native-executor.ts";
+import {
   sparkRoleModelTypeSchema,
-  type SparkRoleCapability,
-  type SparkRoleInstantiation,
+  sparkRoleOriginSchema,
   type SparkRoleModelType,
   type SparkRoleSource,
 } from "@zendev-lab/spark-protocol/role-session";
@@ -39,15 +53,18 @@ export interface RoleOrigin {
 
 export interface RoleSpec {
   ref: RoleRef;
+  /** Content revision pinned by each Invocation at start. */
+  revision: string;
   id: string;
   source: RoleSource;
-  revision: number;
   description: string;
   systemPrompt: string;
   capabilities: RoleCapability[];
+  /** Ordered Skill names preloaded into each Session created from this Role. */
+  skills?: string[];
   allowedTools?: string[];
+  allowedToolEffects?: ToolEffect[];
   modelType: SparkRoleModelType;
-  instantiation: SparkRoleInstantiation;
   origin?: RoleOrigin;
   createdAt: string;
   updatedAt: string;
@@ -62,9 +79,10 @@ export interface RoleSpecProposal {
   rationale: string;
   expectedUses: string[];
   capabilities: RoleCapability[];
+  skills?: string[];
   allowedTools?: string[];
+  allowedToolEffects?: ToolEffect[];
   modelType: SparkRoleModelType;
-  instantiation?: SparkRoleInstantiation;
   origin?: RoleOrigin;
 }
 
@@ -83,9 +101,29 @@ export type RoleRunStatus =
   | "not_started";
 export type RoleRunInputControl = "stdin" | "native" | "none";
 
+export interface RoleSkillDigest {
+  name: string;
+  digest: string;
+}
+
+export interface ResolvedRoleComposition {
+  definitionRevision: string;
+  compositionRevision: string;
+  systemPrompt: string;
+  skillDigests: RoleSkillDigest[];
+}
+
 export interface RoleRunRecord {
   ref: RoleRunRef;
   roleRef: RoleRef;
+  /** Effective Role revision frozen when this Invocation started. */
+  roleRevision: string;
+  /** Static RoleSpec revision before execution-time Skill resolution. */
+  definitionRevision?: string;
+  /** Executed Role composition revision, including ordered Skill content digests. */
+  compositionRevision?: string;
+  /** Ordered Skill source digests frozen for this Invocation. */
+  skillDigests?: RoleSkillDigest[];
   /** Human-readable name for this concrete role run; roleRef remains the reusable definition. */
   runName?: string;
   instruction: string;
@@ -98,6 +136,7 @@ export interface RoleRunRecord {
 
 export interface RoleRunRequest {
   roleRef: RoleRef;
+  roleRevision?: string;
   instruction: string;
   /** Human-readable name for this concrete run, used by task/workflow observability. */
   runName?: string;
@@ -109,8 +148,8 @@ export interface RoleRunRequest {
   thinking?: RoleThinkingLevel;
   /** Optional role tool allowlist. Hosts/presets own which tools are appropriate. */
   allowedTools?: string[];
-  /** Launch without saving or reusing a session. Useful for short verifier gates. */
-  noSession?: boolean;
+  /** Runtime-enforced effect ceiling; omitted only for user-defined Roles. */
+  allowedToolEffects?: ToolEffect[];
   /** Disable extension discovery for compatibility adapters. Useful for self-contained verifier gates. */
   noExtensions?: boolean;
   sessionDir?: string;
@@ -156,11 +195,11 @@ export interface RoleRunLauncherInput extends RoleRunCommandInput {
    */
   stdinMode?: "pipe" | "ignore";
   roleId?: string;
-  roleRevision?: number;
   roleSource?: RoleSource;
   roleCapabilities?: RoleCapability[];
+  /** Ordered Skill names declared by the reusable Role definition. */
+  roleSkills?: string[];
   roleModelType?: SparkRoleModelType;
-  roleInstantiation?: SparkRoleInstantiation;
   /** Preserve workflow-vs-role accounting across the native executor boundary. */
   usageExecutionKind?: "role_run" | "workflow_agent";
   /** Reviewer-only authority for typed native executor compatibility recovery. */
@@ -172,13 +211,8 @@ export interface RoleRunLauncherInput extends RoleRunCommandInput {
 
 export interface RoleRunResult {
   record: RoleRunRecord & {
-    launch: RoleLaunchMode;
     model?: string;
     thinking?: RoleThinkingLevel;
-    sessionDir?: string;
-    forkFromSession?: string;
-    noSession?: boolean;
-    sessionPersistence?: "anonymous" | "persistent";
     failureKind?: string;
     errorMessage?: string;
   };
@@ -219,48 +253,34 @@ export interface RoleRunInputDeliveryResult {
   errorMessage?: string;
 }
 
-export const builtinRoleIds = [
-  "administrator",
-  "explorer",
-  "researcher",
-  "executor",
-  "reviewer",
-] as const;
-export const legacyBuiltinRoleIds = ["scout", "worker"] as const;
-export type CanonicalBuiltinRoleId = (typeof builtinRoleIds)[number];
-export type LegacyBuiltinRoleId = (typeof legacyBuiltinRoleIds)[number];
-export type BuiltinRoleId = CanonicalBuiltinRoleId | LegacyBuiltinRoleId;
+export const builtinRoleIds = ["administrator", "explorer", "executor", "reviewer"] as const;
+export type BuiltinRoleId = (typeof builtinRoleIds)[number];
+type CanonicalBuiltinRoleId = BuiltinRoleId;
 
-export const ROLE_CAPABILITY_VOCAB = ["read", "write", "exec", "net", "interact", "spawn"] as const;
-export type RoleCapability = SparkRoleCapability;
+export const ROLE_CAPABILITY_VOCAB = [
+  "read",
+  "write",
+  "exec",
+  "net",
+  "interact",
+  "manage",
+  "spawn",
+] as const;
+export type RoleCapability = (typeof ROLE_CAPABILITY_VOCAB)[number];
 
 export const BUILTIN_ROLE_CAPABILITY_PROFILES = {
-  administrator: ["read", "net", "exec", "write", "interact", "spawn"],
-  explorer: ["read", "exec"],
-  researcher: ["read", "net"],
-  reviewer: ["read", "net"],
+  administrator: ["read", "interact", "manage", "spawn"],
+  explorer: ["read", "net"],
   executor: ["read", "net", "exec", "write"],
-} as const satisfies Record<CanonicalBuiltinRoleId, readonly RoleCapability[]>;
-
-export const BUILTIN_ROLE_MODEL_TYPES = {
-  administrator: "coordination",
-  explorer: "exploration",
-  researcher: "research",
-  executor: "implementation",
-  reviewer: "verification",
-} as const satisfies Record<CanonicalBuiltinRoleId, SparkRoleModelType>;
+  reviewer: ["read", "net"],
+} as const satisfies Record<BuiltinRoleId, readonly RoleCapability[]>;
 
 export interface DefaultRoleRegistryOptions {
   now?: string;
 }
 
 const ROLE_READ_TOOLS = ["read", "grep", "find", "context"] as const;
-const ROLE_NET_TOOLS = [
-  "web_search",
-  "code_search",
-  "fetch_content",
-  "get_search_content",
-] as const;
+const ROLE_NET_TOOLS = ["web_search", "web_fetch", "get_search_content"] as const;
 const ROLE_EXECUTION_TOOLS = [
   "cue_exec",
   "cue_run",
@@ -276,8 +296,9 @@ const ROLE_TOOLS_BY_CAPABILITY = {
   write: ROLE_WRITE_TOOLS,
   exec: ROLE_EXECUTION_TOOLS,
   net: ROLE_NET_TOOLS,
-  interact: ["ask", "ask_user", "ask_flow"],
-  spawn: ["role", "assign"],
+  interact: ["ask"],
+  manage: ["session", "task_read", "task_write", "goal", "workflow", "repro"],
+  spawn: ["role", "assign", "delegation"],
 } as const satisfies Record<RoleCapability, readonly string[]>;
 
 const FORBIDDEN_BUILTIN_ROLE_TOOLS = new Set([
@@ -294,18 +315,23 @@ const FORBIDDEN_BUILTIN_ROLE_TOOLS = new Set([
   "graft_patch",
 ]);
 
+export const MAX_ROLE_SKILLS = 8;
+export const MAX_ROLE_SKILL_SOURCE_CHARS = 64_000;
+const ROLE_SKILL_NAME_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+
 const ROLE_FRONTMATTER_KEYS = new Set([
   "id",
   "name",
   "description",
   "source",
+  "revision",
   "allowedTools",
+  "allowedToolEffects",
   "tools",
   "origin",
-  "revision",
   "capabilities",
+  "skills",
   "modelType",
-  "instantiation",
   "createdAt",
   "updatedAt",
 ]);
@@ -329,8 +355,9 @@ export function builtinRoleRef(id: BuiltinRoleId): RoleRef {
 }
 
 export function normalizeRoleRef(value: string): RoleRef {
-  if (value === "role:builtin-scout" || value === "builtin-scout") return "role:builtin-explorer";
-  if (value === "role:builtin-worker" || value === "builtin-worker") return "role:builtin-executor";
+  if (/^(?:role:)?builtin-(?:scout|researcher|worker)$/u.test(value)) {
+    throw new Error(`retired builtin role ref is not supported after registry v6: ${value}`);
+  }
   if (value.startsWith("role:")) return value as RoleRef;
   if (value.startsWith("agent:"))
     throw new Error("legacy agent refs are not supported; use role:*");
@@ -349,32 +376,26 @@ export function createBuiltinRoles(now = nowIso()): RoleSpec[] {
   const roles = [
     builtin(
       "administrator",
-      "Owns one workspace's persistent coordination Session.",
-      "You are the Spark workspace Administrator. Coordinate work through owner APIs, preserve the user's intent and repository state, and delegate bounded work to owned Sessions. Keep execution truth in the daemon and ask only when a decision cannot be discovered safely.",
+      "Owns Workspace coordination, delegation, monitoring, acceptance, and escalation decisions.",
+      "You are the Spark Workspace Administrator. You manage work; you do not execute implementation or investigation yourself. Clarify intent, decompose work, select and instantiate suitable Roles, create and supervise Tasks, Sessions, Workflows, and delegations, monitor durable state and produced Artifacts or Evidence, request user decisions with Ask when authority or intent is missing, and independently arrange review before accepting completion. Never write files, execute commands, browse the network, or claim implementation findings from your own unsupported inference. Delegate fact gathering to Explorer, approved changes to Executor, and acceptance to Reviewer. Keep ownership, blockers, decisions, and next actions explicit; escalate to the user when a required decision cannot be safely delegated.",
       now,
     ),
     builtin(
       "explorer",
-      "Inspects local repositories and environments with non-mutating executable probes.",
-      "You are a Spark explorer. Establish local facts from the actual repository and environment. Read relevant source, configuration, manifests, and logs, and run only non-mutating probes needed to verify entry points, builds, runtime availability, resource use, or observed behavior. Never edit files, change repository state, install dependencies, start persistent services, or mutate external systems. Report concrete paths and symbols, every executed command with its exit status and bounded output, and classify conclusions as observed, inferred, or unverified. When a blocker, missing user decision, or ambiguity cannot be resolved locally, report it and the exact question needed upward instead of asking interactively.",
-      now,
-    ),
-    builtin(
-      "researcher",
-      "Researches source, documentation, issues, pull requests, and prior art.",
-      "You are a Spark researcher. Investigate the assigned topic from repository source and authoritative external material without executing commands or editing files. Confirm the target and keywords, search broadly, then deeply inspect the three to five most relevant sources when available. Cite only sources you actually inspected. Separate direct reuse, reusable patterns, and background context; distinguish observed facts, reasoned inferences, and unresolved gaps. Return a compact source table, mechanism-focused deep dives, extracted implementation patterns, and a recommended route with limitations. If no relevant result exists, report the search coverage and exact gap. Do not ask interactively or spawn other roles; report blockers and the exact question needed upward.",
+      "Obtains local and external facts without mutating state.",
+      "You are a Spark Explorer. Establish facts from repository source and authoritative external sources. You may read and browse, but you cannot execute commands, write files, change repository or external state, ask the user, or delegate further work. Report concrete sources, paths, symbols, and observations; distinguish facts, inferences, and unresolved gaps. Return blockers and the exact decision needed to the supervising Administrator.",
       now,
     ),
     builtin(
       "executor",
       "Executes approved implementation tasks.",
-      "You are a Spark executor. Implement only the assigned instruction. When a blocker, missing requirement, approval need, or ambiguity cannot be resolved from available context, stop and report the blocker and the exact question needed upward in your final response instead of asking interactively. When the user reports a concrete repo behavior change, fix the implementation instead of only recording a preference. Flag clearly placeholder/generic/stale project or claimed-task @name/title when the current intent makes the better name clear while preserving refs and intentional user names.",
+      "You are a Spark Executor. Implement only the approved instruction within the supplied owner, workspace, cwd, GitChange, and tool boundaries. Read, browse, execute, and write only as needed for that implementation; verify the result proportionally and preserve unrelated work. Do not ask the user or delegate further work. If required information, authority, or a safe execution path is missing, stop and return the blocker, evidence, and exact decision needed to the supervising Administrator.",
       now,
     ),
     builtin(
       "reviewer",
-      "Reviews results, internal Evidence, and Artifacts against task intent.",
-      "You are a Spark reviewer. Verify claims from fresh context and return actionable findings. Do not ask interactively; when intent or evidence is ambiguous, reject with concrete questions in findings/blockers instead of silently assuming an answer. Call out placeholder/generic/stale project or task names only when a safe improvement is clear from context and would preserve refs.",
+      "Independently verifies outcomes, Evidence, and Artifacts against intent and policy.",
+      "You are a Spark Reviewer. Independently verify claims from fresh context using reads and authoritative network sources. You cannot execute commands, write files, mutate external state, ask the user, or delegate further work. Return prioritized actionable findings and an explicit accept or reject recommendation. When intent or evidence is ambiguous, reject with concrete blockers and the exact decision needed by the supervising Administrator.",
       now,
     ),
   ];
@@ -396,23 +417,23 @@ export function createExtensionRoleSpec(
     systemPrompt: string;
     capabilities: RoleCapability[];
     allowedTools?: string[];
+    allowedToolEffects?: ToolEffect[];
     modelType: SparkRoleModelType;
-    instantiation?: SparkRoleInstantiation;
     origin?: RoleOrigin;
   },
   now = nowIso(),
 ): RoleSpec {
   const role: RoleSpec = {
     ref: createRoleRef("extension", input.id),
+    revision: roleRevision(input),
     id: input.id,
     source: "extension",
-    revision: 1,
     description: input.description,
     systemPrompt: input.systemPrompt,
     capabilities: input.capabilities,
     allowedTools: input.allowedTools,
+    allowedToolEffects: input.allowedToolEffects,
     modelType: input.modelType,
-    instantiation: input.instantiation ?? "owned",
     origin: input.origin ?? { kind: "extension" },
     createdAt: now,
     updatedAt: now,
@@ -445,6 +466,12 @@ export function builtinRoleAllowedTools(id: BuiltinRoleId): string[] {
   );
 }
 
+export function builtinRoleAllowedToolEffects(id: BuiltinRoleId): ToolEffect[] {
+  if (id === "administrator") return ["read", "local_write", "external_write"];
+  if (id === "executor") return ["read", "network_read", "local_write", "external_write"];
+  return ["read", "network_read"];
+}
+
 export function validateBuiltinRoleProfiles(roles: readonly RoleSpec[]): void {
   if (ROLE_CAPABILITY_VOCAB.includes("record" as RoleCapability))
     throw new Error("builtin role capability vocab must not include record");
@@ -462,9 +489,6 @@ export function validateBuiltinRoleProfiles(roles: readonly RoleSpec[]): void {
     )
       throw new Error(`builtin role ${id} must not include interact or spawn capability`);
   }
-  assertCapabilitySubset("researcher", "reviewer");
-  assertCapabilitySubset("explorer", "executor");
-  assertCapabilitySubset("reviewer", "executor");
 
   const rolesById = new Map(roles.map((role) => [role.id, role]));
   for (const id of builtinRoleIds) {
@@ -506,17 +530,27 @@ function builtin(
   systemPrompt: string,
   now: string,
 ): RoleSpec {
+  const allowedTools = builtinRoleAllowedTools(id);
+  const allowedToolEffects = builtinRoleAllowedToolEffects(id);
   return {
     ref: builtinRoleRef(id),
+    revision: roleRevision({
+      id,
+      description,
+      systemPrompt,
+      capabilities: [...BUILTIN_ROLE_CAPABILITY_PROFILES[id]],
+      allowedTools,
+      allowedToolEffects,
+      modelType: builtinRoleModelType(id),
+    }),
     id,
     source: "builtin",
-    revision: 1,
     description,
     systemPrompt,
     capabilities: [...BUILTIN_ROLE_CAPABILITY_PROFILES[id]],
-    allowedTools: builtinRoleAllowedTools(id),
-    modelType: BUILTIN_ROLE_MODEL_TYPES[id],
-    instantiation: id === "administrator" ? "persistent" : "owned",
+    allowedTools,
+    allowedToolEffects,
+    modelType: builtinRoleModelType(id),
     origin: { kind: "builtin" },
     createdAt: now,
     updatedAt: now,
@@ -524,9 +558,14 @@ function builtin(
 }
 
 export function canonicalBuiltinRoleId(id: BuiltinRoleId): CanonicalBuiltinRoleId {
-  if (id === "scout") return "explorer";
-  if (id === "worker") return "executor";
   return id;
+}
+
+export function builtinRoleModelType(id: BuiltinRoleId): SparkRoleModelType {
+  if (id === "administrator") return "coordination";
+  if (id === "explorer") return "exploration";
+  if (id === "executor") return "implementation";
+  return "verification";
 }
 
 export class RoleRegistry {
@@ -558,9 +597,11 @@ export class RoleRegistry {
   }
 
   select(idOrRef: string, filter: { source?: RoleSource } = {}): RoleSpec {
-    const selection =
-      idOrRef === "scout" ? "explorer" : idOrRef === "worker" ? "executor" : idOrRef;
-    const normalized = selection.startsWith("role:") ? normalizeRoleRef(selection) : undefined;
+    const selection = idOrRef;
+    const normalized =
+      selection.startsWith("role:") || selection.startsWith("builtin-")
+        ? normalizeRoleRef(selection)
+        : undefined;
     if (normalized) {
       const role = this.get(normalized);
       if (filter.source && role.source !== filter.source)
@@ -574,8 +615,14 @@ export class RoleRegistry {
         roleIdFromRef(role.ref) === selection,
     );
     if (matches.length === 0) throw new Error(`no role matches: ${idOrRef}`);
-    if (matches.length > 1) throw new Error(`ambiguous role: ${idOrRef}`);
-    return matches[0];
+    if (matches.length > 1) {
+      const priority: RoleSource[] = ["project", "user", "extension", "builtin"];
+      const bestPriority = Math.min(...matches.map((role) => priority.indexOf(role.source)));
+      const best = matches.filter((role) => priority.indexOf(role.source) === bestPriority);
+      if (best.length === 1) return best[0]!;
+      throw new Error(`ambiguous role: ${idOrRef}`);
+    }
+    return matches[0]!;
   }
 }
 
@@ -617,6 +664,35 @@ export class MarkdownRoleStore implements RoleStore {
     const filePath = this.pathFor(role);
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, serializeRoleSpecMarkdown(role), "utf8");
+  }
+
+  async saveIfAbsent(role: RoleSpec): Promise<boolean> {
+    validateRoleSpec(role);
+    if (!this.writable) throw new Error("role store is read-only");
+    if (role.source !== this.source)
+      throw new Error(`only ${this.source} roles can be saved to this MarkdownRoleStore`);
+    const filePath = this.pathFor(role);
+    await mkdir(dirname(filePath), { recursive: true });
+    const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporaryPath, serializeRoleSpecMarkdown(role), {
+        encoding: "utf8",
+        flag: "wx",
+      });
+      try {
+        await link(temporaryPath, filePath);
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+        throw error;
+      }
+    } finally {
+      try {
+        await unlink(temporaryPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
   }
 
   async loadAll(): Promise<RoleSpec[]> {
@@ -672,8 +748,6 @@ export interface ResolvedRoleModelSetting {
   model: string;
   source: ResolvedRoleModelSource;
   modelType?: SparkRoleModelType;
-  /** @deprecated v2 settings are keyed by modelType. */
-  selector?: string;
 }
 
 export class RoleModelSettingsStoreFormatError extends Error {
@@ -683,22 +757,6 @@ export class RoleModelSettingsStoreFormatError extends Error {
     super(`invalid role model settings store: ${filePath}: ${message}`);
     this.name = "RoleModelSettingsStoreFormatError";
     this.filePath = filePath;
-  }
-}
-
-export class RoleModelSettingsMigrationConflictError extends RoleModelSettingsStoreFormatError {
-  readonly code = "role_model_type_migration_conflict" as const;
-  readonly modelType: SparkRoleModelType;
-  readonly selectors: string[];
-
-  constructor(filePath: string, modelType: SparkRoleModelType, selectors: string[]) {
-    super(
-      filePath,
-      `legacy roleModels map conflicting models to ${modelType}: ${selectors.join(", ")}; configure modelTypes.${modelType} explicitly`,
-    );
-    this.name = "RoleModelSettingsMigrationConflictError";
-    this.modelType = modelType;
-    this.selectors = selectors;
   }
 }
 
@@ -775,8 +833,14 @@ export class RoleModelSettingsStore {
   }
 }
 
-export function defaultProjectRoleModelSettingsStore(cwd: string): RoleModelSettingsStore {
-  return new RoleModelSettingsStore(join(cwd, ".spark", "role-model-settings.json"), "project");
+export function defaultProjectRoleModelSettingsStore(
+  cwd: string,
+  ctx?: SparkStateRootContext,
+): RoleModelSettingsStore {
+  return new RoleModelSettingsStore(
+    sparkWorkspaceStatePath(cwd, ["role-model-settings.json"], ctx),
+    "project",
+  );
 }
 
 export function defaultUserRoleModelSettingsStore(sparkHome?: string): RoleModelSettingsStore {
@@ -797,10 +861,9 @@ export async function resolveRoleModelSetting(input: {
 }): Promise<ResolvedRoleModelSetting | undefined> {
   const explicitModel = input.explicitModel?.trim();
   if (explicitModel) return { model: explicitModel, source: "explicit" };
-  const roleRef = normalizeRoleRef(input.roleRef);
-  const modelType =
-    input.modelType ??
-    legacyRoleModelType({ roleRef, roleId: input.roleId, roleName: input.roleName });
+  normalizeRoleRef(input.roleRef);
+  const modelType = input.modelType;
+  if (!modelType) return undefined;
   for (const store of [input.projectStore, input.userStore]) {
     if (!store) continue;
     const entry = await store.get(modelType);
@@ -809,29 +872,9 @@ export async function resolveRoleModelSetting(input: {
         model: entry.model,
         source: entry.source,
         modelType: entry.modelType,
-        selector: entry.modelType,
       };
   }
   return undefined;
-}
-
-function legacyRoleModelType(input: {
-  roleRef: RoleRef;
-  roleId?: string;
-  roleName?: string;
-}): SparkRoleModelType {
-  const candidates = [
-    input.roleRef,
-    input.roleRef.slice("role:".length),
-    input.roleId,
-    input.roleName,
-  ];
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    const modelType = legacyRoleModelSelectorToModelType(candidate);
-    if (modelType !== "legacy") return modelType;
-  }
-  return "legacy";
 }
 
 function normalizeRoleModelType(value: string, field: string): SparkRoleModelType {
@@ -861,51 +904,34 @@ function normalizeRoleModelSettingsFile(value: unknown, filePath: string): Recor
   if (!isRecord(value)) {
     throw new RoleModelSettingsStoreFormatError(filePath, "JSON root must be an object");
   }
-  if (value.version === 2) {
-    if (!isRecord(value.modelTypes)) {
-      throw new RoleModelSettingsStoreFormatError(filePath, "modelTypes must be an object");
-    }
-    validateRoleModelMap(value.modelTypes, filePath, "modelTypes");
-    return Object.fromEntries(
-      Object.entries(value.modelTypes).map(([modelType, model]) => [
-        normalizeRoleModelType(modelType, "modelType"),
-        String(model).trim(),
-      ]),
+  const keys = Object.keys(value).sort();
+  if (
+    value.version !== 2 ||
+    keys.length !== 2 ||
+    keys[0] !== "modelTypes" ||
+    keys[1] !== "version"
+  ) {
+    throw new RoleModelSettingsStoreFormatError(
+      filePath,
+      "runtime requires strict version 2 with only version and modelTypes",
     );
   }
-  if (value.version !== 1) {
-    throw new RoleModelSettingsStoreFormatError(filePath, "version must be 1 or 2");
+  if (!isRecord(value.modelTypes)) {
+    throw new RoleModelSettingsStoreFormatError(filePath, "modelTypes must be an object");
   }
-  if (!isRecord(value.roleModels)) {
-    throw new RoleModelSettingsStoreFormatError(filePath, "roleModels must be an object");
-  }
-  validateRoleModelMap(value.roleModels, filePath, "roleModels");
-  const groups = new Map<SparkRoleModelType, Array<[string, string]>>();
-  for (const [selector, model] of Object.entries(value.roleModels)) {
-    const modelType = legacyRoleModelSelectorToModelType(selector);
-    const entries = groups.get(modelType) ?? [];
-    entries.push([selector, String(model).trim()]);
-    groups.set(modelType, entries);
-  }
-  const modelTypes: Record<string, string> = {};
-  for (const [modelType, entries] of groups) {
-    const models = new Set(entries.map(([, model]) => model));
-    if (models.size > 1) {
-      throw new RoleModelSettingsMigrationConflictError(
-        filePath,
-        modelType,
-        entries.map(([selector]) => selector).sort((left, right) => left.localeCompare(right)),
-      );
-    }
-    modelTypes[modelType] = entries[0]![1];
-  }
-  return modelTypes;
+  validateRoleModelMap(value.modelTypes, filePath, "modelTypes");
+  return Object.fromEntries(
+    Object.entries(value.modelTypes).map(([modelType, model]) => [
+      normalizeRoleModelType(modelType, "modelType"),
+      String(model).trim(),
+    ]),
+  );
 }
 
 function validateRoleModelMap(
   value: Record<string, unknown>,
   filePath: string,
-  field: "roleModels" | "modelTypes",
+  field: "modelTypes",
 ): void {
   for (const [selector, model] of Object.entries(value)) {
     if (!selector.trim())
@@ -916,20 +942,6 @@ function validateRoleModelMap(
         `${field}.${selector} must be a non-empty string`,
       );
   }
-}
-
-function legacyRoleModelSelectorToModelType(selector: string): SparkRoleModelType {
-  const normalized = selector
-    .trim()
-    .toLowerCase()
-    .replace(/^role:/u, "")
-    .replace(/^(?:builtin-|extension-|project-|user-)/u, "");
-  if (normalized === "administrator") return "coordination";
-  if (normalized === "scout" || normalized === "explorer") return "exploration";
-  if (normalized === "researcher") return "research";
-  if (normalized === "worker" || normalized === "executor") return "implementation";
-  if (normalized === "reviewer") return "verification";
-  return "legacy";
 }
 
 async function writeRoleModelSettingsFile(
@@ -1007,36 +1019,59 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+export interface RoleHydrationOptions {
+  home?: string;
+  includeUser?: boolean;
+  userRoleDir?: string;
+  projectRoleDirs?: string[];
+  cwdRoleDir?: string;
+  configuredRoleDirs?: string[];
+}
+
 export async function hydrateDefaultRoleRegistry(
   registry: RoleRegistry,
   cwd: string,
-  options: {
-    home?: string;
-    includeUser?: boolean;
-  } = {},
+  options: RoleHydrationOptions = {},
 ): Promise<void> {
   hydrateExtensionRoles(registry);
-  await defaultProjectRoleStore(cwd).hydrate(registry);
-  if (options.includeUser) await defaultUserRoleStore(options.home).hydrate(registry);
+  if (options.includeUser) {
+    const userStore = options.userRoleDir
+      ? new MarkdownRoleStore({ rootDir: options.userRoleDir, source: "user" })
+      : defaultUserRoleStore(options.home);
+    await userStore.hydrate(registry);
+  }
+  const projectDirs = defaultProjectResourceDirs(cwd, "roles");
+  const workspaceDirs = options.projectRoleDirs ?? projectDirs.slice(0, -1);
+  const cwdDir = options.cwdRoleDir ?? projectDirs.at(-1) ?? join(cwd, ".agents", "roles");
+  const roots = orderedSparkResourceRoots({
+    workspace: workspaceDirs,
+    cwd: [cwdDir],
+    configured: options.configuredRoleDirs,
+  });
+  for (const root of roots) {
+    await new MarkdownRoleStore({ rootDir: root.path, source: "project" }).hydrate(registry);
+  }
 }
 
 export function createRoleSpec(proposal: RoleSpecProposal, now = nowIso()): RoleSpec {
   const source = proposal.source ?? "project";
-  return {
+  const skills = normalizeRoleSkills(proposal.skills);
+  const role = {
     ref: createRoleRef(source, proposal.id),
     id: proposal.id,
     source,
-    revision: 1,
     description: proposal.description,
     systemPrompt: proposal.systemPrompt,
     capabilities: proposal.capabilities,
+    ...(skills ? { skills } : {}),
     allowedTools: proposal.allowedTools,
+    allowedToolEffects: proposal.allowedToolEffects,
     modelType: proposal.modelType,
-    instantiation: proposal.instantiation ?? "owned",
     origin: proposal.origin,
     createdAt: now,
     updatedAt: now,
   };
+  return { ...role, revision: roleRevision(role) };
 }
 
 export function createRoleRef(source: RoleSource, id: string): RoleRef {
@@ -1046,7 +1081,22 @@ export function createRoleRef(source: RoleSource, id: string): RoleRef {
 }
 
 export function validateRoleSpec(role: RoleSpec): void {
-  parseSparkRoleSpec(role);
+  if (!role.ref.startsWith("role:")) throw new Error(`invalid role ref: ${role.ref}`);
+  assertNonEmpty(role.revision, `role ${role.id} revision`);
+  assertNonEmpty(role.id, "role id");
+  assertNonEmpty(role.description, `role ${role.id} description`);
+  assertNonEmpty(role.systemPrompt, `role ${role.id} system prompt`);
+  if (!normalizeRoleSource(role.source))
+    throw new Error(`invalid role source: ${String(role.source)}`);
+  normalizeRoleSkills(role.skills);
+  const expectedRevision = roleRevision(role);
+  if (role.revision !== expectedRevision) {
+    throw new Error(`role ${role.id} revision does not match its content`);
+  }
+}
+
+function assertNonEmpty(value: string, label: string): void {
+  if (!value.trim()) throw new Error(`${label} is required`);
 }
 
 function sanitizeRoleRefPart(value: string): string {
@@ -1112,6 +1162,7 @@ export function parseRoleSpecMarkdown(
   const now = nowIso();
   const parsed = parseFrontmatter(text);
   const frontmatter = parsed.frontmatter;
+  assertKnownRoleFrontmatter(frontmatter);
   const id =
     stringFrontmatter(frontmatter, "id") ?? stringFrontmatter(frontmatter, "name") ?? input.id;
   const source = normalizeRoleSource(frontmatter.source) ?? input.source;
@@ -1124,28 +1175,71 @@ export function parseRoleSpecMarkdown(
     kind: input.originKind ?? "manual",
     sourcePath: input.sourcePath,
   };
+  const allowedTools =
+    arrayFrontmatter(frontmatter, "allowedTools") ?? arrayFrontmatter(frontmatter, "tools");
+  const allowedToolEffects = arrayFrontmatter(frontmatter, "allowedToolEffects") as
+    | ToolEffect[]
+    | undefined;
+  const capabilities =
+    roleCapabilitiesFrontmatter(frontmatter) ?? capabilitiesFromAllowedTools(allowedTools);
+  const skills = normalizeRoleSkills(arrayFrontmatter(frontmatter, "skills"));
+  const modelType = sparkRoleModelTypeSchema.parse(
+    stringFrontmatter(frontmatter, "modelType") ?? "custom",
+  );
   const role: RoleSpec = {
     ref: createRoleRef(source, id),
+    revision: roleRevision({
+      id,
+      description,
+      systemPrompt,
+      capabilities,
+      skills,
+      allowedTools,
+      allowedToolEffects,
+      modelType,
+    }),
     id,
     source,
-    revision: integerFrontmatter(frontmatter, "revision") ?? 1,
     description,
     systemPrompt,
-    capabilities:
-      roleCapabilitiesFrontmatter(frontmatter) ??
-      capabilitiesFromAllowedTools(
-        arrayFrontmatter(frontmatter, "allowedTools") ?? arrayFrontmatter(frontmatter, "tools"),
-      ),
-    allowedTools:
-      arrayFrontmatter(frontmatter, "allowedTools") ?? arrayFrontmatter(frontmatter, "tools"),
-    modelType: stringFrontmatter(frontmatter, "modelType") ?? "legacy",
-    instantiation: roleInstantiationFrontmatter(frontmatter) ?? "owned",
+    capabilities,
+    ...(skills ? { skills } : {}),
+    allowedTools,
+    allowedToolEffects,
+    modelType,
     origin,
     createdAt: stringFrontmatter(frontmatter, "createdAt") ?? now,
     updatedAt: stringFrontmatter(frontmatter, "updatedAt") ?? now,
   };
   validateRoleSpec(role);
   return role;
+}
+
+export function roleRevision(
+  role: Pick<
+    RoleSpec,
+    | "id"
+    | "description"
+    | "systemPrompt"
+    | "capabilities"
+    | "skills"
+    | "allowedTools"
+    | "allowedToolEffects"
+    | "modelType"
+  >,
+): string {
+  return `sha256:${contentHash(
+    JSON.stringify({
+      id: role.id,
+      description: role.description,
+      systemPrompt: role.systemPrompt,
+      capabilities: role.capabilities,
+      ...(role.skills ? { skills: role.skills } : {}),
+      allowedTools: role.allowedTools ?? [],
+      allowedToolEffects: role.allowedToolEffects ?? [],
+      modelType: role.modelType,
+    }),
+  )}`;
 }
 
 export function serializeRoleSpecMarkdown(role: RoleSpec): string {
@@ -1157,9 +1251,10 @@ export function serializeRoleSpecMarkdown(role: RoleSpec): string {
     revision: role.revision,
     capabilities: role.capabilities,
     modelType: role.modelType,
-    instantiation: role.instantiation,
   };
   if (role.allowedTools?.length) frontmatter.allowedTools = role.allowedTools;
+  if (role.skills?.length) frontmatter.skills = role.skills;
+  if (role.allowedToolEffects?.length) frontmatter.allowedToolEffects = role.allowedToolEffects;
   if (role.origin) frontmatter.origin = role.origin;
   frontmatter.createdAt = role.createdAt;
   frontmatter.updatedAt = role.updatedAt;
@@ -1324,12 +1419,6 @@ function arrayFrontmatter(frontmatter: Record<string, unknown>, key: string): st
   return value.map((item) => String(item).trim()).filter(Boolean);
 }
 
-function integerFrontmatter(frontmatter: Record<string, unknown>, key: string): number | undefined {
-  const value = frontmatter[key];
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
-
 function roleCapabilitiesFrontmatter(
   frontmatter: Record<string, unknown>,
 ): RoleCapability[] | undefined {
@@ -1340,15 +1429,6 @@ function roleCapabilitiesFrontmatter(
     if (!vocabulary.has(value)) throw new Error(`unknown role capability: ${value}`);
   }
   return values as RoleCapability[];
-}
-
-function roleInstantiationFrontmatter(
-  frontmatter: Record<string, unknown>,
-): SparkRoleInstantiation | undefined {
-  const value = stringFrontmatter(frontmatter, "instantiation");
-  if (value === undefined) return undefined;
-  if (value === "persistent" || value === "owned") return value;
-  throw new Error(`invalid role instantiation: ${value}`);
 }
 
 function capabilitiesFromAllowedTools(allowedTools: string[] | undefined): RoleCapability[] {
@@ -1364,15 +1444,47 @@ function capabilitiesFromAllowedTools(allowedTools: string[] | undefined): RoleC
 }
 
 function parseOrigin(value: unknown): RoleOrigin | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const raw = value as Omit<Partial<RoleOrigin>, "kind"> & { kind?: unknown };
-  const kind = normalizeRoleOriginKind(raw.kind);
-  if (!kind) return undefined;
-  return {
-    kind,
-    sourcePath: raw.sourcePath,
-    note: raw.note,
-  };
+  if (value === undefined) return undefined;
+  return sparkRoleOriginSchema.parse(value);
+}
+
+const ROLE_FRONTMATTER_FIELDS = new Set([
+  "id",
+  "name",
+  "source",
+  "revision",
+  "description",
+  "origin",
+  "allowedTools",
+  "tools",
+  "allowedToolEffects",
+  "capabilities",
+  "skills",
+  "modelType",
+  "createdAt",
+  "updatedAt",
+]);
+
+function assertKnownRoleFrontmatter(frontmatter: Record<string, unknown>): void {
+  const unknown = Object.keys(frontmatter).filter((key) => !ROLE_FRONTMATTER_FIELDS.has(key));
+  if (unknown.length > 0) {
+    throw new Error(`unknown Role frontmatter fields: ${unknown.sort().join(", ")}`);
+  }
+}
+
+function normalizeRoleSkills(value: readonly string[] | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (value.length < 1 || value.length > MAX_ROLE_SKILLS) {
+    throw new Error(`role skills must contain between 1 and ${MAX_ROLE_SKILLS} names`);
+  }
+  const skills = value.map((name) => name.trim());
+  for (const name of skills) {
+    if (!ROLE_SKILL_NAME_REGEX.test(name)) {
+      throw new Error(`invalid role skill name: ${name || "(empty)"}`);
+    }
+  }
+  if (new Set(skills).size !== skills.length) throw new Error("role skills must be unique");
+  return skills;
 }
 
 function normalizeRoleOriginKind(value: unknown): RoleOriginKind | undefined {
@@ -1560,12 +1672,8 @@ export function buildRoleRunArgs(input: RoleRunCommandInput): string[] {
   if (!input.roleRef) throw new Error("role run roleRef is required");
   if (!input.instruction.trim()) throw new Error("role run instruction is required");
   const launch = normalizeRoleLaunchMode(input.launch);
-  if (input.noSession && launch === "forked") {
-    throw new Error("noSession role runs cannot use forked launch");
-  }
   const args = ["--print", "--mode", "json"];
   if (input.noExtensions) args.push("--no-extensions");
-  if (input.noSession) args.push("--no-session");
   if (input.model?.trim()) args.push("--model", input.model.trim());
   if (input.thinking !== undefined)
     args.push("--thinking", normalizeRoleThinkingLevel(input.thinking));
@@ -1597,6 +1705,89 @@ export function roleRunChildEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Pr
   };
 }
 
+export async function resolveRoleComposition(
+  input: {
+    definitionRevision: string;
+    systemPrompt: string;
+    skills?: readonly string[];
+  },
+  options: {
+    cwd: string;
+    maxCombinedSkillChars?: number;
+  },
+): Promise<ResolvedRoleComposition | undefined> {
+  const skills = normalizeRoleSkills(input.skills);
+  if (!skills) return undefined;
+  if (!input.definitionRevision.trim()) {
+    throw new Error("Role Skill composition requires a definition revision");
+  }
+
+  const resolver = new SparkSkillResolver({ cwd: options.cwd });
+  const { skills: availableSkills } = await resolver.resolve({ includeRepository: true });
+  const loaded = await Promise.all(
+    skills.map((name) => loadSparkSkillByName(availableSkills, name)),
+  );
+  const unavailable = skills.filter((_name, index) => loaded[index] === undefined);
+  if (unavailable.length > 0) {
+    throw new Error(
+      `Role Skill composition cannot load model-invocable Skills: ${unavailable.join(", ")}`,
+    );
+  }
+  const loadedSkills = loaded.filter((skill): skill is SparkLoadedSkill => skill !== undefined);
+  const combinedChars = loadedSkills.reduce((sum, skill) => sum + skill.content.length, 0);
+  const limit = options.maxCombinedSkillChars ?? MAX_ROLE_SKILL_SOURCE_CHARS;
+  if (combinedChars > limit) {
+    throw new Error(
+      `Role Skill composition is ${combinedChars} characters, above the ${limit} character limit`,
+    );
+  }
+  const skillDigests = loadedSkills.map(({ skill, content }) => ({
+    name: skill.name,
+    digest: `sha256:${contentHash(content)}`,
+  }));
+  const compositionRevision = `sha256:${contentHash(
+    JSON.stringify({ definitionRevision: input.definitionRevision, skills: skillDigests }),
+  )}`;
+  return {
+    definitionRevision: input.definitionRevision,
+    compositionRevision,
+    systemPrompt: renderPreloadedRoleSkills(input.systemPrompt, loadedSkills),
+    skillDigests,
+  };
+}
+
+function renderPreloadedRoleSkills(
+  systemPrompt: string,
+  skills: readonly SparkLoadedSkill[],
+): string {
+  const lines = [
+    systemPrompt.trim(),
+    "",
+    "The following Role Skills were resolved by exact name and preloaded in declaration order before this Session was created. Follow their instructions directly when relevant. Relative references resolve from each resource-base. Do not call skill_agent for these Skills.",
+    "<preloaded_role_skills>",
+  ];
+  for (const loaded of skills) {
+    lines.push(`  <skill name="${escapeRoleSkillXml(loaded.skill.name)}">`);
+    lines.push(`    <location>${escapeRoleSkillXml(loaded.skill.filePath)}</location>`);
+    lines.push(`    <resource-base>${escapeRoleSkillXml(loaded.skill.baseDir)}</resource-base>`);
+    lines.push("    <instructions>");
+    lines.push(loaded.body.trim());
+    lines.push("    </instructions>");
+    lines.push("  </skill>");
+  }
+  lines.push("</preloaded_role_skills>");
+  return lines.join("\n");
+}
+
+function escapeRoleSkillXml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
 function parseRoleRunDepth(value: string | undefined): number {
   if (value === undefined || value.trim() === "") return DEFAULT_ROLE_RUN_DEPTH;
   const parsed = Number(value);
@@ -1608,7 +1799,18 @@ function parseRoleRunDepth(value: string | undefined): number {
 
 export async function runRole(input: RoleRunLauncherInput): Promise<RoleRunResult> {
   if (input.signal?.aborted) throw new RoleRunCancelledError(abortSignalReason(input.signal));
-  // Preserve the recursion guard for nested role calls even when the run is
+  const composition = await resolveRoleComposition(
+    {
+      definitionRevision: input.roleRevision ?? "",
+      systemPrompt: input.systemPrompt,
+      skills: input.roleSkills,
+    },
+    { cwd: input.cwd },
+  );
+  const effectiveRoleRevision =
+    composition?.compositionRevision ?? input.roleRevision ?? "unversioned";
+  const effectiveSystemPrompt = composition?.systemPrompt ?? input.systemPrompt;
+  // Preserve the recursion guard for nested Role execution even when the run is
   // daemon-native rather than process-backed.
   const nativeEnv = roleRunChildEnv(input.env);
   const nativeExecutor = await resolveRoleNativeExecutor({ runRole: input.nativeExecutor });
@@ -1663,13 +1865,14 @@ export async function runRole(input: RoleRunLauncherInput): Promise<RoleRunResul
       role: {
         ref: input.roleRef,
         id: input.roleId ?? roleIdFromRef(input.roleRef),
-        systemPrompt: input.systemPrompt,
-        ...(input.roleRevision ? { revision: input.roleRevision } : {}),
+        revision: effectiveRoleRevision,
+        systemPrompt: effectiveSystemPrompt,
+        ...(input.roleSkills ? { skills: input.roleSkills } : {}),
         ...(input.roleSource ? { source: input.roleSource } : {}),
         ...(input.roleCapabilities ? { capabilities: input.roleCapabilities } : {}),
         ...(input.roleModelType ? { modelType: input.roleModelType } : {}),
-        ...(input.roleInstantiation ? { instantiation: input.roleInstantiation } : {}),
         ...(input.allowedTools ? { allowedTools: input.allowedTools } : {}),
+        ...(input.allowedToolEffects ? { allowedToolEffects: input.allowedToolEffects } : {}),
       },
       instruction: {
         roleRef: input.roleRef,
@@ -1678,16 +1881,18 @@ export async function runRole(input: RoleRunLauncherInput): Promise<RoleRunResul
       record: {
         ref: input.runRef,
         roleRef: input.roleRef,
+        roleRevision: effectiveRoleRevision,
+        ...(composition
+          ? {
+              definitionRevision: composition.definitionRevision,
+              compositionRevision: composition.compositionRevision,
+              skillDigests: composition.skillDigests,
+            }
+          : {}),
         instruction: input.instruction,
         status: "running" as const,
         startedAt,
-        launch,
         ...(input.model?.trim() ? { model: input.model.trim() } : {}),
-        ...(input.sessionDir ? { sessionDir: input.sessionDir } : {}),
-        ...(launch === "forked" && input.forkFromSession?.trim()
-          ? { forkFromSession: input.forkFromSession.trim() }
-          : {}),
-        ...(input.noSession ? { noSession: true, sessionPersistence: "anonymous" as const } : {}),
       },
       cwd: input.cwd,
       timeoutMs,
@@ -1700,7 +1905,7 @@ export async function runRole(input: RoleRunLauncherInput): Promise<RoleRunResul
         ? { forkFromSession: input.forkFromSession.trim() }
         : {}),
       ...(input.model?.trim() ? { model: input.model.trim() } : {}),
-      ...(input.noSession ? { noSession: true, sessionPersistence: "anonymous" as const } : {}),
+      ...(input.thinking ? { thinking: input.thinking } : {}),
       env: nativeEnv,
       inputControl,
       ...(input.onEvent ? { onEvent: input.onEvent } : {}),
@@ -1724,15 +1929,12 @@ export async function runRole(input: RoleRunLauncherInput): Promise<RoleRunResul
         ...result.record,
         ref: input.runRef,
         roleRef: input.roleRef,
-        launch,
+        roleRevision: effectiveRoleRevision,
         model: input.model?.trim() || result.record.model,
         thinking: input.thinking,
         instruction: input.instruction,
         startedAt: result.record.startedAt ?? startedAt,
         finishedAt: result.record.finishedAt ?? input.now?.() ?? nowIso(),
-        sessionDir: input.noSession ? undefined : (result.record.sessionDir ?? input.sessionDir),
-        forkFromSession: launch === "forked" ? input.forkFromSession?.trim() : undefined,
-        ...(input.noSession ? { noSession: true, sessionPersistence: "anonymous" as const } : {}),
       },
       outcome: result.outcome ?? result.record.outcome,
       stdout: result.stdout,
@@ -1786,6 +1988,54 @@ export function parsePiJsonlEvents(text: string): unknown[] {
     }
   }
   return events;
+}
+
+export function finalAssistantTextFromRoleRunEvents(
+  events: readonly unknown[],
+): string | undefined {
+  for (let eventIndex = events.length - 1; eventIndex >= 0; eventIndex -= 1) {
+    const event = events[eventIndex];
+    const direct = assistantTextFromRoleRunMessage(eventMessage(event));
+    if (direct) return direct;
+
+    const messages = eventMessages(event);
+    for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+      const text = assistantTextFromRoleRunMessage(messages[messageIndex]);
+      if (text) return text;
+    }
+  }
+  return undefined;
+}
+
+function eventMessage(event: unknown): unknown {
+  if (!event || typeof event !== "object") return undefined;
+  return (event as { message?: unknown }).message;
+}
+
+function eventMessages(event: unknown): unknown[] {
+  if (!event || typeof event !== "object") return [];
+  const messages = (event as { messages?: unknown }).messages;
+  return Array.isArray(messages) ? messages : [];
+}
+
+function assistantTextFromRoleRunMessage(message: unknown): string | undefined {
+  if (!message || typeof message !== "object") return undefined;
+  if ((message as { role?: unknown }).role !== "assistant") return undefined;
+  return roleRunMessageContentText((message as { content?: unknown }).content);
+}
+
+function roleRunMessageContentText(content: unknown): string | undefined {
+  if (typeof content === "string") return content.trim() || undefined;
+  if (!Array.isArray(content)) return undefined;
+  const text = content
+    .map((block) => {
+      if (!block || typeof block !== "object") return "";
+      const item = block as { type?: unknown; text?: unknown };
+      return item.type === "text" && typeof item.text === "string" ? item.text : "";
+    })
+    .join("")
+    .trim();
+  return text || undefined;
 }
 
 function abortSignalReason(signal: AbortSignal | undefined): string {

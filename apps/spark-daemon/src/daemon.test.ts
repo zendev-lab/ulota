@@ -4,16 +4,16 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, type WebSocket } from "ws";
 import { describe, expect, it, vi } from "vitest";
 import {
-  type SparkSessionRegistryRecord,
   SPARK_PROTOCOL_VERSION,
   createId,
   runtimeProtocolVersion,
   serverCommandEnvelopeSchema,
 } from "@zendev-lab/spark-protocol";
-import { resolveSparkPaths } from "@zendev-lab/spark-system";
+import { defaultSparkSessionRegistryRoot, SparkSessionRegistry } from "@zendev-lab/spark-session";
+import { resolveSparkPaths } from "@zendev-lab/spark-platform-node";
 import {
   createDaemonHumanWait,
   handleCommand,
@@ -33,7 +33,12 @@ import { SessionRequestCompletionDeliveryStore } from "./store/session-request-c
 import { SparkInvocationStore } from "./store/invocations.ts";
 import { openSparkDaemonDatabase } from "./store/schema.js";
 import {
+  createDaemonWorkspaceSession,
+  workspaceSessionRecord,
+} from "../../../test/support/session-fixtures.ts";
+import {
   addWorkspace,
+  applyWorkspaceLifecycleMutation,
   attachWorkspaceClient,
   getWorkspaceById,
   registerWorkspace,
@@ -223,6 +228,7 @@ function makeContext(
     config,
     db: harness.db,
     runtimeId: "rt_11111111111111111111111111111111",
+    sparkHome: harness.sparkHome,
     runtimeSessionId: undefined,
     setRuntimeSessionId() {},
     ensureHeartbeat() {},
@@ -338,6 +344,195 @@ describe("Spark daemon handleCommand task.start.request", () => {
     }
   });
 
+  it("ensures Administrator Sessions only for active workspaces during startup", async () => {
+    const harness = makeHarness();
+    const inactivePath = join(harness.sparkHome, "inactive-workspace");
+    mkdirSync(inactivePath, { recursive: true });
+    const inactive = registerWorkspace(harness.db, {
+      localPath: inactivePath,
+      displayName: "Inactive workspace",
+    });
+    applyWorkspaceLifecycleMutation(harness.db, {
+      action: "unregister",
+      workspaceId: inactive.id,
+    });
+    const sessionRegistry = createDaemonSessionRegistry(harness.sparkHome, {
+      resolveWorkspaceCwd: (workspaceId) => getWorkspaceById(harness.db, workspaceId)?.localPath,
+    });
+    const ensureAdministrator = vi.spyOn(sessionRegistry, "ensureWorkspaceAdministrator");
+
+    try {
+      await startSparkDaemon({
+        paths: harness.paths,
+        sparkHome: harness.sparkHome,
+        db: harness.db,
+        config: {
+          installationId: "active-workspace-startup-test",
+          displayName: "Active workspace startup test daemon",
+        },
+        sessionRegistry,
+        once: true,
+        runScheduler: false,
+      });
+
+      expect(ensureAdministrator).toHaveBeenCalledTimes(1);
+      expect(ensureAdministrator).toHaveBeenCalledWith(harness.workspace.id);
+      expect(ensureAdministrator).not.toHaveBeenCalledWith(inactive.id);
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  it("skips Administrator Session ensure when the caller already provisioned them", async () => {
+    const harness = makeHarness();
+    const sessionRegistry = createDaemonSessionRegistry(harness.sparkHome, {
+      resolveWorkspaceCwd: (workspaceId) => getWorkspaceById(harness.db, workspaceId)?.localPath,
+    });
+    const ensureAdministrator = vi.spyOn(sessionRegistry, "ensureWorkspaceAdministrator");
+
+    try {
+      await startSparkDaemon({
+        paths: harness.paths,
+        sparkHome: harness.sparkHome,
+        db: harness.db,
+        config: {
+          installationId: "skip-admin-ensure-startup-test",
+          displayName: "Skip admin ensure startup test daemon",
+        },
+        sessionRegistry,
+        skipWorkspaceAdministratorEnsure: true,
+        once: true,
+        runScheduler: false,
+      });
+
+      expect(ensureAdministrator).not.toHaveBeenCalled();
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  it("binds local control before waiting for execution runtime preload", async () => {
+    const harness = makeHarness();
+    const hold = deferred<void>();
+    const events: string[] = [];
+    const ready = deferred<void>();
+
+    try {
+      const running = startSparkDaemon({
+        paths: harness.paths,
+        sparkHome: harness.sparkHome,
+        db: harness.db,
+        config: {
+          installationId: "preload-before-admission-test",
+          displayName: "Preload before admission test daemon",
+        },
+        once: true,
+        runScheduler: false,
+        beforeAdmission: hold.promise.then(() => {
+          events.push("admission");
+        }),
+        onReady: () => {
+          events.push("ready");
+          ready.resolve();
+        },
+      });
+      await ready.promise;
+      expect(events).toEqual(["ready"]);
+      hold.resolve();
+      await running;
+      expect(events).toEqual(["ready", "admission"]);
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  it.each([
+    {
+      name: "configured five-slot capacity",
+      invocationConcurrency: 5,
+      schedulerConcurrency: undefined,
+      expected: 5,
+    },
+    {
+      name: "configured eight-slot capacity",
+      invocationConcurrency: 8,
+      schedulerConcurrency: undefined,
+      expected: 8,
+    },
+    {
+      name: "internal override precedence",
+      invocationConcurrency: 5,
+      schedulerConcurrency: 8,
+      expected: 8,
+    },
+  ])(
+    "applies $name at the production scheduler boundary",
+    async ({ invocationConcurrency, schedulerConcurrency, expected }) => {
+      const harness = makeHarness();
+      const shutdown = new AbortController();
+      const release = deferred<void>();
+      const started = new Set<string>();
+      const store = new SparkInvocationStore(harness.db);
+      const invocations = Array.from({ length: expected + 1 }, (_, index) =>
+        store.submit({
+          sessionId: `capacity-session-${index}`,
+          prompt: `capacity ${index}`,
+          task: {
+            type: "session.run",
+            sessionId: `capacity-session-${index}`,
+            prompt: `capacity ${index}`,
+          },
+        }),
+      );
+      let running: Promise<void> | undefined;
+      try {
+        running = startSparkDaemon({
+          paths: harness.paths,
+          sparkHome: harness.sparkHome,
+          db: harness.db,
+          config: {
+            installationId: "capacity-test",
+            displayName: "Capacity test daemon",
+            invocationConcurrency,
+          },
+          signal: shutdown.signal,
+          schedulerPollIntervalMs: 1,
+          ...(schedulerConcurrency !== undefined ? { schedulerConcurrency } : {}),
+          executeInvocation: async (task) => {
+            started.add(task.sessionId);
+            await release.promise;
+            return { assistantText: task.sessionId };
+          },
+        });
+
+        await vi.waitFor(() => expect(started.size).toBe(expected), {
+          timeout: 2_000,
+          interval: 5,
+        });
+        expect(store.counts()).toMatchObject({ running: expected, queued: 1 });
+
+        release.resolve(undefined);
+        await vi.waitFor(
+          () =>
+            expect(
+              invocations.every(
+                (invocation) => store.require(invocation.invocationId).status === "succeeded",
+              ),
+            ).toBe(true),
+          { timeout: 2_000, interval: 5 },
+        );
+        shutdown.abort();
+        await running;
+        running = undefined;
+      } finally {
+        release.resolve(undefined);
+        shutdown.abort();
+        await running?.catch(() => undefined);
+        harness.cleanup();
+      }
+    },
+  );
+
   it("publishes readiness only after startup initialization and cleans up on ready failure", async () => {
     const harness = makeHarness();
     mkdirSync(harness.paths.runtimeDir, { recursive: true });
@@ -353,7 +548,7 @@ describe("Spark daemon handleCommand task.start.request", () => {
         previousProcessStartToken: "test:previous",
         targetInstanceId: "target-instance",
         targetGeneration: "target-generation",
-        protocolVersion: 1,
+        protocolVersion: 4,
         requestedAt: "2026-07-15T00:01:00.000Z",
       }),
     );
@@ -380,6 +575,69 @@ describe("Spark daemon handleCommand task.start.request", () => {
       expect(
         readdirSync(harness.paths.runtimeDir).some((name) => name.startsWith("restart.terminal.")),
       ).toBe(false);
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  it("quiesces a Loop and redacts its uninstantiated child route when the owner closes", async () => {
+    const harness = makeHarness();
+    const store = new SparkInvocationStore(harness.db);
+    const loops = new SparkLoopStore(harness.db, store);
+    const sessionRegistry = createDaemonSessionRegistry(harness.sparkHome, {
+      resolveWorkspaceCwd: () => harness.workspace.localPath,
+    });
+    const administrator = await sessionRegistry.ensureWorkspaceAdministrator(harness.workspace.id);
+    const owner = await sessionRegistry.createSupervised({
+      sessionId: "loop-owner-close",
+      scope: { kind: "workspace", workspaceId: harness.workspace.id },
+      cwd: harness.workspace.localPath,
+      lineage: {
+        kind: "child",
+        parentSessionId: administrator.sessionId,
+        origin: { kind: "session" },
+      },
+      visibility: "internal",
+      retention: "discard_on_close",
+      purpose: "task_run",
+    });
+    loops.start({
+      loopId: "loop-owner-close-driver",
+      ownerSessionId: owner.sessionId,
+      sessionLifetime: "driver_tick",
+      cwd: harness.workspace.localPath,
+      prompt: "private Loop payload",
+      dueAt: "2026-08-13T00:00:00.000Z",
+    });
+    const invocation = (await loops.materializeDue("2026-08-13T00:00:00.000Z"))?.invocation;
+    if (!invocation?.sessionId) throw new Error("test Loop invocation has no Session route");
+    expect(await sessionRegistry.get(invocation.sessionId)).toBeUndefined();
+    await sessionRegistry.markClosing({ sessionId: owner.sessionId });
+    try {
+      await startSparkDaemon({
+        paths: harness.paths,
+        sparkHome: harness.sparkHome,
+        db: harness.db,
+        config: {
+          installationId: "install-test",
+          displayName: "Test daemon",
+        },
+        sessionRegistry,
+        once: true,
+        runScheduler: false,
+      });
+
+      expect(await sessionRegistry.get(owner.sessionId)).toMatchObject({
+        lifecycle: "closed",
+        placement: "archived",
+      });
+      expect(loops.require("loop-owner-close-driver")).toMatchObject({ status: "stopped" });
+      expect(store.require(invocation.invocationId)).toMatchObject({
+        status: "cancelled",
+        payloadRedactedAt: expect.any(String),
+      });
+      expect(store.require(invocation.invocationId)).not.toHaveProperty("prompt");
+      expect(store.require(invocation.invocationId)).not.toHaveProperty("task");
     } finally {
       harness.cleanup();
     }
@@ -478,7 +736,7 @@ describe("Spark daemon handleCommand task.start.request", () => {
         previousProcessStartToken: "test:previous",
         targetInstanceId: "target-instance",
         targetGeneration: "target-generation",
-        protocolVersion: 1,
+        protocolVersion: 4,
         requestedAt: "2026-07-15T00:01:00.000Z",
       }),
     );
@@ -715,16 +973,13 @@ describe("Spark daemon handleCommand task.start.request", () => {
       result: { assistantText: "recovered result" },
     });
     deliveries.enqueue(source.invocationId);
-    const sender: SparkSessionRegistryRecord = {
+    const sender = workspaceSessionRecord({
       sessionId: "sender-session-restart",
-      scope: { kind: "workspace", workspaceId: harness.workspace.id },
       workspaceId: harness.workspace.id,
       cwd: harness.workspace.localPath,
-      status: "ready",
-      bindings: [],
       createdAt: "2026-07-29T00:00:00.000Z",
       updatedAt: "2026-07-29T00:00:00.000Z",
-    };
+    });
     const sessionRegistry = createDaemonSessionRegistry(harness.sparkHome, {
       daemonId: "install-test",
       daemonCwd: harness.workspace.localPath,
@@ -749,13 +1004,12 @@ describe("Spark daemon handleCommand task.start.request", () => {
       await first;
       expect(store.listPendingForSession(sender.sessionId)).toHaveLength(0);
 
-      await sessionRegistry.create({
+      await createDaemonWorkspaceSession(sessionRegistry, {
         sessionId: sender.sessionId,
-        scope: sender.scope,
-        workspaceId: sender.workspaceId,
+        workspaceId: harness.workspace.id,
         cwd: sender.cwd,
       });
-      const recordTurnQueued = vi.spyOn(sessionRegistry, "recordTurnQueued");
+      const commitInvocationAdmission = vi.spyOn(sessionRegistry, "commitInvocationAdmission");
       const successorShutdown = new AbortController();
       const successor = startSparkDaemon({
         paths: harness.paths,
@@ -774,7 +1028,7 @@ describe("Spark daemon handleCommand task.start.request", () => {
       await successor;
 
       expect(store.listPendingForSession(sender.sessionId)).toHaveLength(1);
-      expect(recordTurnQueued).toHaveBeenCalledOnce();
+      expect(commitInvocationAdmission).toHaveBeenCalledOnce();
       expect(store.require(source.invocationId).status).toBe("succeeded");
     } finally {
       firstShutdown.abort();
@@ -926,6 +1180,8 @@ describe("Spark daemon handleCommand task.start.request", () => {
     const terminalEventReceived = deferred<void>();
     const runtimeEventTypes: string[] = [];
     const invocationSequences: number[] = [];
+    const pendingDeliveryPage = vi.spyOn(SparkInvocationStore.prototype, "pendingDeliveryPage");
+    let helloSocket: WebSocket | undefined;
 
     try {
       await once(server, "listening");
@@ -970,20 +1226,7 @@ describe("Spark daemon handleCommand task.start.request", () => {
             };
           };
           if (message.type === "runtime.hello") {
-            socket.send(
-              JSON.stringify({
-                protocolVersion: runtimeProtocolVersion,
-                messageId: createId("msg"),
-                type: "server.hello_ack",
-                sentAt: new Date().toISOString(),
-                payload: {
-                  runtimeSessionId: createId("rtsn"),
-                  acceptedFeatures: ["ws-control-v1"],
-                  heartbeatIntervalMs: 15_000,
-                  serverTime: new Date().toISOString(),
-                },
-              }),
-            );
+            helloSocket = socket;
             helloReceived.resolve(undefined);
             return;
           }
@@ -1092,7 +1335,7 @@ describe("Spark daemon handleCommand task.start.request", () => {
       });
 
       await helloReceived.promise;
-      store.submit({
+      const submitted = store.submit({
         sessionId: "queued-ws-session",
         workspaceBindingId: routedWorkspace.id,
         prompt: "hello over ws",
@@ -1104,6 +1347,24 @@ describe("Spark daemon handleCommand task.start.request", () => {
           workspaceId: serverWorkspaceId,
         },
       });
+      await vi.waitFor(() => {
+        expect(store.require(submitted.invocationId).status).toBe("succeeded");
+      });
+      if (!helloSocket) throw new Error("runtime hello socket was not captured");
+      helloSocket.send(
+        JSON.stringify({
+          protocolVersion: runtimeProtocolVersion,
+          messageId: createId("msg"),
+          type: "server.hello_ack",
+          sentAt: new Date().toISOString(),
+          payload: {
+            runtimeSessionId: createId("rtsn"),
+            acceptedFeatures: ["ws-control-v1"],
+            heartbeatIntervalMs: 15_000,
+            serverTime: new Date().toISOString(),
+          },
+        }),
+      );
       await viewEventReceived.promise;
       await interactionEventReceived.promise;
       await terminalEventReceived.promise;
@@ -1117,8 +1378,184 @@ describe("Spark daemon handleCommand task.start.request", () => {
         "invocation.updated",
       ]);
       expect(invocationSequences).toEqual([1, 2, 4]);
+      expect(pendingDeliveryPage).toHaveBeenCalledTimes(1);
+    } finally {
+      pendingDeliveryPage.mockRestore();
+      shutdown.abort();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      harness.cleanup();
+    }
+  });
+
+  it("repairs closed Session content after the Hub acknowledges Invocation delivery", async () => {
+    const harness = makeHarness();
+    const server = new WebSocketServer({ port: 0 });
+    const shutdown = new AbortController();
+    const deliveryReceived = deferred<void>();
+    let acknowledgeDelivery: (() => void) | undefined;
+    let running: Promise<void> | undefined;
+
+    try {
+      await once(server, "listening");
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        throw new Error("expected WebSocket server to listen on a TCP port");
+      }
+      const port = (address as AddressInfo).port;
+      const serverUrl = `http://127.0.0.1:${port}/`;
+      const webSocketUrl = `ws://127.0.0.1:${port}/runtime`;
+      const runtimeId = "rt_11111111111141111111111111111111";
+      const serverWorkspaceId = "ws_22222222222241112222222222222222";
+      const routedWorkspace = registerWorkspace(harness.db, {
+        serverUrl,
+        serverWorkspaceId,
+        serverBindingId: "rtwb_33333333333341113333333333333333",
+        localPath: harness.workspace.localPath,
+        localWorkspaceKey: "local-default",
+        displayName: "Local default",
+      });
+      writeSparkDaemonConfig(harness.paths, {
+        installationId: "install-test",
+        displayName: "Test daemon",
+        runtimeId,
+        runtimeToken: "runtime-token",
+        webSocketUrl,
+      });
+
+      const sessionRegistry = createDaemonSessionRegistry(harness.sparkHome, {
+        resolveWorkspaceCwd: () => harness.workspace.localPath,
+      });
+      const administrator = await sessionRegistry.ensureWorkspaceAdministrator(
+        harness.workspace.id,
+      );
+      const owner = await sessionRegistry.createSupervised({
+        sessionId: "closed-delivery-repair",
+        scope: { kind: "workspace", workspaceId: harness.workspace.id },
+        cwd: harness.workspace.localPath,
+        lineage: {
+          kind: "child",
+          parentSessionId: administrator.sessionId,
+          origin: { kind: "session" },
+        },
+        visibility: "internal",
+        retention: "discard_on_close",
+        purpose: "task_run",
+      });
+      const store = new SparkInvocationStore(harness.db);
+      const invocation = store.submit({
+        sessionId: owner.sessionId,
+        workspaceBindingId: routedWorkspace.id,
+        prompt: "private closed Session payload",
+        task: {
+          type: "session.run",
+          sessionId: owner.sessionId,
+          prompt: "private closed Session payload",
+          workspaceBindingId: routedWorkspace.id,
+          workspaceId: serverWorkspaceId,
+        },
+      });
+      store.claimNext("closed-delivery-worker");
+      const event = store.appendEvent(invocation.invocationId, "daemon.task.lifecycle", {
+        version: SPARK_PROTOCOL_VERSION,
+        source: "daemon",
+        emittedAt: "2026-08-13T00:00:00.000Z",
+        workspaceId: serverWorkspaceId,
+        sessionId: owner.sessionId,
+        invocationId: invocation.invocationId,
+        metadata: { workspaceBindingId: routedWorkspace.id },
+        type: "daemon.task.lifecycle",
+        taskType: "session.run",
+        status: "succeeded",
+      });
+      store.complete(invocation.invocationId, { status: "succeeded" });
+      expect(store.pendingDeliveries(`hub:${runtimeId}`)).toHaveLength(1);
+      await sessionRegistry.markClosing({ sessionId: owner.sessionId });
+      const legacyRegistry = new SparkSessionRegistry({
+        rootDir: defaultSparkSessionRegistryRoot(harness.sparkHome),
+      });
+      await legacyRegistry.finalizeClose(owner.sessionId);
+
+      server.on("connection", (socket) => {
+        socket.on("message", (data) => {
+          const message = JSON.parse(webSocketDataToString(data)) as {
+            messageId: string;
+            type: string;
+            invocationId?: string;
+            payload?: { sequence?: number };
+          };
+          if (message.type === "runtime.hello") {
+            socket.send(
+              JSON.stringify({
+                protocolVersion: runtimeProtocolVersion,
+                messageId: createId("msg"),
+                type: "server.hello_ack",
+                sentAt: new Date().toISOString(),
+                payload: {
+                  runtimeSessionId: createId("rtsn"),
+                  acceptedFeatures: ["ws-control-v1"],
+                  heartbeatIntervalMs: 15_000,
+                  serverTime: new Date().toISOString(),
+                },
+              }),
+            );
+            return;
+          }
+          if (
+            message.type !== "invocation.updated" ||
+            message.invocationId !== invocation.invocationId ||
+            message.payload?.sequence !== event.sequence
+          ) {
+            return;
+          }
+          acknowledgeDelivery = () => {
+            socket.send(
+              JSON.stringify({
+                protocolVersion: runtimeProtocolVersion,
+                messageId: createId("msg"),
+                type: "server.ingest_ack",
+                sentAt: new Date().toISOString(),
+                ackOf: message.messageId,
+                payload: { accepted: true, receivedType: message.type },
+              }),
+            );
+          };
+          deliveryReceived.resolve(undefined);
+        });
+      });
+
+      running = startSparkDaemon({
+        paths: harness.paths,
+        sparkHome: harness.sparkHome,
+        db: harness.db,
+        config: {
+          installationId: "install-test",
+          displayName: "Test daemon",
+        },
+        sessionRegistry,
+        signal: shutdown.signal,
+        runScheduler: false,
+      });
+      await deliveryReceived.promise;
+      expect(store.require(invocation.invocationId)).not.toHaveProperty("payloadRedactedAt");
+      acknowledgeDelivery?.();
+      await vi.waitFor(() => {
+        expect(store.pendingDeliveries(`hub:${runtimeId}`)).toHaveLength(0);
+        expect(store.require(invocation.invocationId)).toMatchObject({
+          payloadRedactedAt: expect.any(String),
+        });
+      });
+      expect(store.require(invocation.invocationId)).not.toHaveProperty("prompt");
+      expect(store.require(invocation.invocationId)).not.toHaveProperty("task");
+      expect(await sessionRegistry.get(owner.sessionId)).toMatchObject({
+        lifecycle: "closed",
+        placement: "archived",
+      });
+
+      shutdown.abort();
+      await running;
     } finally {
       shutdown.abort();
+      await running?.catch(() => undefined);
       await new Promise<void>((resolve) => server.close(() => resolve()));
       harness.cleanup();
     }
@@ -1361,7 +1798,7 @@ describe("Spark daemon handleCommand task.start.request", () => {
     }
   });
 
-  it("rejects another Hub's workspace-scoped ephemeral secret request", async () => {
+  it("rejects Workspace routing on daemon-scoped Channel secret requests", async () => {
     const harness = makeHarness();
     try {
       const otherWorkspace = registerSecondHubWorkspace(harness);
@@ -1388,35 +1825,25 @@ describe("Spark daemon handleCommand task.start.request", () => {
         },
       };
 
-      await handleServerMessage(ws, JSON.stringify(request), context);
-
-      expect(ws.sent).toEqual([
-        expect.objectContaining({
-          type: "runtime.ephemeral_secret.result",
-          workspaceBindingId: otherWorkspace.id,
-          payload: expect.objectContaining({
-            operation: "channel.configure",
-            status: "failed",
-            reasonCode: "SECRET_ROUTE_INVALID",
-          }),
-        }),
-      ]);
+      await expect(handleServerMessage(ws, JSON.stringify(request), context)).rejects.toThrow(
+        /Secret requests are daemon-scoped/u,
+      );
+      expect(ws.sent).toEqual([]);
     } finally {
       harness.cleanup();
     }
   });
 
-  it("stores channel secrets under the daemon binding and projects the Hub workspace id", async () => {
+  it("stores Channel secrets through the daemon-global runtime", async () => {
     const harness = makeHarness();
     try {
       const ws = new CapturingSocket();
       const context = makeContext(harness, vi.fn<RunSparkCommandFn>());
       context.serverUrl = "https://hub.example.test/";
-      const configure = vi.fn(async (workspaceId: string) => ({
+      const configure = vi.fn(async () => ({
         plane: "daemon" as const,
         resource: "channel" as const,
-        workspaceId,
-        configPath: `/tmp/${workspaceId}/channels/config.json`,
+        configPath: "/tmp/channels.json",
         available: true,
         configured: true,
         ingressEnabled: true,
@@ -1428,11 +1855,10 @@ describe("Spark daemon handleCommand task.start.request", () => {
       }));
       context.channelIngress = {
         configure,
-        status: (workspaceId: string) => ({
+        status: () => ({
           plane: "daemon",
           resource: "channel",
-          workspaceId,
-          configPath: `/tmp/${workspaceId}/channels/config.json`,
+          configPath: "/tmp/channels.json",
           available: true,
           configured: true,
           ingressEnabled: true,
@@ -1449,8 +1875,6 @@ describe("Spark daemon handleCommand task.start.request", () => {
         type: "server.ephemeral_secret.request",
         sentAt: "2026-08-03T00:00:00.000Z",
         runtimeId: context.runtimeId,
-        workspaceBindingId: harness.workspace.serverBindingId,
-        workspaceId: harness.workspace.serverWorkspaceId,
         ephemeralRequestId: createId("eph"),
         actorUserId: "usr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         browserRequestId: createId("msg"),
@@ -1458,7 +1882,6 @@ describe("Spark daemon handleCommand task.start.request", () => {
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
         payload: {
           operation: "channel.configure",
-          workspaceId: harness.workspace.serverWorkspaceId,
           config: {
             adapters: {
               qqbot: {
@@ -1478,20 +1901,15 @@ describe("Spark daemon handleCommand task.start.request", () => {
       await handleServerMessage(ws, JSON.stringify(request), context);
 
       expect(configure).toHaveBeenCalledWith(
-        harness.workspace.id,
         expect.objectContaining({ adapters: expect.any(Object) }),
       );
       expect(ws.sent).toEqual([
         expect.objectContaining({
           type: "runtime.ephemeral_secret.result",
-          workspaceId: harness.workspace.serverWorkspaceId,
-          workspaceBindingId: harness.workspace.serverBindingId,
           payload: expect.objectContaining({
             operation: "channel.configure",
             status: "succeeded",
-            result: expect.objectContaining({
-              workspaceId: harness.workspace.serverWorkspaceId,
-            }),
+            result: expect.not.objectContaining({ workspaceId: expect.anything() }),
           }),
         }),
       ]);

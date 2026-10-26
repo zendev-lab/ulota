@@ -7,12 +7,12 @@ const mocks = vi.hoisted(() => ({
   createManagedSessionForHub: vi.fn(),
   getManagedSessionForHub: vi.fn(),
   getProjectedManagedSessionForHub: vi.fn(),
+  listProjectedManagedSessionsForHub: vi.fn(),
   listManagedSessionsForHub: vi.fn(),
   loadModelControlForHub: vi.fn(),
   loadProjectedModelControlForHub: vi.fn(),
   requireWorkspaceByRouteId: vi.fn(),
   setSessionModelForHub: vi.fn(),
-  setManagedSessionModeForHub: vi.fn(),
   setSessionThinkingLevelForHub: vi.fn(),
   submitConversationTurnForHub: vi.fn(),
 }));
@@ -22,7 +22,7 @@ vi.mock("$lib/server/managed-sessions", () => ({
   createManagedSessionForHub: mocks.createManagedSessionForHub,
   getManagedSessionForHub: mocks.getManagedSessionForHub,
   getProjectedManagedSessionForHub: mocks.getProjectedManagedSessionForHub,
-  setManagedSessionModeForHub: mocks.setManagedSessionModeForHub,
+  listProjectedManagedSessionsForHub: mocks.listProjectedManagedSessionsForHub,
   listManagedSessionsForHub: mocks.listManagedSessionsForHub,
 }));
 
@@ -132,12 +132,33 @@ import { conversationStartSessionId } from "./conversation-submission";
 const session = {
   sessionId: "sess_conversation",
   scope: { kind: "workspace" as const, workspaceId: "ws_demo" },
-  workspaceId: "ws_demo",
-  title: "Initial message",
-  status: "ready",
+  name: "Initial message",
+  lifecycle: "open" as const,
+  placement: "active" as const,
+  lifetime: "scoped" as const,
+  roleBinding: { kind: "none" as const },
+  lineage: {
+    kind: "child" as const,
+    parentSessionId: "sess_administrator",
+    origin: { kind: "session" },
+  },
   bindings: [],
+  tags: [],
+  archiveHistory: [],
   createdAt: "2026-07-10T00:00:00.000Z",
   updatedAt: "2026-07-10T00:00:00.000Z",
+};
+
+const administrator = {
+  ...session,
+  sessionId: "sess_administrator",
+  name: "Administrator",
+  lifetime: "persistent" as const,
+  roleBinding: {
+    kind: "explicit" as const,
+    roleRef: "role:builtin-administrator" as const,
+  },
+  lineage: { kind: "root" as const, workspaceId: "ws_demo" },
 };
 
 beforeEach(() => {
@@ -147,7 +168,7 @@ beforeEach(() => {
   mocks.getProjectedManagedSessionForHub.mockReturnValue(session);
   mocks.archiveManagedSessionForHub.mockResolvedValue({
     ...session,
-    status: "archived",
+    placement: "archived",
   });
   mocks.loadModelControlForHub.mockResolvedValue({
     available: true,
@@ -164,7 +185,6 @@ beforeEach(() => {
   }));
   mocks.setSessionModelForHub.mockResolvedValue(session);
   mocks.setSessionThinkingLevelForHub.mockResolvedValue(session);
-  mocks.setManagedSessionModeForHub.mockImplementation(async (input) => input);
   mocks.cancelConversationTurnForHub.mockResolvedValue({
     turnId: "inv_conversation",
     status: "running",
@@ -172,9 +192,31 @@ beforeEach(() => {
   });
   mocks.submitConversationTurnForHub.mockResolvedValue({ turnId: "turn_conversation" });
   mocks.listManagedSessionsForHub.mockResolvedValue({ available: true, sessions: [] });
+  mocks.listProjectedManagedSessionsForHub.mockReturnValue({
+    available: true,
+    controlAvailable: true,
+    sessions: [administrator, session],
+  });
 });
 
 describe("session conversation actions", () => {
+  it("defaults the workspace session list to its Administrator", async () => {
+    await expect(
+      load({
+        parent: async () => ({
+          activeWorkspace: { id: "ws_demo", slug: "demo", name: "Demo" },
+          sessions: [session, administrator],
+          sessionsAvailable: true,
+          sessionControlAvailable: true,
+        }),
+        url: new URL("http://spark.local/demo/sessions"),
+      } as never),
+    ).rejects.toMatchObject({
+      status: 303,
+      location: "/demo/sessions/sess_administrator",
+    });
+  });
+
   it("preseeds a non-empty first-message nonce for enhanced and plain HTML submits", async () => {
     const result = await load({
       parent: async () => ({
@@ -183,6 +225,7 @@ describe("session conversation actions", () => {
         sessionsAvailable: true,
         sessionControlAvailable: true,
       }),
+      url: new URL("http://spark.local/demo/sessions?new"),
     } as never);
 
     expect(result).toMatchObject({
@@ -199,7 +242,9 @@ describe("session conversation actions", () => {
       sessionControlAvailable: true,
     });
 
-    await expect(load({ parent } as never)).resolves.toMatchObject({
+    await expect(
+      load({ parent, url: new URL("http://spark.local/demo/sessions?new") } as never),
+    ).resolves.toMatchObject({
       sessions: [session],
       sessionControlAvailable: true,
     });
@@ -221,7 +266,7 @@ describe("session conversation actions", () => {
       snapshot: { providers: [], diagnostics: [] },
     });
 
-    await load({ parent } as never);
+    await load({ parent, url: new URL("http://spark.local/demo/sessions?new") } as never);
     expect(mocks.loadProjectedModelControlForHub).toHaveBeenCalledWith({
       workspaceId: "ws_demo",
     });
@@ -236,7 +281,7 @@ describe("session conversation actions", () => {
       sessionControlAvailable: false,
     });
 
-    await load({ parent } as never);
+    await load({ parent, url: new URL("http://spark.local/demo/sessions?new") } as never);
     expect(mocks.loadModelControlForHub).not.toHaveBeenCalled();
     expect(mocks.loadProjectedModelControlForHub).toHaveBeenCalledWith({
       workspaceId: "ws_demo",
@@ -253,14 +298,17 @@ describe("session conversation actions", () => {
       location: "/sessions/sess_conversation",
     });
 
-    expect(mocks.createManagedSessionForHub).toHaveBeenCalledWith({
-      scope: { kind: "workspace", workspaceId: "ws_demo" },
-      workspaceId: "ws_demo",
-      roleRef: "role:builtin-administrator",
-      purpose: "hub_interactive",
-      sessionId: expect.stringMatching(/^sess_/),
-      idempotencyKey: expect.stringMatching(/^idem_[a-f0-9]{32}$/u),
-    });
+    expect(mocks.createManagedSessionForHub).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: { kind: "workspace", workspaceId: "ws_demo" },
+        supervisorSessionId: "sess_administrator",
+        placement: "child",
+        roleBinding: { kind: "none" },
+        name: "Inspect the daemon path.",
+        sessionId: expect.stringMatching(/^sess_/),
+        idempotencyKey: expect.stringMatching(/^idem_[a-f0-9]{32}$/u),
+      }),
+    );
     expect(mocks.submitConversationTurnForHub).toHaveBeenCalledWith({
       workspaceId: "ws_demo",
       sessionId: "sess_conversation",
@@ -286,7 +334,7 @@ describe("session conversation actions", () => {
 
     expect(mocks.createManagedSessionForHub).toHaveBeenCalledWith(
       expect.objectContaining({
-        workspaceId: "ws_demo",
+        supervisorSessionId: "sess_administrator",
         cwdArtifactRef: "artifact:git:change",
         cwd: "packages/app",
         sessionId: conversationStartSessionId(
@@ -320,14 +368,16 @@ describe("session conversation actions", () => {
       location: `/sessions/${deterministicSessionId}`,
     });
 
-    expect(mocks.createManagedSessionForHub).toHaveBeenCalledWith({
-      scope: { kind: "workspace", workspaceId: "ws_demo" },
-      workspaceId: "ws_demo",
-      roleRef: "role:builtin-administrator",
-      purpose: "hub_interactive",
-      sessionId: deterministicSessionId,
-      idempotencyKey: expect.stringMatching(/^idem_[a-f0-9]{32}$/u),
-    });
+    expect(mocks.createManagedSessionForHub).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: { kind: "workspace", workspaceId: "ws_demo" },
+        supervisorSessionId: "sess_administrator",
+        placement: "child",
+        roleBinding: { kind: "none" },
+        sessionId: deterministicSessionId,
+        idempotencyKey: expect.stringMatching(/^idem_[a-f0-9]{32}$/u),
+      }),
+    );
     expect(mocks.getManagedSessionForHub).toHaveBeenCalledWith(deterministicSessionId);
     expect(mocks.submitConversationTurnForHub).toHaveBeenCalledWith({
       workspaceId: "ws_demo",
@@ -609,7 +659,6 @@ describe("session conversation actions", () => {
       ["cancelTurn", { sessionId: "sess_global", turnId: "turn_global" }],
       ["selectModel", { sessionId: "sess_global", model: "baidu-oneapi/gpt-5.6-sol" }],
       ["selectThinking", { sessionId: "sess_global", thinkingLevel: "high" }],
-      ["selectMode", { sessionId: "sess_global", mode: "fleet" }],
       ["archiveSession", { sessionId: "sess_global" }],
     ] as const) {
       await expect(requireAction(name)(actionEvent(values))).resolves.toMatchObject({
@@ -620,7 +669,6 @@ describe("session conversation actions", () => {
     expect(mocks.cancelConversationTurnForHub).not.toHaveBeenCalled();
     expect(mocks.setSessionModelForHub).not.toHaveBeenCalled();
     expect(mocks.setSessionThinkingLevelForHub).not.toHaveBeenCalled();
-    expect(mocks.setManagedSessionModeForHub).not.toHaveBeenCalled();
     expect(mocks.archiveManagedSessionForHub).not.toHaveBeenCalled();
   });
 
@@ -643,7 +691,6 @@ describe("session conversation actions", () => {
       ["cancelTurn", { sessionId: "sess_conversation", turnId: "turn_demo" }],
       ["selectModel", { sessionId: "sess_conversation", model: "provider/model" }],
       ["selectThinking", { sessionId: "sess_conversation", thinkingLevel: "high" }],
-      ["selectMode", { sessionId: "sess_conversation", mode: "fleet" }],
       ["archiveSession", { sessionId: "sess_conversation" }],
     ] as const) {
       const result = await Promise.resolve(requireAction(name)(actionEvent(values, "other"))).catch(
@@ -657,7 +704,6 @@ describe("session conversation actions", () => {
     expect(mocks.cancelConversationTurnForHub).not.toHaveBeenCalled();
     expect(mocks.setSessionModelForHub).not.toHaveBeenCalled();
     expect(mocks.setSessionThinkingLevelForHub).not.toHaveBeenCalled();
-    expect(mocks.setManagedSessionModeForHub).not.toHaveBeenCalled();
     expect(mocks.archiveManagedSessionForHub).not.toHaveBeenCalled();
   });
 
@@ -708,24 +754,6 @@ describe("session conversation actions", () => {
     expect(mocks.setSessionModelForHub).toHaveBeenCalledWith("sess_conversation", {
       providerName: "baidu-oneapi",
       modelId: "gpt-5.6-sol",
-    });
-  });
-
-  it("persists Fleet mode through the daemon control plane", async () => {
-    const result = await requireAction("selectMode")(
-      actionEvent({ sessionId: "sess_conversation", mode: "fleet" }),
-    );
-
-    expect(result).toEqual({
-      intent: "selectMode",
-      success: true,
-      message: "Session mode updated.",
-      mode: "fleet",
-      values: { sessionId: "sess_conversation", mode: "fleet" },
-    });
-    expect(mocks.setManagedSessionModeForHub).toHaveBeenCalledWith({
-      sessionId: "sess_conversation",
-      mode: "fleet",
     });
   });
 
@@ -884,7 +912,7 @@ describe("session conversation actions", () => {
   it("rejects a missing or archived session before requesting cancellation", async () => {
     mocks.getProjectedManagedSessionForHub
       .mockReturnValueOnce(null)
-      .mockReturnValueOnce({ ...session, status: "archived" });
+      .mockReturnValueOnce({ ...session, placement: "archived" });
 
     await expect(
       requireAction("cancelTurn")(

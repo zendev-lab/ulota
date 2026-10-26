@@ -3,8 +3,6 @@
  * view-model schemas defined in protocol.ts.
  * Must not depend on daemon-only control-plane modules directly.
  */
-export const SPARK_PROTOCOL_PRESENTATION_SUBPATH = "presentation" as const;
-
 export * from "./a2ui.ts";
 export * from "./conversation.ts";
 export * from "./action-bars.ts";
@@ -12,6 +10,15 @@ export * from "./tool-display.ts";
 
 // Composite view-model schemas/parsers that live in protocol.ts.
 export {
+  sparkViewModelStatusFromSessionActivity,
+  sparkViewModelStatusFromPendingTurns,
+  sparkSessionViewStatusAfterPendingTurns,
+  sparkSessionReproLaneViewSchema,
+  sparkSessionReproCheckpointViewSchema,
+  sparkSessionPromptHistoryEntrySchema,
+  sparkSessionPromptHistorySchema,
+  sparkAskFlowInteractionCapabilitiesSchema,
+  parseSparkSessionPromptHistory,
   SPARK_ARTIFACT_PROJECTION_MAX_INLINE_BYTES,
   createBlockedInteractionResponse,
   parseSparkAskAcknowledgement,
@@ -66,12 +73,10 @@ export {
   sparkSessionMailChannelDeliveryViewSchema,
   sparkSessionMailMessageViewSchema,
   sparkSessionPrimaryWorkViewSchema,
-  sparkSessionReproCurrentStepViewSchema,
   sparkSessionReproWorkViewSchema,
   sparkSessionSnapshotHistorySchema,
   sparkSessionSnapshotPageSchema,
   sparkSessionUsageSchema,
-  sparkSessionVerificationReceiptViewSchema,
   sparkSessionViewSchema,
   sparkSessionWorkViewSchema,
   sparkTaskTodoViewSchema,
@@ -94,6 +99,11 @@ export {
 } from "./protocol.ts";
 
 export type {
+  SparkSessionActivityViewStatus,
+  SparkSessionReproLaneView,
+  SparkSessionReproCheckpointView,
+  SparkSessionPromptHistoryEntry,
+  SparkSessionPromptHistory,
   SparkArtifactProjection,
   SparkArtifactProjectionContentRef,
   SparkArtifactView,
@@ -125,12 +135,10 @@ export type {
   SparkSessionMailChannelDeliveryView,
   SparkSessionMailMessageView,
   SparkSessionPrimaryWorkView,
-  SparkSessionReproCurrentStepView,
   SparkSessionReproWorkView,
   SparkSessionSnapshotHistory,
   SparkSessionSnapshotPage,
   SparkSessionUsage,
-  SparkSessionVerificationReceiptView,
   SparkSessionView,
   SparkSessionWorkView,
   SparkTaskTodoView,
@@ -144,3 +152,7 @@ export type {
   SparkViewModelEvent,
   SparkViewModelStatus,
 } from "./protocol.ts";
+
+export * from "./session-activity.ts";
+export * from "./session-live-cursor.ts";
+export * from "./session-projection.ts";

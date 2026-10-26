@@ -100,7 +100,7 @@ export function runSparkLoopStoreContract(
           ownerSessionId: "owner",
           binding: { reproId: "repro-1" },
           cwd: "/workspace",
-          prompt: "repro tick",
+          prompt: "driver tick",
         });
         expect(harness.loops.require("goal-loop").status).toBe("stopped");
         expect(harness.loops.require("repro-loop").status).toBe("scheduled");
@@ -314,6 +314,42 @@ export function runSparkLoopStoreContract(
 
         expect(restarted.driverSessionId).not.toBe(first.driverSessionId);
         expect(restarted.driverSessionId).toMatch(/^driver_[0-9a-f]{24}_3$/u);
+      } finally {
+        harness.close();
+      }
+    });
+
+    it("preserves a live driver only while the Loop owner remains unchanged", () => {
+      const harness = createHarness();
+      try {
+        const first = harness.loops.start({
+          loopId: "loop-driver-transfer",
+          ownerSessionId: "owner-driver-before",
+          sessionLifetime: "driver",
+          cwd: "/workspace",
+          prompt: "first owner",
+        });
+        const continued = harness.loops.start({
+          loopId: first.loopId,
+          ownerSessionId: first.ownerSessionId,
+          sessionLifetime: "driver",
+          cwd: "/workspace",
+          prompt: "same owner",
+        });
+        const transferred = harness.loops.start({
+          loopId: first.loopId,
+          ownerSessionId: "owner-driver-after",
+          sessionLifetime: "driver",
+          cwd: "/workspace",
+          prompt: "second owner",
+        });
+
+        expect(continued.driverSessionId).toBe(first.driverSessionId);
+        expect(transferred.driverSessionId).not.toBe(continued.driverSessionId);
+        expect(transferred).toMatchObject({
+          ownerSessionId: "owner-driver-after",
+          generation: 3,
+        });
       } finally {
         harness.close();
       }

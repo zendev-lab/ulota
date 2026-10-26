@@ -1,5 +1,4 @@
 import type { DatabaseSync } from "node:sqlite";
-import { createHash } from "node:crypto";
 
 import {
   getRuntimeSessionProjection,
@@ -8,20 +7,19 @@ import {
   reconcileRuntimeSessionListProjection,
   replaceRuntimeSideThreadProjection,
   runRuntimeSessionControlCommand,
+  runtimeSessionRouteForRuntime,
   runtimeSessionRouteForSession,
   runtimeSessionRouteForWorkspace,
   type RuntimeSessionRoute,
 } from "@zendev-lab/spark-hub-coordination/runtime-session-control";
 import { RuntimeControlCommandError } from "@zendev-lab/spark-hub-coordination/runtime-control";
 import {
-  parseSparkSessionRegistryRecord,
-  parseSparkSessionRegistryRecords,
+  parseSparkSessionProjection,
+  parseSparkSessionProjections,
   sparkSessionCreateRequestSchema,
   sparkSessionListRequestSchema,
   sparkSessionMediaReadRequestSchema,
   sparkSessionMediaReadResultSchema,
-  sparkSessionModeResultSchema,
-  sparkSessionSetModeRequestSchema,
   sparkSessionSnapshotRequestSchema,
   sparkSideThreadConfigureRequestSchema,
   sparkSideThreadEnsureRequestSchema,
@@ -39,19 +37,13 @@ import {
   sparkTurnSubmitResultSchema,
 } from "@zendev-lab/spark-protocol/daemon";
 import {
-  sparkLoopControlRequestSchema,
-  sparkLoopMutationResultSchema,
-} from "@zendev-lab/spark-protocol/interaction";
-import {
   type SparkAssignment,
   type SparkSessionBindRequest,
   type SparkSessionCreateRequest,
   type SparkSessionListRequest,
   type SparkSessionMediaReadRequest,
   type SparkSessionMediaReadResult,
-  type SparkSessionMode,
-  type SparkSessionModeResult,
-  type SparkSessionRegistryRecord,
+  type SparkSessionProjection,
   type SparkSessionSnapshotRequest,
   type SparkSideThreadSnapshot,
   type SparkSideThreadSubmitResult,
@@ -63,9 +55,9 @@ import {
   type SparkTurnSubmitResult,
 } from "@zendev-lab/spark-protocol/daemon";
 import {
-  type SparkLoopControlRequest,
-  type SparkLoopMutationResult,
-} from "@zendev-lab/spark-protocol/interaction";
+  sparkSessionLineageOriginKind,
+  sparkSessionParentId,
+} from "@zendev-lab/spark-protocol/session-assignment";
 import {
   parseSessionSnapshotWindow,
   type SessionSnapshotWindow,
@@ -83,12 +75,10 @@ export type HubRuntimeSessionListRequest = SparkSessionListRequest & {
   timeoutMs?: number;
 };
 
-export type HubRuntimeSessionCreateRequest = Omit<
+export type HubRuntimeSessionCreateRequest = Extract<
   SparkSessionCreateRequest,
-  "scope" | "workspaceId"
+  { scope: { kind: "workspace" } }
 > & {
-  scope: { kind: "workspace"; workspaceId: string };
-  workspaceId: string;
   idempotencyKey?: string;
 };
 
@@ -98,7 +88,7 @@ export type HubRuntimeSessionSnapshotRequest = Omit<SparkSessionSnapshotRequest,
 };
 
 export interface HubRuntimeSessionListResult {
-  sessions: SparkSessionRegistryRecord[];
+  sessions: SparkSessionProjection[];
   /** True when a live lease route can accept control commands. */
   controlAvailable: boolean;
 }
@@ -107,8 +97,8 @@ export interface HubRuntimeSessionClient {
   listWithControlState(
     options?: HubRuntimeSessionListRequest,
   ): Promise<HubRuntimeSessionListResult>;
-  list(options?: HubRuntimeSessionListRequest): Promise<SparkSessionRegistryRecord[]>;
-  get(sessionId: string): Promise<SparkSessionRegistryRecord>;
+  list(options?: HubRuntimeSessionListRequest): Promise<SparkSessionProjection[]>;
+  get(sessionId: string): Promise<SparkSessionProjection>;
   snapshot(
     sessionId: string,
     options?: HubRuntimeSessionSnapshotRequest,
@@ -154,11 +144,11 @@ export interface HubRuntimeSessionClient {
     instructions?: string;
     idempotencyKey: string;
   }): Promise<SparkSideThreadHandoffResult>;
-  create(input: HubRuntimeSessionCreateRequest): Promise<SparkSessionRegistryRecord>;
-  bind(input: SparkSessionBindRequest): Promise<SparkSessionRegistryRecord>;
-  unbind(input: SparkSessionBindRequest): Promise<SparkSessionRegistryRecord>;
-  archive(sessionId: string): Promise<SparkSessionRegistryRecord>;
-  setMode(input: { sessionId: string; mode: SparkSessionMode }): Promise<SparkSessionModeResult>;
+  create(input: HubRuntimeSessionCreateRequest): Promise<SparkSessionProjection>;
+  bind(input: SparkSessionBindRequest): Promise<SparkSessionProjection>;
+  unbind(input: SparkSessionBindRequest): Promise<SparkSessionProjection>;
+  archive(sessionId: string): Promise<SparkSessionProjection>;
+  close(sessionId: string): Promise<SparkSessionProjection>;
   submit(input: {
     sessionId: string;
     prompt: string;
@@ -179,10 +169,6 @@ export interface HubRuntimeSessionClient {
     after?: number;
     limit?: number;
   }): Promise<SparkTurnStreamPage>;
-  controlWorkbench(
-    sessionId: string,
-    request: SparkLoopControlRequest,
-  ): Promise<SparkLoopMutationResult>;
 }
 
 export class HubRuntimeSessionUnavailableError extends Error {
@@ -224,13 +210,11 @@ export function createHubRuntimeSessionClient(
     bind: async (input) => await bindSession(database(), input),
     unbind: async (input) => await unbindSession(database(), input),
     archive: async (sessionId) => await archiveSession(database(), sessionId),
-    setMode: async (input) => await setSessionMode(database(), input),
+    close: async (sessionId) => await closeSession(database(), sessionId),
     submit: async (input) => await submitTurn(database(), input),
     cancel: async (input) => await cancelTurn(database(), input),
     status: async (input) => await getTurnStatus(database(), input),
     stream: async (input) => await getTurnStream(database(), input),
-    controlWorkbench: async (sessionId, request) =>
-      await controlWorkbenchLoop(database(), sessionId, request),
   };
 }
 
@@ -241,12 +225,12 @@ async function listSessionsWithControlState(
   const { runtimeId, timeoutMs, related = false, ...request } = options;
   const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
   const parsed = sparkSessionListRequestSchema.parse(request);
-  if (parsed.scope?.kind === "daemon") {
-    throw new Error("Hub session lists support workspace scope only.");
+  if (parsed.scope?.kind === "daemon" && !runtimeId?.trim()) {
+    throw new Error("Daemon session lists require one selected Spark runtime.");
   }
   let routes: RuntimeSessionRoute[];
   try {
-    routes = routesForList(db, parsed);
+    routes = routesForList(db, parsed, runtimeId);
   } catch (error) {
     const stale = projectedSessions(db, parsed, runtimeId, related);
     if (stale.length > 0) return { sessions: stale, controlAvailable: false };
@@ -282,14 +266,16 @@ async function listSessionsWithControlState(
 
 async function appendLiveSideThreads(
   db: DatabaseSync,
-  sessions: SparkSessionRegistryRecord[],
+  sessions: SparkSessionProjection[],
   deadline: number | undefined,
-): Promise<SparkSessionRegistryRecord[]> {
-  const parentSessions = sessions.filter((session) => session.relation?.kind !== "side_thread");
+): Promise<SparkSessionProjection[]> {
+  const parentSessions = sessions.filter(
+    (session) => sparkSessionLineageOriginKind(session.lineage) !== "side_thread",
+  );
   const sideThreadsByParent = new Map(
     sessions.flatMap((session) =>
-      session.relation?.kind === "side_thread"
-        ? [[session.relation.parentSessionId, session] as const]
+      sparkSessionLineageOriginKind(session.lineage) === "side_thread"
+        ? [[sparkSessionParentId(session.lineage)!, session] as const]
         : [],
     ),
   );
@@ -325,7 +311,7 @@ async function appendLiveSideThreads(
         continue;
       }
       const { parent, snapshot } = result.value;
-      const relatedSession = sideThreadRegistryRecord(parent, snapshot);
+      const relatedSession = sideThreadProjection(parent, snapshot);
       replaceRuntimeSideThreadProjection(
         db,
         runtimeSessionRouteForSession(db, parent.sessionId),
@@ -339,10 +325,10 @@ async function appendLiveSideThreads(
   return [...parentSessions, ...sideThreadsByParent.values()];
 }
 
-function sideThreadRegistryRecord(
-  parent: SparkSessionRegistryRecord,
+function sideThreadProjection(
+  parent: SparkSessionProjection,
   snapshot: SparkSideThreadSnapshot,
-): SparkSessionRegistryRecord {
+): SparkSessionProjection {
   if (parent.scope.kind !== "workspace") {
     throw new RuntimeControlCommandError(
       "Hub Side Thread rail projection requires a workspace parent.",
@@ -352,22 +338,24 @@ function sideThreadRegistryRecord(
   return {
     sessionId: snapshot.sessionId,
     scope: parent.scope,
-    workspaceId: parent.scope.workspaceId,
     ...(parent.cwd ? { cwd: parent.cwd } : {}),
-    title: snapshot.mode === "contextual" ? "Context Side Thread" : "Tangent Side Thread",
-    status:
-      parent.status === "archived"
-        ? "archived"
-        : snapshot.status === "running"
-          ? "running"
-          : "ready",
+    name: snapshot.mode === "contextual" ? "Context Side Thread" : "Tangent Side Thread",
+    lifecycle: parent.placement === "archived" ? "closed" : "open",
+    placement: "active",
+    activity: snapshot.status === "running" ? "running" : "idle",
+    lifetime: "scoped",
+    roleBinding: { kind: "inherit" },
+    incarnation: 1,
     bindings: [],
-    relation: {
-      kind: "side_thread",
+    lineage: {
+      kind: "child",
       parentSessionId: parent.sessionId,
-      generation: snapshot.generation,
-      mode: snapshot.mode,
+      origin: { kind: "side_thread", generation: snapshot.generation },
     },
+    visibility: "public",
+    retention: "discard_on_close",
+    purpose: "side_thread",
+    sideThreadMode: snapshot.mode,
     createdAt: parent.createdAt,
     updatedAt: parent.updatedAt,
   };
@@ -415,9 +403,9 @@ async function listRouteSessions(
   route: RuntimeSessionRoute,
   request: ReturnType<typeof sparkSessionListRequestSchema.parse>,
   deadline: number | undefined,
-): Promise<SparkSessionRegistryRecord[]> {
-  if (route.scope !== "workspace" || !route.workspaceId) {
-    throw new Error("Hub session lists require a workspace route.");
+): Promise<SparkSessionProjection[]> {
+  if (route.scope === "workspace" && !route.workspaceId) {
+    throw new Error("Hub Workspace session lists require a Workspace route.");
   }
   const candidateSessionIds = listRuntimeSessionProjections(db, {
     runtimeId: route.runtimeId,
@@ -425,9 +413,11 @@ async function listRouteSessions(
     ...(route.workspaceId ? { workspaceId: route.workspaceId } : {}),
     includeArchived: true,
   })
-    .filter((projection) => projection.session.relation?.kind !== "side_thread")
+    .filter(
+      (projection) => sparkSessionLineageOriginKind(projection.session.lineage) !== "side_thread",
+    )
     .map((projection) => projection.session.sessionId);
-  const sessions: SparkSessionRegistryRecord[] = [];
+  const sessions: SparkSessionProjection[] = [];
   let cursor: string | undefined;
   while (true) {
     const result = await runRuntimeSessionControlCommand(db, {
@@ -435,7 +425,10 @@ async function listRouteSessions(
       payload: {
         kind: "session.list.request",
         payload: {
-          scope: { kind: "workspace", workspaceId: route.workspaceId },
+          scope:
+            route.scope === "daemon"
+              ? { kind: "daemon" as const }
+              : { kind: "workspace" as const, workspaceId: route.workspaceId! },
           ...(request.includeArchived !== undefined
             ? { includeArchived: request.includeArchived }
             : {}),
@@ -465,11 +458,11 @@ async function listRouteSessions(
 }
 
 function parseSessionListPage(value: Record<string, unknown>): {
-  sessions: SparkSessionRegistryRecord[];
+  sessions: SparkSessionProjection[];
   hasMore: boolean;
   nextCursor?: string;
 } {
-  const sessions = parseSparkSessionRegistryRecords(value.sessions);
+  const sessions = parseSparkSessionProjections(value.sessions);
   if (typeof value.hasMore !== "boolean") {
     throw new RuntimeControlCommandError(
       "Spark daemon returned an invalid session list page.",
@@ -489,10 +482,7 @@ function parseSessionListPage(value: Record<string, unknown>): {
   };
 }
 
-async function getSession(
-  db: DatabaseSync,
-  sessionId: string,
-): Promise<SparkSessionRegistryRecord> {
+async function getSession(db: DatabaseSync, sessionId: string): Promise<SparkSessionProjection> {
   let projection = getRuntimeSessionProjection(db, sessionId);
   if (!projection) {
     await listSessionsWithControlState(db, { includeArchived: true });
@@ -662,7 +652,7 @@ async function runSideThreadCommand(
 async function createSession(
   db: DatabaseSync,
   input: HubRuntimeSessionCreateRequest,
-): Promise<SparkSessionRegistryRecord> {
+): Promise<SparkSessionProjection> {
   const { idempotencyKey, ...request } = input;
   const parsed = sparkSessionCreateRequestSchema.parse(request);
   if (parsed.scope.kind !== "workspace") {
@@ -678,50 +668,44 @@ async function createSession(
     idempotencyKey,
     payload: { kind: "session.create.request", payload: publicJsonObject(parsed) },
   });
-  const created = parseSparkSessionRegistryRecord(result.session);
+  const created = parseSparkSessionProjection(result.session);
   return requireProjectedSession(db, created.sessionId).session;
 }
 
 async function bindSession(
   db: DatabaseSync,
   input: SparkSessionBindRequest,
-): Promise<SparkSessionRegistryRecord> {
+): Promise<SparkSessionProjection> {
   return await mutateSession(db, "session.bind.request", input);
 }
 
 async function unbindSession(
   db: DatabaseSync,
   input: SparkSessionBindRequest,
-): Promise<SparkSessionRegistryRecord> {
+): Promise<SparkSessionProjection> {
   return await mutateSession(db, "session.unbind.request", input);
 }
 
 async function archiveSession(
   db: DatabaseSync,
   sessionId: string,
-): Promise<SparkSessionRegistryRecord> {
+): Promise<SparkSessionProjection> {
   return await mutateSession(db, "session.archive.request", { sessionId });
 }
 
-async function setSessionMode(
-  db: DatabaseSync,
-  input: { sessionId: string; mode: SparkSessionMode },
-): Promise<SparkSessionModeResult> {
-  const parsed = sparkSessionSetModeRequestSchema.parse(input);
-  const route = requireOnlineRoute(db, runtimeSessionRouteForSession(db, parsed.sessionId));
-  const result = await runRuntimeSessionControlCommand(db, {
-    route,
-    sessionId: parsed.sessionId,
-    payload: { kind: "session.mode.set.request", payload: publicJsonObject(parsed) },
-  });
-  return sparkSessionModeResultSchema.parse(result);
+async function closeSession(db: DatabaseSync, sessionId: string): Promise<SparkSessionProjection> {
+  return await mutateSession(db, "session.close.request", { sessionId });
 }
 
 async function mutateSession(
   db: DatabaseSync,
-  kind: "session.bind.request" | "session.unbind.request" | "session.archive.request",
+  kind:
+    | "session.bind.request"
+    | "session.unbind.request"
+    | "session.archive.request"
+    | "session.close.request",
   input: SparkSessionBindRequest | { sessionId: string },
-): Promise<SparkSessionRegistryRecord> {
+): Promise<SparkSessionProjection> {
   const sessionId = input.sessionId.trim();
   const route = requireOnlineRoute(db, runtimeSessionRouteForSession(db, sessionId));
   await runRuntimeSessionControlCommand(db, {
@@ -744,7 +728,7 @@ async function submitTurn(
   },
 ): Promise<SparkTurnSubmitResult> {
   const projected = getRuntimeSessionProjection(db, input.sessionId)?.session;
-  if (projected?.relation?.kind === "side_thread") {
+  if (projected && sparkSessionLineageOriginKind(projected.lineage) === "side_thread") {
     throw new RuntimeControlCommandError(
       "Side Threads accept prompts only through their parent-authorized controller.",
       "side_thread_direct_submit_forbidden",
@@ -838,38 +822,19 @@ async function getTurnStream(
   return sparkTurnStreamPageSchema.parse(result);
 }
 
-async function controlWorkbenchLoop(
-  db: DatabaseSync,
-  sessionId: string,
-  request: SparkLoopControlRequest,
-): Promise<SparkLoopMutationResult> {
-  const parsed = sparkLoopControlRequestSchema.parse(request);
-  const route = requireOnlineRoute(db, runtimeSessionRouteForSession(db, sessionId));
-  const result = await runRuntimeSessionControlCommand(db, {
-    route,
-    sessionId,
-    idempotencyKey: runtimeIdempotencyKey(parsed.action.context.idempotencyKey),
-    payload: {
-      kind: "loop.control.request",
-      payload: publicJsonObject(parsed),
-    },
-  });
-  return sparkLoopMutationResultSchema.parse(result);
-}
-
-function runtimeIdempotencyKey(actionIdempotencyKey: string): `idem_${string}` {
-  return `idem_${createHash("sha256").update(actionIdempotencyKey).digest("hex").slice(0, 32)}`;
-}
-
 function routesForList(
   db: DatabaseSync,
   request: ReturnType<typeof sparkSessionListRequestSchema.parse>,
+  runtimeId?: string,
 ): RuntimeSessionRoute[] {
   if (request.scope?.kind === "workspace") {
     return [requireOnlineRoute(db, runtimeSessionRouteForWorkspace(db, request.scope.workspaceId))];
   }
   if (request.scope?.kind === "daemon") {
-    throw new Error("Hub session lists support workspace scope only.");
+    if (!runtimeId?.trim()) {
+      throw new Error("Daemon session lists require one selected Spark runtime.");
+    }
+    return [requireOnlineRoute(db, runtimeSessionRouteForRuntime(runtimeId))];
   }
   return listRuntimeSessionRoutes(db).filter((route) => route.scope === "workspace");
 }
@@ -879,8 +844,8 @@ function projectedSessions(
   request: ReturnType<typeof sparkSessionListRequestSchema.parse>,
   runtimeId: string | undefined,
   related: boolean,
-): SparkSessionRegistryRecord[] {
-  return parseSparkSessionRegistryRecords(
+): SparkSessionProjection[] {
+  return parseSparkSessionProjections(
     listRuntimeSessionProjections(db, {
       ...(runtimeId ? { runtimeId } : {}),
       ...(request.scope?.kind === "workspace"
@@ -890,7 +855,9 @@ function projectedSessions(
           : { scope: "workspace" as const }),
       includeArchived: request.includeArchived,
     }).map(({ session }) => session),
-  ).filter((session) => related || session.relation?.kind !== "side_thread");
+  ).filter(
+    (session) => related || sparkSessionLineageOriginKind(session.lineage) !== "side_thread",
+  );
 }
 
 function requireProjectedSession(

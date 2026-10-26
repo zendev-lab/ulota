@@ -6,16 +6,17 @@ import {
   sessionGoalStorePathV2,
   sessionLoopStorePathV2,
   sessionStateStorePath,
-} from "@zendev-lab/spark-loop";
-import type { SparkSessionRegistryRecord } from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-driver";
+import type { SparkSessionProjection } from "@zendev-lab/spark-protocol";
 import { describe, expect, it } from "vitest";
 import { migrateLegacyLoopState } from "./loop-state-migration.ts";
 import { SparkLoopStore } from "./loops.ts";
 import { SparkInvocationStore } from "./invocations.ts";
 import { migrateSparkDaemonDatabase } from "./schema.ts";
+import { workspaceSessionRecord } from "../../../../test/support/session-fixtures.ts";
 
 describe("legacy autonomous loop migration", () => {
-  it("DRV-STARTUP-004 imports legacy cadence once, strips frontend runtime fields, and repairs a missing wake", async () => {
+  it("DRV-STARTUP-004 imports legacy cadence once and strips frontend runtime fields", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "spark-loop-migration-"));
     const db = new DatabaseSync(":memory:");
     migrateSparkDaemonDatabase(db);
@@ -86,15 +87,22 @@ describe("legacy autonomous loop migration", () => {
       expect(readJson(loopPath).loop).not.toHaveProperty("schedule");
 
       db.prepare("DELETE FROM loop_wakeups WHERE loop_id = ?").run("goal-migrate");
+      let listed = 0;
       await expect(
         migrateLegacyLoopState({
           db,
           loopStore: loops,
-          sessionRegistry: { list: async () => [session] },
+          sessionRegistry: {
+            list: async () => {
+              listed += 1;
+              return [session];
+            },
+          },
           now: "2026-07-23T01:00:00.000Z",
         }),
       ).resolves.toBeUndefined();
-      expect(loops.require("goal-migrate").status).toBe("scheduled");
+      expect(listed).toBe(0);
+      expect(loops.get("goal-migrate")).toBeUndefined();
     } finally {
       db.close();
       rmSync(cwd, { recursive: true, force: true });
@@ -102,17 +110,14 @@ describe("legacy autonomous loop migration", () => {
   });
 });
 
-function localSession(sessionId: string, cwd: string): SparkSessionRegistryRecord {
-  return {
+function localSession(sessionId: string, cwd: string): SparkSessionProjection {
+  return workspaceSessionRecord({
     sessionId,
-    status: "ready",
     cwd,
-    scope: { kind: "workspace", workspaceId: "workspace-one" },
     workspaceId: "workspace-one",
-    bindings: [],
     createdAt: "2026-07-20T00:00:00.000Z",
     updatedAt: "2026-07-20T00:00:00.000Z",
-  };
+  });
 }
 
 function writeJson(path: string, value: unknown): void {

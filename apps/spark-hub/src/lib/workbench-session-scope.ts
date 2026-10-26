@@ -1,39 +1,27 @@
+import {
+  buildSessionTreeRows,
+  type SessionTreeNodeLike,
+  type SessionTreeRow,
+} from "@zendev-lab/spark-ui/workbench";
+
 export type WorkbenchSessionScope =
   | { kind: "workspace"; workspaceId: string }
   | { kind: "daemon"; daemonId: string; daemonLabel?: string }
   | { kind: "unknown" };
 
 export interface WorkbenchSessionScopeLike {
-  workspaceId?: string;
   scope?:
     | { kind: "workspace"; workspaceId: string }
     | { kind: "daemon"; daemonId?: string; daemonLabel?: string }
     | null;
 }
 
-export interface WorkbenchSessionRailLike extends WorkbenchSessionScopeLike {
-  sessionId: string;
-  status?: string;
-  relation?: {
-    kind: string;
-    parentSessionId?: string;
-    generation?: number;
-    mode?: string;
-  };
-}
+export interface WorkbenchSessionRailLike extends WorkbenchSessionScopeLike, SessionTreeNodeLike {}
 
-export interface WorkbenchSessionRailRow<T extends WorkbenchSessionRailLike> {
-  session: T;
-  ariaLevel: 1 | 2;
-  parentSessionId?: string;
-  orphaned: boolean;
-}
+export type WorkbenchSessionRailRow<T extends WorkbenchSessionRailLike> = SessionTreeRow<T>;
 
 /**
- * Read the canonical scope when present and fall back to the legacy
- * workspaceId field. A legacy record is never guessed to be daemon-global:
- * only an explicit daemon scope is classified as daemon-owned so Hub can
- * reject it at the workspace boundary.
+ * Read the canonical daemon-owned scope. Legacy unscoped records are rejected.
  */
 export function workbenchSessionScope(session: WorkbenchSessionScopeLike): WorkbenchSessionScope {
   if (session.scope?.kind === "workspace" && session.scope.workspaceId.trim()) {
@@ -49,8 +37,7 @@ export function workbenchSessionScope(session: WorkbenchSessionScopeLike): Workb
     };
   }
 
-  const workspaceId = session.workspaceId?.trim();
-  return workspaceId ? { kind: "workspace", workspaceId } : { kind: "unknown" };
+  return { kind: "unknown" };
 }
 
 export function isSessionVisibleInWorkbenchRail(
@@ -72,10 +59,7 @@ export function workspaceIdForWorkbenchSession(session: WorkbenchSessionScopeLik
 /**
  * Project daemon registry records onto the Hub workbench boundary.
  *
- * The daemon registry also contains daemon-global sessions used by the TUI and
- * session tools. Keeping the projection here prevents those records from
- * leaking back into a Web surface when a caller forwards an unscoped
- * `session.list` response.
+ * Closed daemon-global audit records remain outside the interactive Hub.
  */
 export function workspaceSessionsForWorkbench<T extends WorkbenchSessionScopeLike>(
   sessions: readonly T[],
@@ -88,52 +72,45 @@ export function workspaceSessionsForWorkbench<T extends WorkbenchSessionScopeLik
 }
 
 /**
- * Flatten parent conversations and their Side Threads into a stable ARIA tree.
- * Orphans remain diagnostic rows and are never promoted to a parent control surface.
+ * Flatten the daemon-owned Session lineage into a stable recursive ARIA tree.
+ * Missing parents and lineage cycles remain explicit diagnostic rows.
  */
 export function buildSessionRailTree<T extends WorkbenchSessionRailLike>(
   sessions: readonly T[],
   options: { includeArchived?: boolean } = {},
 ): WorkbenchSessionRailRow<T>[] {
-  const visible = sessions.filter(
-    (session) => options.includeArchived || session.status !== "archived",
+  const visibleIds = new Set(
+    sessions
+      .filter((session) => options.includeArchived || session.placement !== "archived")
+      .map((session) => session.sessionId),
   );
-  const parents = visible.filter((session) => session.relation?.kind !== "side_thread");
-  const parentIds = new Set(parents.map((session) => session.sessionId));
-  const childrenByParent = new Map<string, T[]>();
-  const orphans: T[] = [];
-
-  for (const session of visible) {
-    if (session.relation?.kind !== "side_thread") continue;
-    const parentSessionId = session.relation.parentSessionId?.trim();
-    if (!parentSessionId || !parentIds.has(parentSessionId)) {
-      orphans.push(session);
-      continue;
+  const projected = sessions.map((session) => {
+    const parentSessionId =
+      session.lineage?.kind === "child" ? session.lineage.parentSessionId?.trim() : undefined;
+    if (
+      !parentSessionId ||
+      visibleIds.has(parentSessionId) ||
+      !isImplicitWorkspaceAdministrator(parentSessionId)
+    ) {
+      return session;
     }
-    const children = childrenByParent.get(parentSessionId) ?? [];
-    children.push(session);
-    childrenByParent.set(parentSessionId, children);
-  }
+    return { ...session, lineage: { kind: "root" as const } };
+  });
+  const originals = new Map(sessions.map((session) => [session.sessionId, session]));
+  return buildSessionTreeRows(projected, options).map((row) => {
+    const session = originals.get(row.session.sessionId) ?? row.session;
+    return {
+      ...row,
+      session,
+      ...(session.lineage?.kind === "child"
+        ? { parentSessionId: session.lineage.parentSessionId }
+        : {}),
+    };
+  });
+}
 
-  const rows: WorkbenchSessionRailRow<T>[] = [];
-  for (const parent of parents) {
-    rows.push({ session: parent, ariaLevel: 1, orphaned: false });
-    for (const child of childrenByParent.get(parent.sessionId) ?? []) {
-      rows.push({
-        session: child,
-        ariaLevel: 2,
-        parentSessionId: parent.sessionId,
-        orphaned: false,
-      });
-    }
-  }
-  for (const orphan of orphans) {
-    rows.push({
-      session: orphan,
-      ariaLevel: 2,
-      parentSessionId: orphan.relation?.parentSessionId,
-      orphaned: true,
-    });
-  }
-  return rows;
+// Delete this Hub-only adapter once every listed child is accompanied by its
+// legacy workspace-administrator parent record.
+function isImplicitWorkspaceAdministrator(sessionId: string): boolean {
+  return /(?:^|[_:-])admin(?:istrator)?(?:[_:-]|$)/iu.test(sessionId);
 }

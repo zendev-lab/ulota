@@ -16,10 +16,10 @@ import {
 } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { spawn, spawnSync } from "node:child_process";
-import { launchctlCommand, type SparkPaths } from "@zendev-lab/spark-system";
+import { launchctlCommand, type SparkPaths } from "@zendev-lab/spark-platform-node";
 import { requestSparkDaemon } from "@zendev-lab/spark-daemon-client";
 import { SPARK_PROTOCOL_VERSION } from "@zendev-lab/spark-protocol/domain";
 import { cappedExponentialCeiling } from "@zendev-lab/spark-retry";
@@ -33,8 +33,19 @@ const restartTerminalFileSuffix = ".json";
 const legacyRestartTerminalFileName = "restart.terminal.json";
 const processIdentityFileName = "daemon.identity.json";
 const processOwnershipMutexName = "daemon.identity.lock";
+const startMarkerFileName = "daemon.starting.json";
 const restartStartRetryBaseMs = 100;
 const restartStartRetryMaxMs = 5_000;
+const sparkDaemonDarwinSupervisorGraceMs = 5_000;
+const sparkDaemonLinuxSupervisorGraceMs = 2_000;
+const sparkDaemonLaunchdThrottleIntervalSeconds = 1;
+
+interface SparkDaemonStartMarker {
+  token: string;
+  ownerPid: number;
+  childPid?: number;
+  claimedAt: string;
+}
 
 type SparkDaemonRestartRecordState = "armed" | "claimed" | "cancelled" | "completed";
 
@@ -118,6 +129,95 @@ export interface SparkDaemonServiceResult {
   /** Spawned or observed process, used to fence a pre-pidfile cancellation race. */
   pid?: number;
   processStartToken?: string;
+}
+
+export function clearSparkDaemonStartMarker(paths: Pick<SparkPaths, "runtimeDir">): void {
+  const path = join(paths.runtimeDir, startMarkerFileName);
+  try {
+    rmSync(path, { force: true });
+  } catch {
+    // Startup must not fail merely because the best-effort marker cleanup lost
+    // a race with a stale launcher.
+  }
+}
+
+function claimSparkDaemonStartMarker(paths: Pick<SparkPaths, "runtimeDir">):
+  | {
+      claimed: true;
+      token: string;
+    }
+  | { claimed: false; pid: number } {
+  mkdirSync(paths.runtimeDir, { recursive: true });
+  const path = join(paths.runtimeDir, startMarkerFileName);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const token = randomUUID();
+    const marker: SparkDaemonStartMarker = {
+      token,
+      ownerPid: process.pid,
+      claimedAt: new Date().toISOString(),
+    };
+    try {
+      const fd = openSync(path, "wx", 0o600);
+      try {
+        writeFileSync(fd, `${JSON.stringify(marker)}\n`, "utf8");
+      } finally {
+        closeSync(fd);
+      }
+      return { claimed: true, token };
+    } catch {
+      const existing = readSparkDaemonStartMarker(path);
+      const pid = existing?.childPid ?? existing?.ownerPid;
+      if (pid && isProcessAlive(pid)) return { claimed: false, pid };
+      rmSync(path, { force: true });
+    }
+  }
+  return { claimed: false, pid: process.pid };
+}
+
+function writeSparkDaemonStartMarker(
+  paths: Pick<SparkPaths, "runtimeDir">,
+  token: string,
+  childPid: number | null,
+): void {
+  const path = join(paths.runtimeDir, startMarkerFileName);
+  const marker = readSparkDaemonStartMarker(path);
+  if (!marker || marker.token !== token) return;
+  const next: SparkDaemonStartMarker = {
+    ...marker,
+    ...(childPid && childPid > 0 ? { childPid } : {}),
+  };
+  writeFileSync(path, `${JSON.stringify(next)}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+function releaseSparkDaemonStartMarker(paths: Pick<SparkPaths, "runtimeDir">, token: string): void {
+  const path = join(paths.runtimeDir, startMarkerFileName);
+  const marker = readSparkDaemonStartMarker(path);
+  if (marker?.token === token) rmSync(path, { force: true });
+}
+
+function readSparkDaemonStartMarker(path: string): SparkDaemonStartMarker | null {
+  if (!existsSync(path)) return null;
+  try {
+    const value = JSON.parse(readFileSync(path, "utf8")) as Partial<SparkDaemonStartMarker>;
+    if (
+      typeof value.token !== "string" ||
+      typeof value.ownerPid !== "number" ||
+      !Number.isInteger(value.ownerPid) ||
+      typeof value.claimedAt !== "string"
+    ) {
+      return null;
+    }
+    return {
+      token: value.token,
+      ownerPid: value.ownerPid,
+      ...(typeof value.childPid === "number" && Number.isInteger(value.childPid)
+        ? { childPid: value.childPid }
+        : {}),
+      claimedAt: value.claimedAt,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function startSparkDaemonService(
@@ -235,7 +335,7 @@ export async function scheduleSparkDaemonRestartSuccessor(
   // launchd normally wins on macOS; the helper remains as a fenced watchdog
   // and only re-registers the job if no RPC-ready replacement appears.
   mkdirSync(paths.runtimeDir, { recursive: true, mode: 0o700 });
-  const existing = readRestartFence(paths);
+  const existing = readRestartActiveRecord(paths);
   if (existing && existing.previousPid !== previousPid) {
     throw new Error(
       `Spark daemon restart ${existing.restartId} is still completing for process ${existing.previousPid}.`,
@@ -354,7 +454,7 @@ export function readSparkDaemonRestartSuccessorContext(
   paths: SparkPaths,
 ): SparkDaemonRestartSuccessorContext | null {
   const intent = readRestartActiveRecord(paths);
-  if (!intent || predecessorProcessMatches(intent)) {
+  if (!intent || isSparkDaemonRestartPredecessorAlive(intent)) {
     return null;
   }
   return restartSuccessorContext(intent);
@@ -387,7 +487,7 @@ export function prepareSparkDaemonRestartAwareStart(
     }
     return { start: true, successorContext: null };
   }
-  if (predecessorProcessMatches(active)) {
+  if (isSparkDaemonRestartPredecessorAlive(active)) {
     return { start: false, reason: "missing" };
   }
   if (active.state === "armed") {
@@ -527,7 +627,7 @@ export async function runSparkDaemonRestartSuccessor(
       await sleep(pollIntervalMs);
     }
   }
-  const expectedIntent = readRestartFence(paths);
+  const expectedIntent = readRestartActiveRecord(paths);
   if (
     options.expectedRestartId &&
     (!expectedIntent ||
@@ -541,7 +641,9 @@ export async function runSparkDaemonRestartSuccessor(
   const processAlive =
     options.processAlive ??
     (() =>
-      expectedIntent ? predecessorProcessMatches(expectedIntent) : isProcessAlive(previousPid));
+      expectedIntent
+        ? isSparkDaemonRestartPredecessorAlive(expectedIntent)
+        : isProcessAlive(previousPid));
   const runningPid = options.runningPid ?? (() => readRunningPid(paths));
   const startService =
     options.startService ?? ((restartId?: string) => startDetachedSparkDaemon(paths, restartId));
@@ -575,11 +677,14 @@ export async function runSparkDaemonRestartSuccessor(
           })
         : false);
   const configuredReadinessTimeoutMs = options.replacementReadinessTimeoutMs;
+  // Keep successor kill-and-retry aligned with CLI waitForDaemonReady (120s).
+  // Cold starts with large local state routinely exceed the old 30s budget and
+  // previously thrashed exactly-owned children that were still bootstrapping.
   const replacementReadinessTimeoutMs =
     typeof configuredReadinessTimeoutMs === "number" &&
     Number.isFinite(configuredReadinessTimeoutMs)
       ? Math.max(1, Math.floor(configuredReadinessTimeoutMs))
-      : 30_000;
+      : 120_000;
   const startedServiceAlive = options.startedServiceAlive ?? sparkDaemonRestartStartedServiceAlive;
   const reportRetryFailure = (failure: SparkDaemonRestartRetryFailure) => {
     if (options.onRetryFailure) {
@@ -725,7 +830,9 @@ export async function runSparkDaemonRestartSuccessor(
   const supervisorDeadline =
     now() +
     (options.supervisorGraceMs ??
-      (supervisorMayRestart ? (process.platform === "darwin" ? 30_000 : 2_000) : 0));
+      sparkDaemonSupervisorGraceMs({
+        supervisorMayRestart,
+      }));
   while (now() < supervisorDeadline) {
     if (!restartClaimActive()) return null;
     const replacementPid = runningPid();
@@ -801,6 +908,16 @@ export function matchesSparkDaemonRestartReplacement(
     processIdentity.protocolVersion === SPARK_PROTOCOL_VERSION &&
     processIdentity.acceptedRestartId === expected.expectedRestartId
   );
+}
+
+export function sparkDaemonSupervisorGraceMs(input: {
+  supervisorMayRestart: boolean;
+  platform?: NodeJS.Platform;
+}): number {
+  if (!input.supervisorMayRestart) return 0;
+  return (input.platform ?? process.platform) === "darwin"
+    ? sparkDaemonDarwinSupervisorGraceMs
+    : sparkDaemonLinuxSupervisorGraceMs;
 }
 
 function restartIntentPath(paths: SparkPaths): string {
@@ -969,10 +1086,6 @@ function fsyncDirectory(path: string): void {
     // Some filesystems do not support directory fsync. The atomically
     // renamed, fsynced file remains the source of truth.
   }
-}
-
-function readRestartFence(paths: SparkPaths): SparkDaemonRestartIntent | null {
-  return readRestartActiveRecord(paths);
 }
 
 function readRestartActiveRecord(paths: SparkPaths): SparkDaemonRestartRecord | null {
@@ -1183,10 +1296,6 @@ async function armRestartHelper(
     child.on("message", onMessage);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
-}
-
-function predecessorProcessMatches(intent: SparkDaemonRestartIntent): boolean {
-  return isSparkDaemonRestartPredecessorAlive(intent);
 }
 
 /**
@@ -1568,6 +1677,8 @@ ${Object.entries(environment)
     <key>SuccessfulExit</key>
     <false/>
   </dict>
+  <key>ThrottleInterval</key>
+  <integer>${sparkDaemonLaunchdThrottleIntervalSeconds}</integer>
   <key>WorkingDirectory</key>
   <string>${xmlEscape(process.cwd())}</string>
   <key>StandardOutPath</key>
@@ -1599,6 +1710,30 @@ function startDetachedSparkDaemon(
       pid: runningPid,
     };
   }
+  // Bootstrap writes daemon.lock before the pidfile. Treat a live lock owner as
+  // already starting so concurrent `spark daemon start` callers (TUI ensure,
+  // repair loops, manual restarts) do not thrash duplicate children.
+  const startingPid = readLiveDaemonLockPid(paths);
+  if (startingPid) {
+    return {
+      kind: "detached",
+      alreadyRunning: true,
+      detail: `Spark daemon is already starting as process ${startingPid}.`,
+      ownership: "observed",
+      pid: startingPid,
+    };
+  }
+
+  const startMarker = claimSparkDaemonStartMarker(paths);
+  if (!startMarker.claimed) {
+    return {
+      kind: "detached",
+      alreadyRunning: true,
+      detail: `Spark daemon is already starting as process ${startMarker.pid}.`,
+      ownership: "observed",
+      pid: startMarker.pid,
+    };
+  }
 
   mkdirSync(paths.logDir, { recursive: true, mode: 0o700 });
   rotateSparkDaemonServiceLogs(paths);
@@ -1609,13 +1744,18 @@ function startDetachedSparkDaemon(
     detached: true,
     env: {
       ...process.env,
+      // Large local SQLite/state cold starts routinely exceed Node's default
+      // ~4GiB old-space during RoleRef sqlite migration backups.
+      NODE_OPTIONS: mergeNodeMaxOldSpaceSize(process.env.NODE_OPTIONS, 16384),
       ...(expectedRestartId ? { SPARK_DAEMON_EXPECTED_RESTART_ID: expectedRestartId } : {}),
     },
     stdio: ["ignore", stdout, stderr],
   });
   child.once("error", (error) => {
+    releaseSparkDaemonStartMarker(paths, startMarker.token);
     console.error("[spark-daemon] detached service failed to spawn", error);
   });
+  writeSparkDaemonStartMarker(paths, startMarker.token, child.pid ?? null);
   child.unref();
   const childStartToken = child.pid ? processStartTokenForPid(child.pid) : null;
 
@@ -1693,6 +1833,19 @@ export function readRunningPid(paths: SparkPaths): number | null {
   return isProcessAlive(pid) ? pid : null;
 }
 
+function readLiveDaemonLockPid(paths: SparkPaths): number | null {
+  const lockPath = join(paths.runtimeDir, "daemon.lock");
+  if (!existsSync(lockPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(lockPath, "utf8")) as { pid?: unknown };
+    const pid = typeof parsed.pid === "number" ? parsed.pid : Number.NaN;
+    if (!Number.isInteger(pid) || pid <= 0) return null;
+    return isProcessAlive(pid) ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
 function sparkDaemonStartCommand(): string[] {
   return [...sparkDaemonCliCommand(), "__service-start"];
 }
@@ -1700,7 +1853,12 @@ function sparkDaemonStartCommand(): string[] {
 function sparkDaemonCliCommand(): string[] {
   const stableLauncher = process.env.SPARK_STABLE_LAUNCHER?.trim();
   if (stableLauncher) return [stableLauncher, "daemon"];
-  return [process.execPath, sparkDaemonEntrypointPath()];
+  const entrypoint = sparkDaemonEntrypointPath();
+  if (entrypoint.endsWith(".ts") || entrypoint.endsWith(".tsx")) {
+    const tsx = join(dirname(entrypoint), "../../../node_modules/.bin/tsx");
+    if (existsSync(tsx)) return [tsx, entrypoint];
+  }
+  return [process.execPath, entrypoint];
 }
 
 export function rotateSparkDaemonServiceLogs(
@@ -1745,7 +1903,10 @@ function serviceEnvironment(): Record<string, string> {
     "PATH",
     "SPARK_HOME",
     "SPARK_BUILD_INFO_PATH",
+    "SPARK_DAEMON_ENTRYPOINT",
     "SPARK_DEPLOYMENT_WATCH_PATH",
+    "SPARK_HEADLESS_EXECUTOR_MODULE",
+    "SPARK_PRODUCT_DIST",
     "SPARK_STABLE_LAUNCHER",
     "XDG_CONFIG_HOME",
     "XDG_DATA_HOME",
@@ -1783,6 +1944,18 @@ function isProcessAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+function mergeNodeMaxOldSpaceSize(existing: string | undefined, minimumMiB: number): string {
+  const floor = Math.max(1, Math.floor(minimumMiB));
+  const flag = `--max-old-space-size=${floor}`;
+  const current = existing?.trim() ?? "";
+  if (!current) return flag;
+  const match = current.match(/--max-old-space-size=(\d+)/u);
+  if (!match) return `${current} ${flag}`;
+  const configured = Number(match[1]);
+  if (Number.isFinite(configured) && configured >= floor) return current;
+  return current.replace(/--max-old-space-size=\d+/u, flag);
 }
 
 function xmlEscape(value: string): string {

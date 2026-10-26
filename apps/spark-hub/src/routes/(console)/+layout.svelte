@@ -3,14 +3,12 @@
   import { Icon } from "@zendev-lab/spark-ui";
   import {
     buildConsoleNavGroups,
-    HUB_SETTINGS_HREF,
     currentConsolePageLabel,
     isConsoleNavItemActive,
     isControlPlanePath,
   } from "$lib/console-nav";
   import HubShell from "$lib/shell/HubShell.svelte";
   import type { HubSearchSession } from "$lib/shell/hub-search";
-  import { workspaceSwitcherHrefForPage } from "$lib/workbench-nav";
   import { workspacePath } from "$lib/workspace-routes";
 
   let { data, children } = $props();
@@ -39,8 +37,13 @@
   let navGroups = $derived(
     buildConsoleNavGroups({
       workspaceHrefPrefix: hasActiveWorkspace ? activeWorkspacePath : null,
-      includeControlPlaneNav: isControlPlane || !hasActiveWorkspace,
-      includeWorkspaceNav: !isControlPlane && hasActiveWorkspace,
+      workspaceSlug: data.activeWorkspace?.slug ?? null,
+      includeControlPlaneNav: data.hasControlPlaneAccess,
+      includeWorkspaceNav: hasActiveWorkspace,
+      includeDaemonNav: data.hasControlPlaneAccess && hasActiveWorkspace,
+      // Workspace and daemon are unified: daemon settings appear inside the
+      // active workspace group instead of a separate Daemon group.
+      mergeDaemonIntoWorkspace: true,
       nav: navLabels,
       groups: {
         hub: consoleMessages.navGroups.hub,
@@ -56,9 +59,6 @@
     return isConsoleNavItemActive({ pathname: page.url.pathname, href });
   }
 
-  let workspaceSwitcherHref = $derived(
-    workspaceSwitcherHrefForPage({ url: page.url, activeWorkspacePath, workspacePath }),
-  );
 </script>
 
 {#snippet navigation(closeNavigation: () => void)}
@@ -85,18 +85,6 @@
       {/each}
     </nav>
 
-    {#if !isControlPlane && hasActiveWorkspace}
-      <div class="console-nav-footer">
-        <a
-          class="shell-nav-link hub-settings-link"
-          href={HUB_SETTINGS_HREF}
-          onclick={closeNavigation}
-        >
-          <Icon name="settings" size={18} />
-          <span>{consoleMessages.openHubSettings}</span>
-        </a>
-      </div>
-    {/if}
   </div>
 {/snippet}
 
@@ -114,11 +102,13 @@
 
 <HubShell
   activeWorkspace={isControlPlane ? null : data.activeWorkspace}
+  canManageDaemonAccess={data.hasControlPlaneAccess}
   {children}
-  closeNavigationLabel={t.aria.closeWorkspaceNavigation}
+  closeNavigationLabel={t.aria.closeNavigation}
   common={data.messages.common}
   contentMode="padded"
   {contextBar}
+  daemons={data.daemons ?? []}
   layout={t}
   {navigation}
   navigationAriaLabel={consoleMessages.ariaNavigation}
@@ -127,8 +117,7 @@
   pathname={page.url.pathname}
   sessions={searchSessions}
   sessionMessages={data.messages.sessions}
-  showWorkspaceMenu={!isControlPlane}
-  workspaceHref={workspaceSwitcherHref}
+  showDaemonMenu={true}
   workspaces={workspaceOptions}
 />
 
@@ -145,13 +134,6 @@
   .console-navigation > nav {
     flex: 1 1 auto;
     min-height: 0;
-  }
-
-  .console-nav-footer {
-    border-top: 1px solid var(--color-border);
-    flex: 0 0 auto;
-    margin-top: auto;
-    padding-top: 12px;
   }
 
   .nav-group {

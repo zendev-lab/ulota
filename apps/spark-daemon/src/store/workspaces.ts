@@ -7,7 +7,6 @@ import {
   type ExecutorClientProjection,
   type RuntimeWorkspaceBindingAssignment,
   type RuntimeWorkspaceBindingSummary,
-  type RuntimeRegistrationResponse,
   type WorkspaceBorrowedState,
   type WorkspaceClientKind,
   type WorkspaceClientProjection,
@@ -15,7 +14,7 @@ import {
   type WorkspaceSessionSurface,
 } from "@zendev-lab/spark-protocol/runtime";
 import type { SparkTaskClaimLeaseIdentity } from "@zendev-lab/spark-protocol/task-claim";
-import { asciiSlug } from "@zendev-lab/spark-system";
+import { asciiSlug } from "@zendev-lab/spark-platform-node";
 import { SparkDaemonControlError } from "../control-error.ts";
 
 export interface WorkspaceProfileRegistration {
@@ -30,8 +29,6 @@ export interface SparkDaemonWorkspace {
   serverWorkspaceId?: string;
   serverBindingId?: string;
   hubBindingState?: RuntimeWorkspaceBindingAssignment["state"];
-  /** Returned once by workspace registration; never persisted or listed later. */
-  workspaceAuthorization?: NonNullable<RuntimeRegistrationResponse["workspaceAuthorization"]>;
   serverUrl: string;
   localWorkspaceKey: string;
   displayName: string;
@@ -398,7 +395,7 @@ export function ensureLocalWorkspace(
   if (!existing) {
     throw new SparkDaemonControlError(
       "workspace_not_found",
-      `Workspace is not registered: ${localPath}. Register it explicitly with spark daemon workspace register <path> --server-url <url> --token <token> --name <name>.`,
+      `Workspace is not registered: ${localPath}. Register it explicitly with spark daemon workspace register <path> --name <name>.`,
     );
   }
 
@@ -775,6 +772,55 @@ export function listWorkspaceClaimTargets(db: DatabaseSync): SparkDaemonWorkspac
     .all() as unknown as SparkDaemonWorkspaceClaimTarget[];
 }
 
+/**
+ * Return only the active Hub origins needed by the uplink supervisor.
+ *
+ * This path runs every 500 ms, so it must not hydrate invocation, client,
+ * server, or lifecycle projections for every workspace.
+ */
+export function listWorkspaceUplinkServerUrls(db: DatabaseSync): string[] {
+  const rows = db
+    .prepare(
+      `SELECT w.server_url AS serverUrl,
+              w.diagnostics_json AS diagnosticsJson
+       FROM workspaces w
+       WHERE w.server_url <> ''
+         AND NOT EXISTS (
+           SELECT 1 FROM workspace_lifecycle lifecycle WHERE lifecycle.workspace_id = w.id
+         )
+       ORDER BY w.display_name ASC, w.id ASC`,
+    )
+    .all() as Array<{ serverUrl: string; diagnosticsJson: string }>;
+  const serverUrls = new Set<string>();
+  for (const row of rows) {
+    if (parseObject(row.diagnosticsJson).userDetached === true) continue;
+    serverUrls.add(row.serverUrl);
+  }
+  return [...serverUrls];
+}
+
+/** Active local and Hub binding ids for one origin without workspace hydration. */
+export function listWorkspaceBindingIdsForServer(db: DatabaseSync, serverUrl: string): string[] {
+  const rows = db
+    .prepare(
+      `SELECT w.id,
+              dw.server_binding_id AS serverBindingId
+       FROM workspaces w
+       LEFT JOIN daemon_workspaces dw ON dw.id = w.id
+       WHERE w.server_url = ?
+         AND NOT EXISTS (
+           SELECT 1 FROM workspace_lifecycle lifecycle WHERE lifecycle.workspace_id = w.id
+         )
+       ORDER BY w.id ASC`,
+    )
+    .all(serverUrl) as Array<{ id: string; serverBindingId: string | null }>;
+  return rows.flatMap((row) =>
+    row.serverBindingId && row.serverBindingId !== row.id
+      ? [row.id, row.serverBindingId]
+      : [row.id],
+  );
+}
+
 export function requireWorkspaceClaimTarget(
   db: DatabaseSync,
   workspaceId: string,
@@ -817,7 +863,10 @@ export function listWorkspaces(
        ORDER BY w.display_name ASC`,
     )
     .all(options.includeInactive ? 1 : 0) as unknown as WorkspaceRow[];
-  return rows.map((row) => mapWorkspaceRow(row, db, options.reconcileClientLeases));
+  if (rows.length > 0 && options.reconcileClientLeases !== false) {
+    expireWorkspaceClientLeases(db);
+  }
+  return rows.map((row) => mapWorkspaceRow(row, db, false));
 }
 
 export function listWorkspacesForServer(
@@ -903,31 +952,120 @@ export function resolveWorkspaceLocalPath(
 }
 
 /**
+ * Deterministic admission contract for session-facing workspace identities.
+ * Channel admission must distinguish unique ownership from permanent route
+ * failures (unknown / ambiguous / unregistered) instead of collapsing them to
+ * a missing binding id.
+ */
+export type WorkspaceIdentityResolution =
+  | {
+      state: "resolved";
+      workspaceId: string;
+      serverBindingId: string;
+      serverWorkspaceId?: string;
+    }
+  | { state: "unknown"; reasonCode: "workspace_identity_unknown" }
+  | { state: "ambiguous"; reasonCode: "workspace_identity_ambiguous"; matchCount: number }
+  | { state: "unregistered"; reasonCode: "workspace_identity_unregistered" };
+
+/**
  * Resolve any session-facing workspace identity to the binding identity used
  * by the Hub uplink. Channel sessions commonly retain the server
  * workspace id or the pre-registration local key, while invocation delivery
  * must be fenced by the current runtime workspace binding id.
+ *
+ * Contract:
+ * - `rtwb_*` / local binding ids resolve as-is when active (no server-id lookup).
+ * - `ws_*` / server workspace ids resolve only when exactly one active owner exists.
+ * - Unregistered rows are permanent failures, not retryable unknowns.
+ * - Zero or multiple active owners become typed permanent route failures.
  */
+export function resolveWorkspaceIdentity(
+  db: DatabaseSync,
+  workspaceIdentity: string,
+): WorkspaceIdentityResolution {
+  const trimmed = workspaceIdentity.trim();
+  if (!trimmed) {
+    return { state: "unknown", reasonCode: "workspace_identity_unknown" };
+  }
+
+  // Direct binding id (local workspace id or server_binding_id / rtwb_*).
+  const direct = resolveActiveWorkspace(db, trimmed);
+  if (direct) {
+    return {
+      state: "resolved",
+      workspaceId: direct.id,
+      serverBindingId: direct.serverBindingId ?? direct.id,
+      ...(direct.serverWorkspaceId ? { serverWorkspaceId: direct.serverWorkspaceId } : {}),
+    };
+  }
+
+  // An exact row that is only inactive is unregistered rather than unknown.
+  const inactiveDirect = getWorkspaceById(db, trimmed);
+  if (inactiveDirect?.lifecycle?.state === "unregistered") {
+    return { state: "unregistered", reasonCode: "workspace_identity_unregistered" };
+  }
+
+  // Server workspace id (ws_*) lookup: unique active owner only.
+  const serverMatches = listWorkspaces(db).filter(
+    (workspace) => workspace.serverWorkspaceId === trimmed,
+  );
+  if (serverMatches.length === 1) {
+    const match = serverMatches[0]!;
+    return {
+      state: "resolved",
+      workspaceId: match.id,
+      serverBindingId: match.serverBindingId ?? match.id,
+      ...(match.serverWorkspaceId ? { serverWorkspaceId: match.serverWorkspaceId } : {}),
+    };
+  }
+  if (serverMatches.length > 1) {
+    return {
+      state: "ambiguous",
+      reasonCode: "workspace_identity_ambiguous",
+      matchCount: serverMatches.length,
+    };
+  }
+
+  // Include inactive server-id owners so unregistered routes fail permanently.
+  const inactiveServerMatches = listWorkspaces(db, { includeInactive: true }).filter(
+    (workspace) =>
+      workspace.serverWorkspaceId === trimmed && workspace.lifecycle?.state === "unregistered",
+  );
+  if (inactiveServerMatches.length > 0) {
+    return { state: "unregistered", reasonCode: "workspace_identity_unregistered" };
+  }
+
+  // Legacy local-key fallback for pre-registration session records.
+  const legacyMatches = listWorkspaces(db).filter(
+    (workspace) => workspace.localWorkspaceKey === trimmed,
+  );
+  if (legacyMatches.length === 1) {
+    const match = legacyMatches[0]!;
+    return {
+      state: "resolved",
+      workspaceId: match.id,
+      serverBindingId: match.serverBindingId ?? match.id,
+      ...(match.serverWorkspaceId ? { serverWorkspaceId: match.serverWorkspaceId } : {}),
+    };
+  }
+  if (legacyMatches.length > 1) {
+    return {
+      state: "ambiguous",
+      reasonCode: "workspace_identity_ambiguous",
+      matchCount: legacyMatches.length,
+    };
+  }
+
+  return { state: "unknown", reasonCode: "workspace_identity_unknown" };
+}
+
 export function resolveWorkspaceBindingId(
   db: DatabaseSync,
   workspaceId: string,
 ): string | undefined {
-  const direct = resolveActiveWorkspace(db, workspaceId);
-  if (direct) return direct.serverBindingId ?? direct.id;
-
-  const serverMatches = listWorkspaces(db).filter(
-    (workspace) => workspace.serverWorkspaceId === workspaceId,
-  );
-  if (serverMatches.length === 1) {
-    return serverMatches[0]!.serverBindingId ?? serverMatches[0]!.id;
-  }
-
-  const legacyMatches = listWorkspaces(db).filter(
-    (workspace) => workspace.localWorkspaceKey === workspaceId,
-  );
-  return legacyMatches.length === 1
-    ? (legacyMatches[0]!.serverBindingId ?? legacyMatches[0]!.id)
-    : undefined;
+  const resolved = resolveWorkspaceIdentity(db, workspaceId);
+  return resolved.state === "resolved" ? resolved.serverBindingId : undefined;
 }
 
 function resolveActiveWorkspace(

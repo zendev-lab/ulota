@@ -3,8 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ChannelNotifyInput, ChannelNotifyResult } from "@zendev-lab/spark-channels";
-import type { SparkSessionRegistryRecord } from "@zendev-lab/spark-protocol";
+import type { ChannelNotifyInput, ChannelNotifyResult } from "@zendev-lab/dsh-channel-transports";
+import {
+  parseSparkSessionProjection,
+  type SparkSessionProjection,
+} from "@zendev-lab/spark-protocol";
 import { SparkSessionMailStore } from "@zendev-lab/spark-session";
 import type {
   DaemonChannelIngressRuntime,
@@ -15,7 +18,7 @@ import {
   reconcileDaemonChannelDeliveries,
 } from "./channels/delivery-outbox.ts";
 import {
-  deliverSessionNotification,
+  deliverSelectedSessionNotificationTargets,
   reconcileSessionNotificationDeliveries,
   sessionNotificationDeliveryIdempotencyKey,
   sessionNotificationLegacyDeliveryIdempotencyKey,
@@ -34,15 +37,12 @@ describe("daemon session notification delivery reconciliation", () => {
     const root = mkdtempSync(join(tmpdir(), "spark-notification-domain-errors-"));
     roots.push(root);
     const mailStore = new SparkSessionMailStore({ sparkHome: root });
-    const session: SparkSessionRegistryRecord = {
+    const session = daemonChannelSessionRecord({
       sessionId: "sess_domain_errors",
-      scope: { kind: "workspace", workspaceId: "ws_domain_errors" },
       workspaceId: "ws_domain_errors",
-      status: "ready",
-      bindings: [],
       createdAt: "2026-07-15T04:00:00.000Z",
       updatedAt: "2026-07-15T04:00:00.000Z",
-    };
+    });
     const request = await mailStore.send({
       toSessionId: session.sessionId,
       kind: "request",
@@ -72,7 +72,7 @@ describe("daemon session notification delivery reconciliation", () => {
       body: "Channel notification",
       source: "tool",
     });
-    const status = vi.fn(() => channelStatus(session.workspaceId, []));
+    const status = vi.fn(() => channelStatus("ws_domain_errors", []));
     const deps = {
       mailStore,
       sessionRegistry: { get: vi.fn(async () => session) },
@@ -80,38 +80,38 @@ describe("daemon session notification delivery reconciliation", () => {
     };
 
     await expect(
-      deliverSessionNotification(
+      deliverSelectedSessionNotificationTargets(
         { sessionId: session.sessionId, messageId: request.message.id },
         deps,
       ),
     ).rejects.toMatchObject({ code: "session_mail_not_notification" });
     await expect(
-      deliverSessionNotification(
+      deliverSelectedSessionNotificationTargets(
         { sessionId: session.sessionId, messageId: internal.message.id },
         deps,
       ),
     ).rejects.toMatchObject({ code: "session_mail_not_user_visible" });
     await expect(
-      deliverSessionNotification(
+      deliverSelectedSessionNotificationTargets(
         { sessionId: session.sessionId, messageId: mailbox.message.id },
         deps,
       ),
     ).rejects.toMatchObject({ code: "session_mail_not_channel_delivery" });
     await expect(
-      deliverSessionNotification(
+      deliverSelectedSessionNotificationTargets(
         { sessionId: session.sessionId, messageId: routed.message.id },
         deps,
       ),
     ).rejects.toMatchObject({ code: "channel_adapter_not_found" });
 
     status.mockReturnValue(
-      channelStatus(session.workspaceId, [
+      channelStatus("ws_domain_errors", [
         { id: "info-primary", type: "infoflow" },
         { id: "info-secondary", type: "infoflow" },
       ]),
     );
     await expect(
-      deliverSessionNotification(
+      deliverSelectedSessionNotificationTargets(
         { sessionId: session.sessionId, messageId: routed.message.id },
         deps,
       ),
@@ -127,17 +127,14 @@ describe("daemon session notification delivery reconciliation", () => {
     migrateSparkDaemonDatabase(db);
     const deliveryStore = new SparkChannelDeliveryStore(db, { now: () => now, random: () => 1 });
     const deliveryOutbox = createDaemonChannelDeliveryOutbox(deliveryStore);
-    const session: SparkSessionRegistryRecord = {
+    const session = daemonChannelSessionRecord({
       sessionId: "sess_outbox",
-      scope: { kind: "workspace", workspaceId: "ws_outbox" },
       workspaceId: "ws_outbox",
-      status: "ready",
-      bindings: [],
       createdAt: now,
       updatedAt: now,
-    };
+    });
     const status = channelStatus("ws_outbox");
-    const notify = vi.fn(async (_workspaceId: string, input: ChannelNotifyInput) => ({
+    const notify = vi.fn(async (input: ChannelNotifyInput) => ({
       action: "send" as const,
       adapter: input.adapter!,
       recipient: input.recipient!,
@@ -231,21 +228,18 @@ describe("daemon session notification delivery reconciliation", () => {
     migrateSparkDaemonDatabase(db);
     const deliveryStore = new SparkChannelDeliveryStore(db, { now: () => now, random: () => 1 });
     const deliveryOutbox = createDaemonChannelDeliveryOutbox(deliveryStore);
-    const session: SparkSessionRegistryRecord = {
+    const session = daemonChannelSessionRecord({
       sessionId: "sess_uncertain",
-      scope: { kind: "workspace", workspaceId: "ws_uncertain" },
       workspaceId: "ws_uncertain",
-      status: "ready",
-      bindings: [],
       createdAt: now,
       updatedAt: now,
-    };
+    });
     const notify = vi.fn();
     const deps = {
       mailStore,
       sessionRegistry: { get: vi.fn(async () => session) },
       channelIngress: {
-        status: vi.fn(() => channelStatus(session.workspaceId)),
+        status: vi.fn(() => channelStatus("ws_uncertain")),
         notify,
       },
       deliveryQueue: { store: deliveryStore, outbox: deliveryOutbox },
@@ -259,7 +253,7 @@ describe("daemon session notification delivery reconciliation", () => {
         body: "Outcome may be external",
         source: "tool",
       });
-      await deliverSessionNotification(
+      await deliverSelectedSessionNotificationTargets(
         { sessionId: session.sessionId, messageId: sent.message.id },
         deps,
       );
@@ -306,11 +300,9 @@ describe("daemon session notification delivery reconciliation", () => {
     roots.push(root);
     let now = Date.parse("2026-07-15T05:00:00.000Z");
     const mailStore = new SparkSessionMailStore({ sparkHome: root, now: () => now });
-    const session: SparkSessionRegistryRecord = {
+    const session = daemonChannelSessionRecord({
       sessionId: "sess_reconcile",
-      scope: { kind: "workspace", workspaceId: "ws_reconcile" },
       workspaceId: "ws_reconcile",
-      status: "ready",
       bindings: [
         {
           kind: "channel",
@@ -320,28 +312,26 @@ describe("daemon session notification delivery reconciliation", () => {
       ],
       createdAt: "2026-07-15T04:00:00.000Z",
       updatedAt: "2026-07-15T04:00:00.000Z",
-    };
+    });
     const status = channelStatus("ws_reconcile");
     let shouldFail = true;
-    const notify = vi.fn(
-      async (_workspaceId: string, input: ChannelNotifyInput): Promise<ChannelNotifyResult> => {
-        if (shouldFail) throw new Error("gateway unavailable");
-        if (!input.adapter || !input.recipient) throw new Error("missing delivery target");
-        return {
-          action: "send",
-          adapter: input.adapter,
-          recipient: input.recipient,
-          text: input.text ?? "",
-        };
-      },
-    );
+    const notify = vi.fn(async (input: ChannelNotifyInput): Promise<ChannelNotifyResult> => {
+      if (shouldFail) throw new Error("gateway unavailable");
+      if (!input.adapter || !input.recipient) throw new Error("missing delivery target");
+      return {
+        action: "send",
+        adapter: input.adapter,
+        recipient: input.recipient,
+        text: input.text ?? "",
+      };
+    });
     const deps = {
       mailStore,
       sessionRegistry: { get: vi.fn(async () => session) },
       channelIngress: { status: vi.fn(() => status), notify },
     } satisfies {
       mailStore: SparkSessionMailStore;
-      sessionRegistry: { get(sessionId: string): Promise<SparkSessionRegistryRecord | undefined> };
+      sessionRegistry: { get(sessionId: string): Promise<SparkSessionProjection | undefined> };
       channelIngress: Pick<DaemonChannelIngressRuntime, "status" | "notify">;
     };
     const sent = await mailStore.send({
@@ -409,37 +399,32 @@ describe("daemon session notification delivery reconciliation", () => {
     roots.push(root);
     let now = Date.parse("2026-07-15T06:00:00.000Z");
     const mailStore = new SparkSessionMailStore({ sparkHome: root, now: () => now });
-    const session: SparkSessionRegistryRecord = {
+    const session = daemonChannelSessionRecord({
       sessionId: "sess_staggered",
-      scope: { kind: "workspace", workspaceId: "ws_staggered" },
       workspaceId: "ws_staggered",
-      status: "ready",
-      bindings: [],
       createdAt: "2026-07-15T05:00:00.000Z",
       updatedAt: "2026-07-15T05:00:00.000Z",
-    };
+    });
     const status = channelStatus("ws_staggered", [
       { id: "info-main", type: "infoflow" },
       { id: "qq-main", type: "qqbot" },
     ]);
-    const notify = vi.fn(
-      async (_workspaceId: string, input: ChannelNotifyInput): Promise<ChannelNotifyResult> => {
-        if (!input.adapter || !input.recipient) throw new Error("missing delivery target");
-        return {
-          action: "send",
-          adapter: input.adapter,
-          recipient: input.recipient,
-          text: input.text ?? "",
-        };
-      },
-    );
+    const notify = vi.fn(async (input: ChannelNotifyInput): Promise<ChannelNotifyResult> => {
+      if (!input.adapter || !input.recipient) throw new Error("missing delivery target");
+      return {
+        action: "send",
+        adapter: input.adapter,
+        recipient: input.recipient,
+        text: input.text ?? "",
+      };
+    });
     const deps = {
       mailStore,
       sessionRegistry: { get: vi.fn(async () => session) },
       channelIngress: { status: vi.fn(() => status), notify },
     } satisfies {
       mailStore: SparkSessionMailStore;
-      sessionRegistry: { get(sessionId: string): Promise<SparkSessionRegistryRecord | undefined> };
+      sessionRegistry: { get(sessionId: string): Promise<SparkSessionProjection | undefined> };
       channelIngress: Pick<DaemonChannelIngressRuntime, "status" | "notify">;
     };
     const sent = await mailStore.send({
@@ -469,7 +454,7 @@ describe("daemon session notification delivery reconciliation", () => {
       failed: 0,
     });
     expect(notify).toHaveBeenCalledTimes(1);
-    expect(notify).toHaveBeenLastCalledWith("ws_staggered", {
+    expect(notify).toHaveBeenLastCalledWith({
       action: "send",
       adapter: "info-main",
       recipient: "user-1",
@@ -489,7 +474,7 @@ describe("daemon session notification delivery reconciliation", () => {
       failed: 0,
     });
     expect(notify).toHaveBeenCalledTimes(2);
-    expect(notify).toHaveBeenLastCalledWith("ws_staggered", {
+    expect(notify).toHaveBeenLastCalledWith({
       action: "send",
       adapter: "qq-main",
       recipient: "c2c:user-2",
@@ -502,34 +487,29 @@ describe("daemon session notification delivery reconciliation", () => {
     roots.push(root);
     let now = Date.parse("2026-07-15T07:00:00.000Z");
     const mailStore = new SparkSessionMailStore({ sparkHome: root, now: () => now });
-    const session: SparkSessionRegistryRecord = {
+    const session = daemonChannelSessionRecord({
       sessionId: "sess_poison",
-      scope: { kind: "workspace", workspaceId: "ws_poison" },
       workspaceId: "ws_poison",
-      status: "ready",
-      bindings: [],
       createdAt: "2026-07-15T06:00:00.000Z",
       updatedAt: "2026-07-15T06:00:00.000Z",
-    };
+    });
     const status = channelStatus("ws_poison");
-    const notify = vi.fn(
-      async (_workspaceId: string, input: ChannelNotifyInput): Promise<ChannelNotifyResult> => {
-        if (!input.adapter || !input.recipient) throw new Error("missing delivery target");
-        return {
-          action: "send",
-          adapter: input.adapter,
-          recipient: input.recipient,
-          text: input.text ?? "",
-        };
-      },
-    );
+    const notify = vi.fn(async (input: ChannelNotifyInput): Promise<ChannelNotifyResult> => {
+      if (!input.adapter || !input.recipient) throw new Error("missing delivery target");
+      return {
+        action: "send",
+        adapter: input.adapter,
+        recipient: input.recipient,
+        text: input.text ?? "",
+      };
+    });
     const deps = {
       mailStore,
       sessionRegistry: { get: vi.fn(async () => session) },
       channelIngress: { status: vi.fn(() => status), notify },
     } satisfies {
       mailStore: SparkSessionMailStore;
-      sessionRegistry: { get(sessionId: string): Promise<SparkSessionRegistryRecord | undefined> };
+      sessionRegistry: { get(sessionId: string): Promise<SparkSessionProjection | undefined> };
       channelIngress: Pick<DaemonChannelIngressRuntime, "status" | "notify">;
     };
     const internal = await mailStore.send({
@@ -565,7 +545,7 @@ describe("daemon session notification delivery reconciliation", () => {
       failed: 0,
     });
     expect(notify).toHaveBeenCalledOnce();
-    expect(notify).toHaveBeenCalledWith("ws_poison", {
+    expect(notify).toHaveBeenCalledWith({
       action: "send",
       adapter: "info-main",
       recipient: "visible",
@@ -589,15 +569,12 @@ describe("daemon session notification delivery reconciliation", () => {
     migrateSparkDaemonDatabase(db);
     const deliveryStore = new SparkChannelDeliveryStore(db, { now: () => now, random: () => 1 });
     const deliveryOutbox = createDaemonChannelDeliveryOutbox(deliveryStore);
-    const session: SparkSessionRegistryRecord = {
+    const session = daemonChannelSessionRecord({
       sessionId: "sess_correlation",
-      scope: { kind: "workspace", workspaceId: "ws_correlation" },
       workspaceId: "ws_correlation",
-      status: "ready",
-      bindings: [],
       createdAt: now,
       updatedAt: now,
-    };
+    });
     const deps = {
       mailStore,
       sessionRegistry: { get: vi.fn(async () => session) },
@@ -627,11 +604,11 @@ describe("daemon session notification delivery reconciliation", () => {
         source: "tool",
       });
 
-      await deliverSessionNotification(
+      await deliverSelectedSessionNotificationTargets(
         { sessionId: session.sessionId, messageId: first.message.id },
         deps,
       );
-      await deliverSessionNotification(
+      await deliverSelectedSessionNotificationTargets(
         { sessionId: session.sessionId, messageId: replay.message.id },
         deps,
       );
@@ -663,16 +640,13 @@ describe("daemon session notification delivery reconciliation", () => {
     migrateSparkDaemonDatabase(db);
     const deliveryStore = new SparkChannelDeliveryStore(db, { now: () => now, random: () => 1 });
     const deliveryOutbox = createDaemonChannelDeliveryOutbox(deliveryStore);
-    const session: SparkSessionRegistryRecord = {
+    const session = daemonChannelSessionRecord({
       sessionId: "sess_accounts",
-      scope: { kind: "workspace", workspaceId: "ws_accounts" },
       workspaceId: "ws_accounts",
-      status: "ready",
-      bindings: [],
       createdAt: now,
       updatedAt: now,
-    };
-    const status = channelStatus(session.workspaceId, [
+    });
+    const status = channelStatus("ws_accounts", [
       {
         id: "info-a-current",
         type: "infoflow",
@@ -708,7 +682,7 @@ describe("daemon session notification delivery reconciliation", () => {
         source: "tool",
       });
 
-      await deliverSessionNotification(
+      await deliverSelectedSessionNotificationTargets(
         { sessionId: session.sessionId, messageId: sent.message.id },
         {
           mailStore,
@@ -756,16 +730,13 @@ describe("daemon session notification delivery reconciliation", () => {
     const root = mkdtempSync(join(tmpdir(), "spark-notification-direct-account-"));
     roots.push(root);
     const mailStore = new SparkSessionMailStore({ sparkHome: root });
-    const session: SparkSessionRegistryRecord = {
+    const session = daemonChannelSessionRecord({
       sessionId: "sess_direct_account",
-      scope: { kind: "workspace", workspaceId: "ws_direct_account" },
       workspaceId: "ws_direct_account",
-      status: "ready",
-      bindings: [],
       createdAt: "2026-07-15T08:20:00.000Z",
       updatedAt: "2026-07-15T08:20:00.000Z",
-    };
-    const status = channelStatus(session.workspaceId, [
+    });
+    const status = channelStatus("ws_direct_account", [
       {
         id: "info-a-current",
         type: "infoflow",
@@ -777,14 +748,12 @@ describe("daemon session notification delivery reconciliation", () => {
         adapterAccountIdentity: "channel-account:infoflow:b",
       },
     ]);
-    const notify = vi.fn(
-      async (_workspaceId: string, input: ChannelNotifyInput): Promise<ChannelNotifyResult> => ({
-        action: "send",
-        adapter: input.adapter!,
-        recipient: input.recipient!,
-        text: input.text ?? "",
-      }),
-    );
+    const notify = vi.fn(async (input: ChannelNotifyInput): Promise<ChannelNotifyResult> => ({
+      action: "send",
+      adapter: input.adapter!,
+      recipient: input.recipient!,
+      text: input.text ?? "",
+    }));
     const sent = await mailStore.send({
       toSessionId: session.sessionId,
       kind: "notification",
@@ -801,7 +770,7 @@ describe("daemon session notification delivery reconciliation", () => {
       source: "tool",
     });
 
-    await deliverSessionNotification(
+    await deliverSelectedSessionNotificationTargets(
       { sessionId: session.sessionId, messageId: sent.message.id },
       {
         mailStore,
@@ -810,7 +779,7 @@ describe("daemon session notification delivery reconciliation", () => {
       },
     );
 
-    expect(notify).toHaveBeenCalledWith(session.workspaceId, {
+    expect(notify).toHaveBeenCalledWith({
       action: "send",
       adapter: "info-b-current",
       recipient: "user-b",
@@ -835,15 +804,12 @@ describe("daemon session notification delivery reconciliation", () => {
     migrateSparkDaemonDatabase(db);
     const deliveryStore = new SparkChannelDeliveryStore(db, { now: () => now, random: () => 1 });
     const deliveryOutbox = createDaemonChannelDeliveryOutbox(deliveryStore);
-    const session: SparkSessionRegistryRecord = {
+    const session = daemonChannelSessionRecord({
       sessionId: "sess_legacy_key",
-      scope: { kind: "workspace", workspaceId: "ws_legacy_key" },
       workspaceId: "ws_legacy_key",
-      status: "ready",
-      bindings: [],
       createdAt: now,
       updatedAt: now,
-    };
+    });
     try {
       const sent = await mailStore.send({
         toSessionId: session.sessionId,
@@ -864,20 +830,19 @@ describe("daemon session notification delivery reconciliation", () => {
         idempotencyKey: legacyKey,
         sessionId: session.sessionId,
         messageId: sent.message.id,
-        workspaceId: session.workspaceId,
         adapterId: "info-main",
         externalKey: "infoflow:user:user-1",
         recipient: "user-1",
         text: sent.message.body,
       });
 
-      await deliverSessionNotification(
+      await deliverSelectedSessionNotificationTargets(
         { sessionId: session.sessionId, messageId: sent.message.id },
         {
           mailStore,
           sessionRegistry: { get: vi.fn(async () => session) },
           channelIngress: {
-            status: vi.fn(() => channelStatus(session.workspaceId)),
+            status: vi.fn(() => channelStatus("ws_legacy_key")),
             notify: vi.fn(),
           },
           deliveryQueue: { store: deliveryStore, outbox: deliveryOutbox },
@@ -915,8 +880,7 @@ function channelStatus(
   return {
     plane: "daemon",
     resource: "channel",
-    workspaceId,
-    configPath: `/tmp/${workspaceId}/channels/config.json`,
+    configPath: `/tmp/channels/${workspaceId}.json`,
     available: true,
     configured: true,
     ingressEnabled: true,
@@ -928,6 +892,33 @@ function channelStatus(
     })),
     routes: [],
     observedAt: "2026-07-15T05:00:00.000Z",
-    text: `channels workspace=${workspaceId} running`,
+    text: "channels daemon running",
   };
+}
+
+function daemonChannelSessionRecord(input: {
+  sessionId: string;
+  workspaceId: string;
+  bindings?: SparkSessionProjection["bindings"];
+  createdAt?: string;
+  updatedAt?: string;
+}): SparkSessionProjection {
+  return parseSparkSessionProjection({
+    sessionId: input.sessionId,
+    scope: { kind: "daemon", daemonId: "installation-test" },
+    lifecycle: "open",
+    placement: "active",
+    activity: "idle",
+    lifetime: "persistent",
+    roleBinding: { kind: "none" },
+    lineage: { kind: "root" },
+    incarnation: 1,
+    visibility: "public",
+    retention: "retain",
+    purpose: "channel",
+    cwd: `/tmp/channels/${input.sessionId}/workspace`,
+    bindings: input.bindings ?? [],
+    createdAt: input.createdAt ?? "2026-07-15T00:00:00.000Z",
+    updatedAt: input.updatedAt ?? input.createdAt ?? "2026-07-15T00:00:00.000Z",
+  });
 }
