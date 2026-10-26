@@ -161,10 +161,7 @@ function validateAppliedMigrations(db: DatabaseSync, known: Map<string, Migratio
     }
   }
   const applied = new Set(rows.map((row) => row.version));
-  const latest = rows
-    .map((row) => row.version)
-    .sort()
-    .at(-1);
+  const latest = rows.reduce((latest, row) => (row.version > latest ? row.version : latest), "");
   for (const migration of known.values()) {
     if (
       migration.version !== "0001" &&
