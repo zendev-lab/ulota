@@ -189,5 +189,15 @@
     "skip": "已导入，跳过",
     "source_changed": "源记录已变化，保留 Hub 记录",
     "target_missing": "导入目标已删除，跳过"
+  },
+  "human": {
+    "region": "问题与审批",
+    "customAnswer": "自定义回答",
+    "customPlaceholder": "输入回答",
+    "selectPlaceholder": "选择回答",
+    "required": "请回答所有必填问题。",
+    "answer": "发送回答",
+    "answering": "发送中…",
+    "cancel": "取消请求"
   }
 }

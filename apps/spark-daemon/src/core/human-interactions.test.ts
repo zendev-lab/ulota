@@ -537,7 +537,7 @@ describe("SparkDaemonHumanInteractionBroker", () => {
     }
   });
 
-  it("still blocks a route-less non-TUI ask instead of creating an unanswerable wait", async () => {
+  it("rejects a route-less web ask without an owning session", async () => {
     const db = new DatabaseSync(":memory:");
     migrateSparkDaemonDatabase(db);
     const waits = new SparkDaemonHumanWaitRegistry(db);
@@ -550,7 +550,7 @@ describe("SparkDaemonHumanInteractionBroker", () => {
     try {
       await expect(
         broker.interact(askRequest("interaction-route-less-web", "blocking"), {
-          sessionId: "session-route-less-web",
+          sessionId: "",
           invocationId: "invocation-route-less-web",
           sessionSource: "web",
         }),
@@ -559,6 +559,93 @@ describe("SparkDaemonHumanInteractionBroker", () => {
         requestId: "interaction-route-less-web",
         status: "blocked",
       });
+      expect(waits.listPending()).toEqual([]);
+      expect(waits.listPendingOutbox()).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it.each([0, 1, 2])(
+    "keeps daemon web questions private with %i workspace routes",
+    async (routeCount) => {
+      const db = new DatabaseSync(":memory:");
+      migrateSparkDaemonDatabase(db);
+      for (let index = 0; index < routeCount; index += 1)
+        seedHumanRoute(db, {
+          serverId: `server-${index}`,
+          serverUrl: `https://hub-${index}.example/`,
+          workspaceBindingId: `binding-${index}`,
+          workspaceId: `workspace-${index}`,
+          workspacePath: `/workspace/${index}`,
+          localWorkspaceKey: `local-${index}`,
+        });
+      const waits = new SparkDaemonHumanWaitRegistry(db);
+      const broker = new SparkDaemonHumanInteractionBroker({
+        db,
+        waits,
+        getRuntimeId: () => RUNTIME_ID,
+      });
+      try {
+        const response = await broker.interact(askRequest("private-ask", "async"), {
+          sessionId: "private-session",
+          invocationId: "private-invocation",
+          sessionSource: "web",
+        });
+        expect(response).toMatchObject({ status: "pending" });
+        const wait = waits.listPending()[0]!;
+        expect(wait).toMatchObject({
+          sessionId: "private-session",
+          workspaceId: "",
+          workspaceBindingId: "",
+          context: { hubProjected: false },
+        });
+        expect(waits.listPendingOutbox()).toEqual([]);
+        await expect(
+          broker.respond(wait, {
+            status: "answered",
+            provenance: "direct_user",
+            answers: { decision: "yes" },
+            responseArtifactRefs: [],
+          }),
+        ).resolves.toMatchObject({ outcome: "accepted" });
+        expect(waits.listPendingOutbox()).toEqual([]);
+      } finally {
+        db.close();
+      }
+    },
+  );
+
+  it.each([true, false])("settles daemon web tool approval with approved=%s", async (approved) => {
+    const db = new DatabaseSync(":memory:");
+    migrateSparkDaemonDatabase(db);
+    seedHumanRoute(db);
+    const waits = new SparkDaemonHumanWaitRegistry(db);
+    const broker = new SparkDaemonHumanInteractionBroker({
+      db,
+      waits,
+      getRuntimeId: primaryRuntimeId,
+    });
+    try {
+      const pending = broker.interact(
+        parseSparkInteractionRequest({
+          requestId: "private-approval",
+          title: "Approve write",
+          kind: "toolApproval",
+          toolName: "example.write",
+          toolCallId: "write-1",
+          source: "daemon",
+        }),
+        { sessionId: "private-session", invocationId: "private-invocation", sessionSource: "web" },
+      );
+      await vi.waitFor(() => expect(waits.listPending()).toHaveLength(1));
+      await broker.respond(waits.listPending()[0]!, {
+        status: "answered",
+        provenance: "direct_user",
+        answers: { approval: { values: [approved ? "approve" : "reject"] } },
+        responseArtifactRefs: [],
+      });
+      await expect(pending).resolves.toMatchObject({ kind: "toolApproval", approved });
       expect(waits.listPending()).toEqual([]);
       expect(waits.listPendingOutbox()).toEqual([]);
     } finally {

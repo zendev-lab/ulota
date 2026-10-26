@@ -6,6 +6,9 @@ import {
   type SparkCommand,
   type SparkProtocolJsonValue,
 } from "@zendev-lab/spark-protocol";
+import { sparkLocalRpcProcedureSchemas } from "@zendev-lab/spark-protocol/local-rpc-orpc-contract";
+import { executeSparkDaemonHumanInteractionControl } from "./core/human-interaction-control.ts";
+import { SparkDaemonControlError } from "./control-error.ts";
 import { sparkCommandFromServerCommandEnvelope } from "./command-dispatcher.ts";
 import {
   commandRoute,
@@ -158,6 +161,10 @@ async function executeAcceptedClaimedCommand(input: ClaimedCommandExecution): Pr
     case "workspace.client.heartbeat.request":
     case "workspace.client.release.request":
       await handleWorkspaceClientOccupancyCommand(input);
+      return;
+    case "human.request.list.request":
+    case "human.response.deliver.request":
+      await handleRuntimeHumanInteractionCommand(input);
       return;
     case "diagnostics.request":
       sendDiagnosticsResult(input);
@@ -389,6 +396,63 @@ async function handleRuntimeSessionControlCommand(input: ClaimedCommandExecution
     },
   );
   sendControlledCommandResult({ ws, command, route, executed, includeProjection: true });
+}
+
+async function handleRuntimeHumanInteractionCommand(input: ClaimedCommandExecution): Promise<void> {
+  const { ws, command, context, route, sparkCommand } = input;
+  const sessionId = command.sessionId;
+  if (
+    !sessionId ||
+    (sparkCommand.payload.sessionId && sparkCommand.payload.sessionId !== sessionId)
+  ) {
+    throw new SparkDaemonControlError(
+      "session_scope_mismatch",
+      "Human interactions require their owning session route.",
+    );
+  }
+  await executeSparkDaemonSessionControl(daemonSessionControlDependencies(context), {
+    kind: "session.get.request",
+    scope: daemonControlScope(command),
+    workspaceId: command.workspaceId,
+    workspaceBindingId: command.workspaceBindingId,
+    sessionId,
+    payload: { sessionId },
+  });
+  if (!context.humanWaits)
+    throw new SparkDaemonControlError(
+      "human_wait_registry_unavailable",
+      "Spark daemon human wait registry is not available.",
+    );
+  const payload = { ...sparkCommand.payload, sessionId };
+  if (sparkCommand.payload.provenance && sparkCommand.payload.provenance !== "direct_user")
+    throw new SparkDaemonControlError(
+      "human_interaction_forbidden",
+      "Remote responses require a direct user.",
+    );
+  const request =
+    sparkCommand.kind === "human.request.list.request"
+      ? {
+          method: "human.interaction.list" as const,
+          params: sparkLocalRpcProcedureSchemas["human.interaction.list"].input.parse(payload),
+        }
+      : {
+          method: "human.interaction.respond" as const,
+          params: sparkLocalRpcProcedureSchemas["human.interaction.respond"].input.parse({
+            ...payload,
+            provenance: "direct_user",
+          }),
+        };
+  const result = await executeSparkDaemonHumanInteractionControl(
+    { waits: context.humanWaits, respond: context.respondHumanInteraction },
+    request,
+  );
+  sendControlledCommandResult({
+    ws,
+    command,
+    route,
+    executed: { result },
+    includeProjection: false,
+  });
 }
 
 async function handleRuntimeSideThreadControlCommand(

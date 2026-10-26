@@ -1,6 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, existsSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { execFileSync } from "node:child_process";
 import { expect, it } from "vitest";
@@ -160,6 +160,52 @@ it("requires explicit paths, rejects invalid JSON tags, and never overwrites an 
     expect(readFileSync(output)).toEqual(first);
     db.exec("UPDATE items SET tags='invalid-json'");
     expect(() => exportBoneHub({ inventory: path })).toThrow();
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it("treats source arguments as filesystem paths without SQLite URI options", () => {
+  const root = mkdtempSync(join(tmpdir(), "ulota-legacy-path-"));
+  const path = join(root, "items.db");
+  const db = itemDatabase(path);
+  try {
+    expect(exportBoneHub({ inventory: relative(process.cwd(), path) }).inventory[0]?.id).toBe(
+      "legacy-item",
+    );
+    expect(() => exportBoneHub({ inventory: `file:${path}?mode=ro` })).toThrow();
+    expect(db.prepare("SELECT count(*) AS count FROM items").get()?.count).toBe(1);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+it.each([false, true])("refuses an output symlink even when its target exists: %s", (exists) => {
+  const root = mkdtempSync(join(tmpdir(), "ulota-legacy-link-"));
+  const path = join(root, "items.db");
+  const db = itemDatabase(path);
+  const output = join(root, "export.json");
+  const target = join(root, "target.json");
+  try {
+    if (exists) writeFileSync(target, "keep");
+    symlinkSync(target, output);
+    expect(() =>
+      execFileSync(
+        process.execPath,
+        [
+          "--experimental-strip-types",
+          "scripts/export-bonehub.mts",
+          "--inventory",
+          path,
+          "--output",
+          output,
+        ],
+        { cwd: process.cwd(), stdio: "pipe" },
+      ),
+    ).toThrow();
+    expect(existsSync(target)).toBe(exists);
+    if (exists) expect(readFileSync(target, "utf8")).toBe("keep");
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });

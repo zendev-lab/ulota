@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { resolve } from "node:path";
 import {
   inventoryItemSchema,
   personalTodoSchema,
@@ -12,7 +13,11 @@ export interface BoneHubSources {
   subscriptions?: string;
 }
 function snapshot<T>(path: string, read: (db: DatabaseSync) => T): T {
-  const db = new DatabaseSync(path, { readOnly: true, timeout: 5000, allowExtension: false });
+  const db = new DatabaseSync(resolve(path), {
+    readOnly: true,
+    timeout: 5000,
+    allowExtension: false,
+  });
   try {
     db.exec("PRAGMA query_only = ON; BEGIN");
     const result = read(db);

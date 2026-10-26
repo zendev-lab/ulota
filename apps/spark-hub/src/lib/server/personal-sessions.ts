@@ -1,7 +1,13 @@
+import { createHash } from "node:crypto";
+import {
+  sparkLocalRpcProcedureSchemas,
+  type SparkLocalRpcParsedInput,
+} from "@zendev-lab/spark-protocol/local-rpc-orpc-contract";
 import { userHasDaemonGrant } from "@zendev-lab/spark-hub-coordination/hub-access";
 import { error } from "@sveltejs/kit";
 import {
   createId,
+  sparkAskQuestionViewSchema,
   parseSparkSessionProjection,
   type SparkSessionProjection,
 } from "@zendev-lab/spark-protocol";
@@ -50,7 +56,7 @@ export async function createPersonalConversation(
   const result = await runRuntimeSessionControlCommand(db, {
     route: runtimeSessionRouteForRuntime(binding.runtimeId),
     sessionId,
-    idempotencyKey: `personal-create-${sessionId}`,
+    idempotencyKey: personalCommandIdempotencyKey(sessionId, "create"),
     payload: {
       kind: "session.create.request",
       payload: { sessionId, scope: { kind: "daemon" }, purpose: "personal" },
@@ -109,4 +115,61 @@ export function listPersonalConversations(userId: string) {
     sessionId: row.sessionId,
     session: row.record ? (JSON.parse(row.record) as SparkSessionProjection) : null,
   }));
+}
+
+export async function personalConversationInteractions(userId: string, sessionId: string) {
+  const { runtimeId } = requirePersonalConversation(userId, sessionId);
+  const result = await runRuntimeSessionControlCommand(getDatabase(), {
+    route: runtimeSessionRouteForRuntime(runtimeId),
+    sessionId,
+    payload: { kind: "human.request.list.request", payload: { sessionId } },
+  });
+  return sparkLocalRpcProcedureSchemas["human.interaction.list"].output
+    .parse(result)
+    .waits.map((wait) => ({
+      humanRequestId: wait.humanRequestId,
+      humanResponseId: createId("hres"),
+      title: wait.title,
+      prompt: wait.prompt,
+      mode: wait.mode,
+      questions: sparkAskQuestionViewSchema.array().min(1).parse(wait.questions),
+    }));
+}
+
+export async function respondPersonalConversationInteraction(
+  userId: string,
+  sessionId: string,
+  input: Pick<
+    SparkLocalRpcParsedInput<"human.interaction.respond">,
+    "humanRequestId" | "humanResponseId" | "status" | "answers"
+  >,
+) {
+  const { runtimeId } = requirePersonalConversation(userId, sessionId);
+  const result = await runRuntimeSessionControlCommand(getDatabase(), {
+    route: runtimeSessionRouteForRuntime(runtimeId),
+    sessionId,
+    idempotencyKey: input.humanResponseId
+      ? personalCommandIdempotencyKey(sessionId, "respond", input.humanResponseId)
+      : undefined,
+    payload: {
+      kind: "human.response.deliver.request",
+      payload: { ...input, sessionId, provenance: "direct_user" },
+    },
+  });
+  const response = sparkLocalRpcProcedureSchemas["human.interaction.respond"].output.parse(result);
+  if (response.outcome !== "accepted" && response.outcome !== "replayed")
+    error(409, response.message);
+  return response;
+}
+
+function personalCommandIdempotencyKey(
+  sessionId: string,
+  action: "create" | "respond",
+  responseId?: string,
+): string {
+  const digest = createHash("sha256")
+    .update(JSON.stringify(["personal-session", sessionId, action, responseId]))
+    .digest("hex")
+    .slice(0, 32);
+  return `idem_${digest}`;
 }
