@@ -15,6 +15,7 @@ import {
   sparkLocalRpcOrpcOnlyMethods,
   sparkLocalRpcProcedureSchemas,
   sparkLocalRpcReadinessOrpcErrors,
+  sparkLocalRpcRoleModelOrpcErrors,
   sparkLocalRpcSessionOrpcErrors,
   sparkLocalRpcSideThreadOrpcErrors,
   sparkLocalRpcTaskClaimOrpcErrors,
@@ -124,13 +125,42 @@ describe("sparkLocalRpcOrpcContract (Phase 4)", () => {
       "session",
       "promptHistory",
     ]);
+    expect(sparkLocalRpcOrpcMethodPaths["session.snapshot-page"]).toEqual([
+      "session",
+      "snapshotPage",
+    ]);
+    expect(sparkLocalRpcOrpcMethodPaths["session.media.read"]).toEqual([
+      "session",
+      "media",
+      "read",
+    ]);
     expect(sparkLocalRpcOrpcMethodPaths["session.retry-target"]).toEqual([
       "session",
       "retryTarget",
     ]);
     expect(sparkLocalRpcOrpcOnlyMethods).toEqual([
+      "artifact.list",
+      "artifact.read",
+      "role.list",
+      "role.create",
+      "role.model.list",
+      "role.model.get",
+      "role.model.set",
+      "role.model.delete",
+      "skill.list",
+      "workspace.directory.list",
+      "search.global",
+      "session.search",
+      "session.export",
+      "session.snapshot-page",
+      "session.media.read",
       "session.prompt-history",
       "session.retry-target",
+      "daemon.access.create",
+      "daemon.access.list",
+      "daemon.access.revoke",
+      "daemon.access.verify",
+      "daemon.access.session",
     ]);
   });
 
@@ -189,6 +219,45 @@ describe("sparkLocalRpcOrpcContract (Phase 4)", () => {
       SPARK_SESSION_PROMPT_HISTORY_MAX_BYTES,
     );
     expect(procedure.output.safeParse(oversized).success).toBe(false);
+  });
+
+  it("keeps daemon-user access tokens metadata-only after creation", () => {
+    const create = sparkLocalRpcProcedureSchemas["daemon.access.create"];
+    expect(create.input.parse({})).toEqual({});
+    expect(
+      create.input.parse({ label: "  laptop  ", expiresAt: "2027-01-01T00:00:00.000Z" }),
+    ).toEqual({ label: "laptop", expiresAt: "2027-01-01T00:00:00.000Z" });
+    expect(create.input.safeParse({ label: " " }).success).toBe(false);
+    expect(create.input.safeParse({ expiresAt: "not-a-date" }).success).toBe(false);
+
+    const metadata = {
+      id: "dut_0123456789abcdef0123456789abcdef",
+      createdAt: "2026-08-24T00:00:00.000Z",
+    };
+    expect(create.output.parse({ token: "sdu_secret", record: metadata })).toMatchObject({
+      record: { id: "dut_0123456789abcdef0123456789abcdef" },
+    });
+    // Listing never returns plaintext or hashes; unknown fields are stripped.
+    const list = sparkLocalRpcProcedureSchemas["daemon.access.list"];
+    expect(list.input.parse({})).toEqual({});
+    expect(list.output.parse({ tokens: [metadata] })).toEqual({ tokens: [metadata] });
+    expect(
+      list.output.parse({ tokens: [{ ...metadata, token: "sdu_secret", tokenHash: "abc" }] })
+        .tokens[0],
+    ).toEqual(metadata);
+
+    const revoke = sparkLocalRpcProcedureSchemas["daemon.access.revoke"];
+    expect(revoke.input.parse({ id: "dut_1" })).toEqual({ id: "dut_1" });
+    expect(revoke.input.safeParse({ id: " " }).success).toBe(false);
+    expect(revoke.output.parse({ id: "dut_1", revoked: true })).toEqual({
+      id: "dut_1",
+      revoked: true,
+    });
+
+    // Verification collapses every rejection cause into one boolean.
+    const verify = sparkLocalRpcProcedureSchemas["daemon.access.verify"];
+    expect(verify.input.safeParse({}).success).toBe(false);
+    expect(verify.output.parse({ valid: false })).toEqual({ valid: false });
   });
 
   it("keeps the oRPC-only retry target narrow and daemon-owned", () => {
@@ -250,64 +319,6 @@ describe("sparkLocalRpcOrpcContract (Phase 4)", () => {
         execution: { backend: "in_process", rootConcurrency: 65, questionOverflow: 1 },
       }),
     ).toThrow();
-    const adjacentLifecycle = {
-      state: "running" as const,
-      process: {
-        pid: 42,
-        instanceId: "instance-n-minus-one",
-        generation: "generation-n-minus-one",
-        protocolVersion: 1,
-        startedAt: "2026-08-12T00:00:00.000Z",
-      },
-    };
-    expect(schema.parse({ ...legacyStatus, lifecycle: adjacentLifecycle }).lifecycle).toEqual(
-      adjacentLifecycle,
-    );
-    expect(() =>
-      schema.parse({
-        ...legacyStatus,
-        lifecycle: {
-          ...adjacentLifecycle,
-          process: { ...adjacentLifecycle.process, protocolVersion: 0 },
-        },
-      }),
-    ).toThrow();
-  });
-
-  it("accepts the adjacent daemon session snapshot on the local RPC wire", () => {
-    expect(
-      sparkLocalRpcProcedureSchemas["daemon.status"].input.parse({
-        clientProtocolVersion: 2,
-      }),
-    ).toEqual({ clientProtocolVersion: 2 });
-    expect(
-      sparkLocalRpcProcedureSchemas["session.snapshot"].input.parse({
-        sessionId: "sess_adjacent",
-        clientProtocolVersion: 2,
-      }),
-    ).toMatchObject({ sessionId: "sess_adjacent", clientProtocolVersion: 2 });
-    const parsed = sparkLocalRpcProcedureSchemas["session.snapshot"].output.parse({
-      version: 1,
-      sessionId: "sess_adjacent",
-      title: "Workspace Coordinator",
-      cwd: "/tmp/adjacent",
-      status: "idle",
-      pendingTurns: [],
-      messages: [],
-      tools: [],
-      runs: [],
-      loops: [],
-      tasks: [],
-      artifacts: [],
-      evidence: [],
-      mailbox: [],
-      createdAt: "2026-08-12T00:00:00.000Z",
-      updatedAt: "2026-08-12T00:00:00.000Z",
-      metadata: { registryStatus: "ready" },
-    });
-
-    expect(parsed.version).toBe(1);
-    expect(parsed.metadata).toMatchObject({ registryStatus: "ready" });
   });
 
   it("parses session-bound workspace client procedures through their oRPC schemas", () => {
@@ -468,10 +479,13 @@ describe("sparkLocalRpcOrpcContract (Phase 4)", () => {
     const declaredCases = [
       ["session.create", "daemon_identity_unavailable"],
       ["session.create", "daemon_cwd_unavailable"],
+      ["session.spawn", "invalid_session_role"],
+      ["session.fork", "session_transcript_changed"],
       ["session.bind", "side_thread_mutation_forbidden"],
       ["session.snapshot", "invalid_session_snapshot"],
       ["session.snapshot", "session_snapshot_mismatch"],
       ["session.snapshot", "session_snapshot_cursor_not_found"],
+      ["session.export", "session_transcript_changed"],
       ["session.prompt-history", "invalid_session_snapshot"],
       ["session.retry-target", "session_not_found"],
       ["turn.submit", "side_thread_direct_submit_forbidden"],
@@ -493,6 +507,36 @@ describe("sparkLocalRpcOrpcContract (Phase 4)", () => {
     ).toBe(false);
   });
 
+  it("keeps managed child inputs exact and rejects arbitrary fork sources", () => {
+    const valid = {
+      supervisorSessionId: "session:supervisor",
+      roleRef: "role:project-verifier",
+      name: "Verifier",
+      cwd: "/workspace/verifier",
+      cwdArtifactRef: "artifact:git-change-verifier",
+    };
+    expect(sparkLocalRpcProcedureSchemas["session.spawn"].input.parse(valid)).toEqual(valid);
+    expect(sparkLocalRpcProcedureSchemas["session.fork"].input.parse(valid)).toEqual(valid);
+    expect(
+      sparkLocalRpcProcedureSchemas["session.spawn"].input.safeParse({
+        ...valid,
+        roleRef: "verifier",
+      }).success,
+    ).toBe(false);
+    expect(
+      sparkLocalRpcProcedureSchemas["session.fork"].input.safeParse({
+        ...valid,
+        sourceSessionId: "session:arbitrary",
+      }).success,
+    ).toBe(false);
+    expect(
+      sparkLocalRpcProcedureSchemas["session.fork"].input.safeParse({
+        ...valid,
+        instruction: "run immediately",
+      }).success,
+    ).toBe(false);
+  });
+
   it("freezes each non-session error family and exposes it only on owning procedures", () => {
     const families = [
       [sparkLocalRpcDaemonOrpcErrors, sparkDaemonLifecycleRpcErrorCodeOptions],
@@ -508,6 +552,12 @@ describe("sparkLocalRpcOrpcContract (Phase 4)", () => {
     for (const [errorMap, options] of families) {
       expect(Object.keys(errorMap).sort()).toEqual([...options].sort());
     }
+    expect(Object.keys(sparkLocalRpcRoleModelOrpcErrors).sort()).toEqual([
+      "model_control_unavailable",
+      "model_not_found",
+      "model_unavailable",
+      "role_not_found",
+    ]);
 
     const declaredCases = [
       ["daemon.restart", "daemon_restart_conflict"],
@@ -527,10 +577,15 @@ describe("sparkLocalRpcOrpcContract (Phase 4)", () => {
       ["task.claim.recover", "task_claim_recovery_refused"],
       ["uplink.prefer", "uplink_transfer_rejected"],
       ["human.interaction.respond", "human_wait_registry_unavailable"],
-      ["session.notification.deliver", "channel_delivery_not_sent"],
       ["session.model.set", "model_control_unavailable"],
       ["session.model.set", "model_not_enabled"],
       ["model.default.set", "model_not_enabled"],
+      ["model.enabled.set", "enabled_models_intent_required"],
+      ["role.model.delete", "role_not_found"],
+      ["role.model.set", "model_control_unavailable"],
+      ["role.model.set", "role_not_found"],
+      ["role.model.set", "model_not_found"],
+      ["role.model.set", "model_unavailable"],
     ] as const;
     for (const [method, code] of declaredCases) {
       expect(isSparkLocalRpcOrpcErrorCodeForMethod(method, code), `${method}: ${code}`).toBe(true);
@@ -538,6 +593,19 @@ describe("sparkLocalRpcOrpcContract (Phase 4)", () => {
 
     expect(isSparkLocalRpcOrpcErrorCodeForMethod("loop.start", "workspace_not_found")).toBe(false);
     expect(isSparkLocalRpcOrpcErrorCodeForMethod("model.catalog", "loop_not_found")).toBe(false);
+    expect(isSparkLocalRpcOrpcErrorCodeForMethod("session.model.set", "role_not_found")).toBe(
+      false,
+    );
+    expect(isSparkLocalRpcOrpcErrorCodeForMethod("role.model.get", "role_not_found")).toBe(false);
+    expect(isSparkLocalRpcOrpcErrorCodeForMethod("role.model.delete", "model_not_found")).toBe(
+      false,
+    );
+    expect(
+      isSparkLocalRpcOrpcErrorCodeForMethod("role.model.delete", "model_control_unavailable"),
+    ).toBe(false);
+    expect(
+      isSparkLocalRpcOrpcErrorCodeForMethod("role.model.set", "role_model_type_unconfigured"),
+    ).toBe(false);
     expect(isSparkLocalRpcOrpcErrorCodeForMethod("loop.status", "loop_not_found")).toBe(false);
     expect(isSparkLocalRpcOrpcErrorCodeForMethod("turn.status", "invocation_not_retryable")).toBe(
       false,

@@ -55,8 +55,8 @@ test("release migration arguments support automatic and explicit published basel
       "dist/release/spark-daemon-v0.1.1.tgz",
       "--hub-tarball",
       "dist/release/spark-hub-v0.1.1.tgz",
-      "--tui-tarball",
-      "dist/release/spark-tui-v0.1.1.tgz",
+      "--web-tarball",
+      "dist/release/spark-web-v0.1.1.tgz",
       "--baseline-version",
       "0.1.0",
     ]),
@@ -66,7 +66,7 @@ test("release migration arguments support automatic and explicit published basel
       cliTarball: "dist/release/spark-cli-v0.1.1.tgz",
       daemonTarball: "dist/release/spark-daemon-v0.1.1.tgz",
       hubTarball: "dist/release/spark-hub-v0.1.1.tgz",
-      tuiTarball: "dist/release/spark-tui-v0.1.1.tgz",
+      webTarball: "dist/release/spark-web-v0.1.1.tgz",
     },
   );
   assert.equal(selectPublishedBaselineVersion(["0.0.9", "0.1.0"], "0.1.1", "0.1.0"), "0.1.0");
@@ -74,23 +74,6 @@ test("release migration arguments support automatic and explicit published basel
   assert.equal(
     selectPublishedBaselineVersion(["0.3.0", "0.2.1", "0.3.0-rc.1", "0.3.0", "invalid"], "0.3.1"),
     "0.3.0",
-  );
-  assert.equal(
-    selectPublishedBaselineVersion(
-      ["0.2.1", "0.3.0", "0.4.0", "0.5.0-beta.1"],
-      "0.5.0",
-      undefined,
-      ["0.4.0"],
-    ),
-    "0.3.0",
-  );
-  assert.equal(
-    selectPublishedBaselineVersion(["0.3.0", "0.4.0"], "0.5.0", "0.3.0", ["0.4.0"]),
-    "0.3.0",
-  );
-  assert.throws(
-    () => selectPublishedBaselineVersion(["0.3.0", "0.4.0"], "0.5.0", "0.4.0", ["0.4.0"]),
-    /compatibility-exempt/u,
   );
   assert.throws(
     () => selectPublishedBaselineVersion(["0.1.0"], "0.1.0", "0.1.0"),
@@ -106,26 +89,19 @@ test("release migration arguments support automatic and explicit published basel
   );
 });
 
-test("published Hub probe prefers the current command and falls back to the legacy command", async () => {
+test("published Hub probe requires the current spark-hub command", async () => {
   const baselineRoot = "/fixture/published";
   const currentHub = join(baselineRoot, "node_modules", ".bin", "spark-hub");
-  const legacyHub = join(baselineRoot, "node_modules", ".bin", "spark-cockpit");
 
   assert.deepEqual(
     await resolvePublishedHubProbe(baselineRoot, {
-      exists: async (path: string) => path === currentHub || path === legacyHub,
+      exists: async (path: string) => path === currentHub,
     }),
     { command: currentHub, listArgs: ["delegation", "list"] },
   );
-  assert.deepEqual(
-    await resolvePublishedHubProbe(baselineRoot, {
-      exists: async (path: string) => path === legacyHub,
-    }),
-    { command: legacyHub, listArgs: ["access", "list"] },
-  );
   await assert.rejects(
     resolvePublishedHubProbe(baselineRoot, { exists: async () => false }),
-    /neither spark-hub nor spark-cockpit/u,
+    /does not expose spark-hub/u,
   );
 });
 

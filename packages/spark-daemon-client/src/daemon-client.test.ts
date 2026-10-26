@@ -21,6 +21,7 @@ vi.mock("./daemon-local-rpc-orpc.js", () => ({
 import {
   createSparkDaemonClient,
   requestSparkDaemon,
+  SparkDaemonConnectedTransportError,
   SparkDaemonPreDispatchUnavailableError,
   SparkDaemonProtocolMismatchError,
   SparkDaemonRemoteError,
@@ -93,42 +94,6 @@ describe("protocol-aware Spark daemon client", () => {
         maxResponseBytes: 789,
         signal: controller.signal,
       },
-    );
-  });
-
-  it("normalizes an adjacent daemon session snapshot after wire validation", async () => {
-    const invoke = vi.fn().mockResolvedValueOnce({
-      version: 1,
-      sessionId: "sess_adjacent",
-      title: "Workspace Coordinator",
-      cwd: "/tmp/adjacent",
-      status: "idle",
-      pendingTurns: [],
-      messages: [],
-      tools: [],
-      runs: [],
-      loops: [],
-      tasks: [],
-      artifacts: [],
-      evidence: [],
-      mailbox: [],
-      createdAt: "2026-08-12T00:00:00.000Z",
-      updatedAt: "2026-08-12T00:00:00.000Z",
-      metadata: { registryStatus: "ready" },
-    });
-    transportMocks.createOrpc.mockResolvedValueOnce(connectedHandle(invoke));
-
-    await expect(
-      requestSparkDaemon("session.snapshot", { sessionId: "sess_adjacent" }),
-    ).resolves.toMatchObject({
-      version: 2,
-      sessionId: "sess_adjacent",
-      metadata: { registryStatus: "ready", sourceProtocolVersion: 1 },
-    });
-    expect(invoke).toHaveBeenCalledWith(
-      "session.snapshot",
-      { sessionId: "sess_adjacent", clientProtocolVersion: 2 },
-      { signal: expect.any(AbortSignal) },
     );
   });
 
@@ -241,6 +206,7 @@ describe("protocol-aware Spark daemon client", () => {
       { maxResponseBytes: 64 },
     ).catch((error: unknown) => error);
     expect(normalized).toBeInstanceOf(SparkDaemonRpcError);
+    expect(normalized).toBeInstanceOf(SparkDaemonConnectedTransportError);
     expect(normalized).toMatchObject({
       message: `Spark daemon oRPC transport failed: ${failure.message}`,
       cause: failure,
@@ -300,6 +266,7 @@ describe("protocol-aware Spark daemon client", () => {
     await vi.advanceTimersByTimeAsync(25);
 
     await expect(failure).resolves.toBeInstanceOf(SparkDaemonRpcError);
+    await expect(failure).resolves.toBeInstanceOf(SparkDaemonConnectedTransportError);
     await expect(failure).resolves.toMatchObject({
       message: "Timed out waiting for daemon oRPC response after 25 ms.",
     });

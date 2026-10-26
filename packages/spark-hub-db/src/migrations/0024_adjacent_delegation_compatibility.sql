@@ -1,1 +1,0 @@
-ALTER TABLE workspace_delegations ADD COLUMN target_session_generation INTEGER;

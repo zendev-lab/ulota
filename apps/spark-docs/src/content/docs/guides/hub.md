@@ -5,8 +5,7 @@ description: Start the Hub Web surface, understand its daemon relationship, and 
 
 ## When to use Hub Web
 
-Use Hub Web when one terminal session is too narrow. Its workspace workbench
-provides:
+Use Hub Web when one terminal session is too narrow. Its workspace workbench provides:
 
 - **Overview** for connection status and shortcuts,
 - a persistent **Conversations** rail for existing and new sessions,
@@ -14,17 +13,9 @@ provides:
 - **Artifacts** for Issues, Git changes, and Documents, and
 - **Resources** for repositories, documents, links, and tools.
 
-Inside a conversation, the inspector separates Summary, Artifacts, Changes,
-Tasks, and Lanes. For an active Repro, Lanes renders three bounded cards for
-Implementation, Exactness, and Formalize, plus forward handoffs, backward
-resolutions, and `formalizedTip`. The document comes from the daemon's existing
-A2UI projection; Hub does not keep a second Repro store or schedule lane work.
-Summary shows status and counts first; working directory, model, session ID,
-and timestamps remain under Technical details.
+Inside a conversation, the inspector separates Summary, Artifacts, Changes, Tasks, and Lanes. For an active Repro, Lanes renders three bounded cards for Implementation, Exactness, and Formalize, plus forward handoffs, backward checkpoint receipts, and `formalizedRevision`. The document comes from the daemon's existing A2UI projection; Hub does not keep a second Repro store or schedule lane work. Summary shows status and counts first; working directory, model, session ID, and timestamps remain under Technical details.
 
-The TUI `/inspect` panel is only the current terminal session's local
-projection. Hub Web is the browser control surface across sessions and
-workspaces. Both submit execution to Spark daemons.
+The local Web workbench is a single-daemon browser surface. Hub Web spans registered daemons, sessions, and workspaces. Both submit execution to Spark daemons rather than owning it.
 
 ## Start Hub Web
 
@@ -32,15 +23,7 @@ workspaces. Both submit execution to Spark daemons.
 spark hub
 ```
 
-Open the URL printed by the command. Hub Web is a control and projection
-surface; durable execution remains owned by Spark daemons.
-
-If this installation previously ran Spark Cockpit, stop it before starting Hub.
-The first Hub database open migrates the retired XDG or `SPARK_HOME` app tree,
-including `cockpit.toml` and `cockpit.sqlite`. Migration refuses live legacy
-locks and source/target conflicts instead of overwriting state. See
-[Configuration and paths](/reference/configuration-and-paths/) for the complete
-mapping and environment-variable compatibility window.
+Open the URL printed by the command. Hub Web is a control and projection surface; durable execution remains owned by Spark daemons.
 
 If the page cannot load session data, check both processes separately:
 
@@ -51,45 +34,25 @@ spark hub
 
 ## Settings and access scope
 
-A Hub owner sees control-plane, active-workspace, and connected-daemon settings
-together in the console. A workspace-scoped browser session sees only that
-workspace's settings; control-plane and daemon-wide settings are omitted.
+A Hub owner sees control-plane, active-workspace, and connected-daemon settings together in the console. A workspace-scoped browser session sees only that workspace's settings; control-plane and daemon-wide settings are omitted.
 
-Daemon settings are routed through the active workspace lease. The Models page
-uses the latest Hub projection for a fast first paint, offers an explicit daemon
-refresh, and labels a provider as connected only when credentials are present.
-Use **Quick test** to send one bounded, tool-free request to the selected model
-and verify that it can actually answer. Invocation diagnostics use the same
-runtime connection and do not require a daemon socket on the Hub host.
+Daemon settings are routed through the active workspace lease. The Models page uses the latest Hub projection for a fast first paint, offers an explicit daemon refresh, and labels a provider as connected only when credentials are present. Use **Quick test** to send one bounded, tool-free request to the selected model and verify that it can actually answer. Invocation diagnostics use the same runtime connection and do not require a daemon socket on the Hub host.
 
-**Hub updates** reports only the Hub installation. Each connected daemon is
-updated independently on the machine where it runs.
+Channels are daemon-global rather than Workspace settings. Open `/settings/channels` and select the installation/runtime explicitly when Hub knows more than one daemon. The page shows all configured accounts by adapter ID and lists daemon Channel Sessions separately from Workspace conversations. Its remote projection is deliberately narrow: it never exposes credentials, full cwd, external conversation keys, account identities, or transcripts. See [daemon-global Channels](/guides/channels/) for configuration and failure behavior.
+
+**Hub updates** reports only the Hub installation. Each connected daemon is updated independently on the machine where it runs.
 
 ## Local and remote access
 
-Loopback use follows the local owner flow. For a non-loopback Hub, prefer an
-encrypted private path such as Tailscale, WireGuard, or SSH forwarding.
+Loopback use follows the local owner flow. For a non-loopback Hub, prefer an encrypted private path such as Tailscale, WireGuard, or SSH forwarding.
 
-Mint a one-time Hub browser key on the Hub host:
-
-```bash
-spark hub access create
-```
-
-Exchange it at `/login`. Workspace-scoped browser access uses a separate
-one-time key:
+Mint a one-time Hub browser key on the Hub host. Every key names the daemons its session may reach, so members see exactly the workspaces those daemons own:
 
 ```bash
-spark hub workspace access create --workspace <id>
+spark hub access create --daemon <runtime-id>
 ```
 
-Exchange that key at `/{slug}/login`. If the browser already holds a different
-workspace-scoped session, opening an active workspace route redirects to that
-target login and returns to the original route after the key exchange. A browser
-cookie grants one workspace at a time, so use a separate profile or private
-window to keep parallel workspace sessions. Treat both keys as secrets.
-Non-loopback access requires HTTPS unless you deliberately opt into insecure
-HTTP on a trusted private network.
+Repeat `--daemon` (or comma-separate ids) to cover several daemons, and add `--user <name>` to label the member the key creates. Exchange the key at `/login`. Owners keep full reach without a key-bound grant list: existing owners were granted every registered daemon when this model landed, and new daemons are granted to active owners at registration. Treat keys as secrets. Non-loopback access requires HTTPS unless you deliberately opt into insecure HTTP on a trusted private network.
 
 ## Trusted reverse proxy
 
@@ -102,28 +65,18 @@ SPARK_HUB_TRUST_PROXY=loopback \
 spark hub
 ```
 
-`SPARK_HUB_PUBLIC_URL` must be an `http(s)` origin at `/`; path mounting is not
-supported. The proxy must preserve the intended public host, sanitize forwarding
-headers, send `X-Forwarded-For` and `X-Forwarded-Proto`, forward WebSocket
-upgrades and unbuffered streaming responses, and reject unknown public hosts.
+`SPARK_HUB_PUBLIC_URL` must be an `http(s)` origin at `/`; path mounting is not supported. The proxy must preserve the intended public host, sanitize forwarding headers, send `X-Forwarded-For` and `X-Forwarded-Proto`, forward WebSocket upgrades and unbuffered streaming responses, and reject unknown public hosts.
 
-Use `SPARK_HUB_PROXY_HOPS=1..10` when more than one trusted proxy is in the
-forwarding chain. `SPARK_HUB_PUBLIC_URL=auto` is only appropriate behind the
-same trusted loopback proxy. Changing the public origin changes daemon server
-identity, so re-register affected workspaces deliberately.
+Use `SPARK_HUB_PROXY_HOPS=1..10` when more than one trusted proxy is in the forwarding chain. `SPARK_HUB_PUBLIC_URL=auto` is only appropriate behind the same trusted loopback proxy. Changing the public origin changes daemon server identity, so re-register affected workspaces deliberately.
 
-## Register a remote workspace
+## Connect a daemon and attach workspaces
 
-Authorize the daemon machine, then register each workspace with its own fresh
-registration token:
+Workspace identity is local to the daemon. Authorize the daemon machine first; Hub projection is daemon-scheduled, not a workspace property:
 
 ```bash
 spark daemon login --server-url https://hub.example
-spark daemon workspace register . \
-  --server-url https://hub.example \
-  --token <workspace-token> \
-  --name <workspace-name>
+spark daemon workspace register . --name <workspace-name>
+spark daemon workspace register . --token <workspace-token>
 ```
 
-Machine connectivity credentials and one-time workspace registration tokens
-have different scopes; do not reuse one as the other.
+`spark daemon login` binds the daemon installation (one per machine) to the Hub; the first `workspace register` records the workspace locally, and the token form announces its Hub projection through the same daemon binding. Hub treats the daemon installation as the binding unit: workspaces run on that daemon and are presented as its session organizations. An enrollment token is still required to announce a Hub projection; without it the workspace stays daemon-local until the account attaches it.

@@ -22,7 +22,6 @@ export function selectPublishedBaselineVersion(
   published: string | string[],
   currentVersion: string,
   explicitVersion?: string,
-  compatibilityExemptVersions?: string[],
 ): string | undefined;
 
 export function resolveReleaseMigrationExemption(

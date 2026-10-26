@@ -1,10 +1,12 @@
+default_install_hook_types = ["pre-commit", "commit-msg"]
+
 [[repos]]
 repo = "builtin"
 hooks = [
   { id = "check-added-large-files", stages = ["pre-commit"] },
   { id = "check-case-conflict", stages = ["pre-commit"] },
   { id = "check-executables-have-shebangs", stages = ["pre-commit"] },
-  { id = "check-yaml", stages = ["pre-commit"] },
+  { id = "check-yaml", exclude = "^pnpm-lock\\.yaml$", stages = ["pre-commit"] },
   { id = "check-json", stages = ["pre-commit"] },
   { id = "check-merge-conflict", stages = ["pre-commit"] },
   { id = "end-of-file-fixer", stages = ["pre-commit"] },
@@ -14,18 +16,10 @@ hooks = [
 
 [[repos]]
 repo = "https://github.com/tombi-toml/tombi-pre-commit"
-rev = "v0.9.20"
+rev = "v1.9.0"
 hooks = [
-  {
-    id = "tombi-format",
-    exclude = "^Cargo\\.lock$",
-    stages = ["pre-commit"]
-  },
-  {
-    id = "tombi-lint",
-    args = ["--error-on-warnings"],
-    stages = ["pre-commit"]
-  },
+  { id = "tombi-format", exclude = "^Cargo\\.lock$", stages = ["pre-commit"] },
+  { id = "tombi-lint", args = ["--error-on-warnings"], stages = ["pre-commit"] },
 ]
 
 [[repos]]
@@ -35,59 +29,31 @@ hooks = [{ id = "actionlint", stages = ["pre-commit"] }]
 
 [[repos]]
 repo = "https://github.com/zizmorcore/zizmor-pre-commit"
-rev = "v1.29.0"
+rev = "v1.31.1"
 hooks = [
-  {
-    id = "zizmor",
-    args = ["--offline", "--strict-collection", "--min-severity=high"],
-    files = "^\\.github/(?:workflows/.*\\.ya?ml|actions/.*/action\\.ya?ml)$",
-    stages = ["pre-commit"]
-  },
+  { id = "zizmor", args = ["--offline", "--strict-collection", "--min-severity=high"], files = "^\\.github/(?:workflows/.*\\.ya?ml|actions/.*/action\\.ya?ml)$", stages = ["pre-commit"] },
 ]
 
 [[repos]]
 repo = "https://github.com/crate-ci/typos"
-rev = "v1.48.0"
+rev = "v1.51.1"
 hooks = [{ id = "typos", args = ["--force-exclude"], stages = ["pre-commit"] }]
 
 [[repos]]
 repo = "https://github.com/python-jsonschema/check-jsonschema"
-rev = "c4654a7e007c9619a5eb63c39a456572a0fa1851"  # 0.38.0
+rev = "0494aa7fa1314e98913a41227d8f0a515b2c1049"  # frozen: 0.38.2
 hooks = [
-  {
-    id = "check-jsonschema",
-    name = "Validate architecture inventory",
-    args = [
-      "--schemafile",
-      "architecture/packages.schema.json",
-      "architecture/packages.json"
-    ],
-    files = "^architecture/packages(?:\\.schema)?\\.json$",
-    pass_filenames = false,
-    stages = ["pre-commit"]
-  },
-  {
-    id = "check-metaschema",
-    name = "Validate architecture schema",
-    files = "^architecture/packages\\.schema\\.json$",
-    stages = ["pre-commit"]
-  },
+  { id = "check-jsonschema", name = "Validate architecture inventory", args = ["--schemafile", "architecture/packages.schema.json", "architecture/packages.json"], files = "^architecture/packages(?:\\.schema)?\\.json$", pass_filenames = false, stages = ["pre-commit"] },
+  { id = "check-metaschema", name = "Validate architecture schema", files = "^architecture/packages\\.schema\\.json$", stages = ["pre-commit"] },
 ]
 
 [[repos]]
 repo = "https://github.com/zendev-lab/zendev"
-rev = "v0.1.0"
-hooks = [{ id = "zendev-commit-msg", stages = ["commit-msg"] }]
+rev = "v0.5.0"
+hooks = [{ id = "zendev-message-check", args = ["--profile", "zendev"], stages = ["commit-msg"] }]
 
 [[repos]]
 repo = "local"
 hooks = [
-  {
-    id = "spark-check-fix",
-    name = "Spark static checks --fix",
-    entry = "pnpm run fix",
-    language = "system",
-    pass_filenames = false,
-    stages = ["pre-commit"]
-  },
+  { id = "spark-check-fix", name = "Spark static checks --fix", entry = "pnpm run fix", language = "system", pass_filenames = false, stages = ["pre-commit"] },
 ]

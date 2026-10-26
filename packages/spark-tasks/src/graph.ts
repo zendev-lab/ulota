@@ -5,21 +5,23 @@ import {
   nowIso,
   type ArtifactRef,
   type EvidenceRef,
-  type Project,
   type ProjectRef,
+  type RoleRef,
+  type TaskRef,
+} from "@zendev-lab/spark-invocation";
+import {
+  type Project,
   type ProjectRoadmap,
   type RoadmapItem,
   type RoadmapItemRef,
-  type RoleRef,
   type Task,
   type TaskClaim,
   type TaskDependency,
   type TaskPlanReadiness,
   type TaskProposal,
-  type TaskRef,
   type TaskRun,
   type TaskTodo,
-} from "@zendev-lab/spark-core";
+} from "./types.ts";
 import { createDefaultProjectRoadmap, normalizeProjectRoadmap, uniqueTaskRefs } from "./roadmap.ts";
 import type {
   ClaimTaskInput,
@@ -97,10 +99,38 @@ export class TaskGraph {
   }
 
   createProject(input: CreateProjectInput): Project {
+    const project = this.#materializeProject(newRef("proj"), input);
+    this.#projects.set(project.ref, project);
+    return project;
+  }
+
+  /**
+   * Owner-only idempotent materialization for crash-recoverable topology.
+   * A reused ref with different content fails closed instead of silently
+   * attaching a durable execution to another logical project.
+   */
+  ensureProject(ref: ProjectRef, input: CreateProjectInput): Project {
+    const existing = this.#projects.get(ref);
+    if (existing) {
+      if (
+        existing.title !== input.title ||
+        existing.description !== input.description ||
+        existing.kind !== (input.kind?.trim() || "generic")
+      ) {
+        throw new Error(`project ref ${ref} is already bound to different content`);
+      }
+      return existing;
+    }
+    const project = normalizeProject(this.#materializeProject(ref, input));
+    this.#projects.set(ref, project);
+    return project;
+  }
+
+  #materializeProject(ref: ProjectRef, input: CreateProjectInput): Project {
     if (!input.title.trim()) throw new Error("project title is required");
     const now = nowIso();
-    const project: Project = {
-      ref: newRef("proj"),
+    return {
+      ref,
       title: input.title,
       description: input.description,
       purpose: input.purpose?.trim() || undefined,
@@ -111,8 +141,6 @@ export class TaskGraph {
       createdAt: now,
       updatedAt: now,
     };
-    this.#projects.set(project.ref, project);
-    return project;
   }
 
   createTask(input: CreateTaskInput): Task {
@@ -123,19 +151,51 @@ export class TaskGraph {
       input.name?.trim() || taskNameFromTitle(input.title),
       new Set(this.tasks(input.projectRef).map((task) => task.name)),
     );
+    const task = this.#materializeTask(newRef("task"), input, name, now);
+    if (input.todos?.length) {
+      task.plan.items = taskPlanItemsFromTodos(
+        normalizeTodos(materializeTodos("task:pending" as TaskRef, input.todos, now)),
+      );
+      task.plan["steps"] = task.plan.items.map((item) => item.title);
+    }
+    assertTaskWorktreeTargetArtifacts(task.executionPolicy, task.artifactRefs);
+    this.#tasks.set(task.ref, task);
+    return task;
+  }
+
+  /** Idempotent counterpart to createTask for daemon-owned recovery. */
+  ensureTask(ref: TaskRef, input: CreateTaskInput): Task {
+    const existing = this.#tasks.get(ref);
+    if (existing) {
+      const requestedRoleRef = normalizeRoleRef(input.roleRef);
+      if (
+        existing.projectRef !== input.projectRef ||
+        existing.title !== input.title ||
+        existing.description !== input.description ||
+        existing.roleRef !== requestedRoleRef
+      ) {
+        throw new Error(`task ref ${ref} is already bound to different content`);
+      }
+      return existing;
+    }
+    this.getProject(input.projectRef);
+    if (!input.title.trim()) throw new Error("task title is required");
+    const now = nowIso();
+    const name = input.name?.trim() || taskNameFromTitle(input.title);
+    assertUniqueTaskName(this.tasks(input.projectRef), name);
+    const task = this.#materializeTask(ref, input, name, now);
+    assertTaskWorktreeTargetArtifacts(task.executionPolicy, task.artifactRefs);
+    this.#tasks.set(ref, task);
+    return task;
+  }
+
+  #materializeTask(ref: TaskRef, input: CreateTaskInput, name: string, now: string) {
     const supersededBy = normalizeTaskRefs(input.supersededBy);
     const requestedStatus = input.status ?? (input.kind === "interaction" ? "running" : "ready");
     const status =
       supersededBy.length > 0 && requestedStatus !== "done" ? "cancelled" : requestedStatus;
-    const plan = normalizeTaskPlan(input.plan, input.description, input.title);
-    if (input.todos?.length) {
-      plan.items = taskPlanItemsFromTodos(
-        normalizeTodos(materializeTodos("task:pending" as TaskRef, input.todos, now)),
-      );
-      plan["steps"] = plan.items.map((item) => item.title);
-    }
-    const task: Task = {
-      ref: newRef("task"),
+    return {
+      ref,
       projectRef: input.projectRef,
       name,
       title: input.title,
@@ -154,13 +214,10 @@ export class TaskGraph {
       artifactRefs: normalizeArtifactRefs(input.artifactRefs),
       inputEvidenceRefs: input.inputEvidenceRefs ?? [],
       outputEvidenceRefs: [],
-      plan,
+      plan: normalizeTaskPlan(input.plan, input.description, input.title),
       createdAt: now,
       updatedAt: now,
-    };
-    assertTaskWorktreeTargetArtifacts(task.executionPolicy, task.artifactRefs);
-    this.#tasks.set(task.ref, task);
-    return task;
+    } satisfies Task;
   }
 
   acceptProposal(proposal: TaskProposal): Task {

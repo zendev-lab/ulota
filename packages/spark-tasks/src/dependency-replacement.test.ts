@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { newRef, type TaskRef } from "@zendev-lab/spark-core";
+import { newRef, type TaskRef } from "@zendev-lab/spark-invocation";
 import { TaskGraphStore, defaultTaskGraphStore } from "./graph-store.ts";
 import { TaskDependencyReplacementError, TaskGraph } from "./graph.ts";
 
@@ -46,7 +46,7 @@ describe("TaskGraph dependency replacement", () => {
     ["self", undefined, "task_dependency_self_edge"],
   ] as const)("rejects %s without changing the graph", (_label, dependency, code) => {
     const { graph, first, target } = fixture();
-    const before = graph.snapshot();
+    const before = structuredClone(graph.snapshot());
     expect(() =>
       graph.replaceTaskDependencies(target.ref, [dependency ?? target.ref]),
     ).toThrowError(expect.objectContaining({ reasonCode: code }));
@@ -75,7 +75,7 @@ describe("TaskGraph dependency replacement", () => {
       [outsider.ref, "task_dependency_cross_project"],
       [second.ref, "task_dependency_cycle"],
     ] as const) {
-      const before = graph.snapshot();
+      const before = structuredClone(graph.snapshot());
       expect(() => graph.replaceTaskDependencies(target.ref, [dependency])).toThrowError(
         expect.objectContaining({ reasonCode: code }),
       );
