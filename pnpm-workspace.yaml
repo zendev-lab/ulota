@@ -121,7 +121,7 @@ overrides:
   # The MCP SDK's HTTP transport reaches ip-address through express-rate-limit.
   # Keep the patched parser until the SDK refreshes that transitive dependency.
   "express-rate-limit>ip-address": "10.7.5"
-  "hono": "4.13.13"
+  "hono": "4.13.14"
   "@modelcontextprotocol/sdk>@hono/node-server": "2.1.5"
   "@sveltejs/kit>cookie": "0.7.2"
   "miniflare>undici": "8.12.3"
