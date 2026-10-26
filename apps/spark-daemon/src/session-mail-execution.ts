@@ -4,7 +4,7 @@ import {
   type SparkSessionMailMessage,
   type SparkSessionSendRequest,
   type SparkTurnSubmitResult,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import type { SparkSessionMailStore } from "@zendev-lab/spark-session";
 import type { SparkDaemonSessionControlOptions } from "./session-control.ts";
 import { executeSparkDaemonSessionControl } from "./session-control.ts";

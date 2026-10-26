@@ -5,7 +5,7 @@ import {
   sparkModelValue,
   type SparkInvocationStatus,
   type SparkModelControlSnapshot,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import type { SparkPaths } from "@zendev-lab/spark-platform-node";
 
 import { localRpcRequest } from "./local-rpc/client.js";

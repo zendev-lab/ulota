@@ -5,7 +5,7 @@ import {
   type ConversationPart,
   type ConversationMessageView,
 } from "@zendev-lab/spark-ui/conversation";
-import type { SparkMessageView } from "@zendev-lab/spark-protocol";
+import type { SparkMessageView } from "@zendev-lab/spark-protocol/presentation";
 
 function conversationMessageFromView(message: SparkMessageView): ConversationMessageView {
   const actor = message.role === "user" ? "user" : message.role === "system" ? "session" : "spark";

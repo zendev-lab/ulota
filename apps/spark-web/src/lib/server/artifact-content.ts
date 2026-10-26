@@ -1,7 +1,7 @@
 import type {
   SparkArtifactCatalogEntry,
   SparkArtifactReadResult,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import type {
   SparkLocalRpcInput,
   SparkLocalRpcOutput,

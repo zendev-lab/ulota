@@ -36,10 +36,10 @@ import {
 import {
   parseSparkAssignment,
   type SparkAssignment,
-  type SparkMessageView,
   type SparkQqbotQrAuthFlow,
   type SparkSessionState,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
+import { type SparkMessageView } from "@zendev-lab/spark-protocol/presentation";
 import { loadSparkSessionSnapshot } from "@zendev-lab/spark-session";
 import { channelConfigPath, resolveSparkPaths } from "@zendev-lab/spark-platform-node";
 import { createHash, randomUUID } from "node:crypto";

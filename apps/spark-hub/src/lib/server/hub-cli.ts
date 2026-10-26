@@ -16,7 +16,7 @@ import {
   requireHubWorkspaceDelegation,
 } from "@zendev-lab/spark-hub-coordination";
 import { migrate, openDatabase } from "@zendev-lab/spark-hub-storage-sqlite";
-import { createId, wireIdempotencyKey } from "@zendev-lab/spark-protocol";
+import { createId, wireIdempotencyKey } from "@zendev-lab/spark-protocol/domain";
 import {
   consoleSparkCliErrorOutput,
   consoleSparkCliOutput,

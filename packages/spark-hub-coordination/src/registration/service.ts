@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import { createId } from "@zendev-lab/spark-protocol/domain";
 import {
-  createId,
   runtimeDaemonAttachScope,
   runtimeDeviceAuthorizationRequestSchema,
   runtimeProtocolVersion,
@@ -10,7 +10,7 @@ import {
   type RuntimeDeviceAuthorizationRequest,
   type RuntimeRegistrationRequest,
   type RuntimeWorkspaceRegistrationRequest,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/runtime";
 import { asciiSlug } from "@zendev-lab/spark-platform-node";
 import { grantDaemonToActiveOwners } from "../hub-access.ts";
 import { appendEvent } from "../projection-services.ts";

@@ -52,15 +52,17 @@ import type {
 import { resolveToolPolicy } from "@zendev-lab/spark-invocation";
 import {
   SPARK_PROTOCOL_VERSION,
+  type SparkHostBuiltinEventName,
+} from "@zendev-lab/spark-protocol/domain";
+import {
   createBlockedInteractionResponse,
   parseSparkInteractionRequest,
   parseSparkInteractionResponse,
   type SparkDaemonEvent,
-  type SparkHostBuiltinEventName,
   type SparkInteractionRequest,
   type SparkInteractionResponse,
   type SparkViewModelEvent,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
 
 import type { SparkMemoryDirectIntentTurnAuthority } from "@zendev-lab/spark-memory/direct-intent";
 import {

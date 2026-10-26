@@ -28,7 +28,7 @@ import {
   type SparkQqbotQrAuthFlow,
   type SparkSessionProjection,
   type SparkThinkingLevel,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import type { ChannelsConfig } from "@zendev-lab/dsh-channel-transports";
 import { getDatabase } from "./db.ts";
 

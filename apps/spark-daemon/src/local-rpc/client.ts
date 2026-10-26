@@ -4,7 +4,7 @@ import {
   type SparkAuthFlow,
   type SparkLocalRpcOutput,
   type SparkModelControlSnapshot,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import {
   type LocalDaemonRestartResult,
   type LocalDaemonStatusResult,

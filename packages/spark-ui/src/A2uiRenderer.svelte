@@ -1,10 +1,5 @@
 <script lang="ts">
-  import {
-    normalizeSparkA2uiDocument,
-    resolveSparkA2uiDataPath,
-    type SparkA2uiComponent,
-    type SparkA2uiSurface,
-  } from "@zendev-lab/spark-protocol";
+  import { normalizeSparkA2uiDocument, resolveSparkA2uiDataPath, type SparkA2uiComponent, type SparkA2uiSurface } from "@zendev-lab/spark-protocol/presentation";
   import { onMount, type Component } from "svelte";
 
   const MAX_RENDER_DEPTH = 64;

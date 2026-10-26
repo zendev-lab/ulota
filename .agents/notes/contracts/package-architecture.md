@@ -266,7 +266,10 @@ justify the affected owner or runtime boundary there.
 ## Deliberate boundaries
 
 - `spark-protocol` is a pure wire-contract package. It has no production
-  dependency on another Spark workspace.
+  dependency on another Spark workspace. Production consumers use its public
+  contract-domain or focused subpaths; the root entry point retains source
+  compatibility. Architecture checks reject production root imports and
+  forbidden direct dependencies between aggregate entry points.
 - `spark-platform-node` contains only local-system mechanisms: paths, permissions,
   commands, SQLite opening, strings, and the socket MessagePort adapter. It has
   no Spark workspace dependency.

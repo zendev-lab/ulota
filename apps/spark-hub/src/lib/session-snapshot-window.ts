@@ -10,4 +10,4 @@ export {
   sparkSessionConversationAnchorCount as sessionConversationAnchorCount,
   type SparkSessionSnapshotWindow as SessionSnapshotWindow,
   type SparkSessionSnapshotWindowHistory as SessionSnapshotHistory,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";

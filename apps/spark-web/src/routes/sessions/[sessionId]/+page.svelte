@@ -42,25 +42,9 @@
     type SlashCommandSuggestion,
   } from "@zendev-lab/spark-ui/conversation";
   import { SessionTree, SessionWorkPanel } from "@zendev-lab/spark-ui/workbench";
-  import {
-    mergeEarlierSparkSessionSnapshotWindow,
-    isTerminalSparkHumanInteractionDelivery,
-    parseSparkModelValue,
-    sparkModelValue,
-    resolveSessionActivityState,
-    sparkActionBarDefaultAction,
-    sparkActionViewSchema,
-    sparkSlashActionBarForInput,
-    sparkSlashCommandDescriptors,
-    sparkThinkingLevelOptions,
-    SPARK_TURN_ATTACHMENT_MAX_BYTES,
-    SPARK_TURN_ATTACHMENT_MAX_COUNT,
-    SPARK_TURN_ATTACHMENT_MAX_TOTAL_BYTES,
-    type SparkSessionSnapshotPage,
-    type SparkSessionProjection,
-    type SparkActionView,
-    type SparkThinkingLevel,
-  } from "@zendev-lab/spark-protocol";
+  import { mergeEarlierSparkSessionSnapshotWindow, resolveSessionActivityState, sparkActionBarDefaultAction, sparkActionViewSchema, sparkSlashActionBarForInput, sparkSlashCommandDescriptors, type SparkSessionSnapshotPage, type SparkActionView } from "@zendev-lab/spark-protocol/presentation";
+import { isTerminalSparkHumanInteractionDelivery } from "@zendev-lab/spark-protocol/interaction";
+import { parseSparkModelValue, sparkModelValue, sparkThinkingLevelOptions, SPARK_TURN_ATTACHMENT_MAX_BYTES, SPARK_TURN_ATTACHMENT_MAX_COUNT, SPARK_TURN_ATTACHMENT_MAX_TOTAL_BYTES, type SparkSessionProjection, type SparkThinkingLevel } from "@zendev-lab/spark-protocol/daemon";
   import { formatChannelSessionTitle } from "@zendev-lab/spark-ui/channel-session";
   import { conversationMessagesFromViews } from "$lib/conversation";
   import { attachWebSessionEvents, type WebSessionConnectionState } from "$lib/live-events";

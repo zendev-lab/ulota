@@ -1,5 +1,5 @@
+import { createId } from "@zendev-lab/spark-protocol/domain";
 import {
-  createId,
   runtimeDeviceAuthorizationResponseSchema,
   runtimeRegistrationResponseSchema,
   runtimeProtocolVersion,
@@ -7,7 +7,7 @@ import {
   runtimeWorkspaceRegistrationResponseSchema,
   type RuntimeDeviceAuthorizationResponse,
   type RuntimeRegistrationResponse,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/runtime";
 import type { SparkPaths } from "@zendev-lab/spark-platform-node";
 import WebSocket from "ws";
 import { readSparkDaemonConfig, writeSparkDaemonConfig, type SparkDaemonConfig } from "./config.js";

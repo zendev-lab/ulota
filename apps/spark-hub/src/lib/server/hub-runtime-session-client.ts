@@ -35,6 +35,8 @@ import {
   sparkTurnStatusResultSchema,
   sparkTurnStreamPageSchema,
   sparkTurnSubmitResultSchema,
+} from "@zendev-lab/spark-protocol/daemon";
+import {
   type SparkAssignment,
   type SparkSessionBindRequest,
   type SparkSessionCreateRequest,
@@ -51,7 +53,7 @@ import {
   type SparkTurnStreamPage,
   type SparkTurnAttachment,
   type SparkTurnSubmitResult,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import {
   sparkSessionLineageOriginKind,
   sparkSessionParentId,

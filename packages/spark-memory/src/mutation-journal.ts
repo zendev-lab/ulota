@@ -5,7 +5,7 @@ import {
   parseSparkMemoryApprovalAuthorization,
   type SparkMemoryApprovalProof,
   type SparkMemoryProposal,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 
 import { memoryContentDigest, type MemoryLifecycleEnvelope } from "./lifecycle.ts";
 import type { MemoryApprovalVerifier } from "./approval.ts";

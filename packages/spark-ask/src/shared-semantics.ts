@@ -16,7 +16,7 @@ import {
   requiresExplicitSparkAskGateSelection,
   type SparkAskOptionLike,
   type SparkParsedAskChoice,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/interaction";
 
 import { SENTINEL_LABELS } from "./schema.ts";
 

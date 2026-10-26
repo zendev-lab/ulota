@@ -12,9 +12,9 @@ import type {
 import { ToolCallText } from "@zendev-lab/spark-text-rendering";
 import {
   createAutonomousAskInteractionRequestId,
-  parseSparkMemoryApprovalBinding,
   sparkEvidenceRequestBindingSchema,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/interaction";
+import { parseSparkMemoryApprovalBinding } from "@zendev-lab/spark-protocol/daemon";
 import {
   isExplicitMemoryApprovalEvidenceBody,
   isUserAnsweredAskEvidenceBody,

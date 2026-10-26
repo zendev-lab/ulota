@@ -4,6 +4,24 @@ JSON-safe schemas and types shared by native TUI, daemon, runtime WebSocket, and
 Hub surfaces. This package owns refs/errors, command and event envelopes,
 RoleSpec, Session lineage, invocation lifecycle, interactions, and view models.
 
+## Contract-domain subpaths
+
+Production consumers use the public entry point for the contract they need:
+
+| Subpath | Contracts |
+| --- | --- |
+| `domain` | refs, versions, ownership, errors, shared primitives |
+| `daemon` | local RPC, task claims, commands, sessions, memory approval |
+| `runtime` | runtime WebSocket and registration |
+| `interaction` | human interaction, ask semantics, loops |
+| `presentation` | A2UI, conversation projections, composite view models |
+
+Existing focused entry points, including `repro` and `repro-lane`, remain public.
+The root entry point retains source compatibility. Architecture checks reject
+production root imports and forbidden direct dependencies between the aggregate
+entry points. These groups describe the public API; they do not claim that all
+transitive implementation dependencies have been separated.
+
 Session protocol v3 and registry v7 use one runtime entity: `Session`.
 `lineage` is either root or `{ kind: "child", parentSessionId, origin }`.
 Origins preserve provenance for session, side-thread, TaskRun, Task revision,

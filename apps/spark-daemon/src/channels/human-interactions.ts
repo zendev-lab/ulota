@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
+import { createId } from "@zendev-lab/spark-protocol/domain";
 import {
-  createId,
   hasNonEmptySparkHumanAnswer,
   parseSparkAskChoice,
   type SparkEvidenceAnswerEvent,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/interaction";
 import type { ChannelAskRequest, IncomingMessage } from "@zendev-lab/dsh-channel-transports";
 import { renderTextChannelAsk } from "@zendev-lab/dsh-channel-transports";
 import type { SparkDaemonHumanInteractionOpened } from "../core/human-interactions.ts";

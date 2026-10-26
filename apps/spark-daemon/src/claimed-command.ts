@@ -1,11 +1,13 @@
+import { createId } from "@zendev-lab/spark-protocol/domain";
 import {
-  createId,
   normalizeServerCommandForExecution,
-  serverCommandEnvelopeSchema,
-  type RuntimeCommandResultPayload,
   type SparkCommand,
   type SparkProtocolJsonValue,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
+import {
+  serverCommandEnvelopeSchema,
+  type RuntimeCommandResultPayload,
+} from "@zendev-lab/spark-protocol/runtime";
 import { sparkCommandFromServerCommandEnvelope } from "./command-dispatcher.ts";
 import {
   commandRoute,

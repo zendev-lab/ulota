@@ -4,12 +4,11 @@ import { join } from "node:path";
 import { defaultArtifactStore } from "@zendev-lab/spark-artifacts";
 import type {
   SparkGlobalSearchResultEntry,
-  SparkMessageView,
   SparkSessionExportFormat,
   SparkSessionSearchMatch,
   SparkSessionState,
-  SparkSessionView,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
+import type { SparkMessageView, SparkSessionView } from "@zendev-lab/spark-protocol/presentation";
 import { loadSparkSessionSnapshot, SparkSessionRegistryError } from "@zendev-lab/spark-session";
 
 import { SparkDaemonControlError } from "../../control-error.ts";

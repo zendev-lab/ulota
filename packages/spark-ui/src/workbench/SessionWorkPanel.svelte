@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { SparkSessionView } from "@zendev-lab/spark-protocol";
+  import type { SparkSessionView } from "@zendev-lab/spark-protocol/presentation";
 
   import Artifact from "./Artifact.svelte";
   import Task from "./Task.svelte";

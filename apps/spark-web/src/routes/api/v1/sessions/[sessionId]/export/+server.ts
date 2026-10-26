@@ -1,5 +1,5 @@
 import { error } from "@sveltejs/kit";
-import { sparkSessionExportFormatSchema } from "@zendev-lab/spark-protocol";
+import { sparkSessionExportFormatSchema } from "@zendev-lab/spark-protocol/daemon";
 
 import { createSparkWebSessionExport } from "$lib/server/session-export";
 import { invokeSparkWebRpc } from "$lib/server/rpc";

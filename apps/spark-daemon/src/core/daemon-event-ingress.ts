@@ -1,4 +1,4 @@
-import type { SparkJsonValue } from "@zendev-lab/spark-protocol";
+import type { SparkJsonValue } from "@zendev-lab/spark-protocol/presentation";
 import { setImmediate as scheduleImmediate } from "node:timers";
 import type { ExecutionAttemptEventIngress } from "../execution/adapter.ts";
 

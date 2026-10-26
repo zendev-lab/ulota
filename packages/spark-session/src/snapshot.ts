@@ -4,17 +4,25 @@ import { open, readFile, rename, stat, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
   SPARK_PROTOCOL_VERSION,
+  sanitizeSparkDisplayError,
+} from "@zendev-lab/spark-protocol/domain";
+import {
   SPARK_SESSION_MEDIA_MAX_BYTES,
   SPARK_SESSION_PROMPT_HISTORY_MAX_BYTES,
   SPARK_SESSION_PROMPT_HISTORY_MAX,
-  sparkImageConversationPartSchema,
-  parseSparkSessionPromptHistory,
-  parseSparkSessionView,
-  sanitizeSparkDisplayError,
   sparkSessionMediaReadRequestSchema,
   sparkSessionMediaReadResultSchema,
   sparkSessionSubmittedInputSchema,
   sparkSessionSubmittedInputTextSchema,
+  type SparkSessionState,
+  type SparkSessionActivity,
+  type SparkSessionMediaReadRequest,
+  type SparkSessionMediaReadResult,
+} from "@zendev-lab/spark-protocol/daemon";
+import {
+  sparkImageConversationPartSchema,
+  parseSparkSessionPromptHistory,
+  parseSparkSessionView,
   sparkSessionUsageSchema,
   sparkTextPhaseFromSignature,
   sparkViewModelStatusFromSessionActivity,
@@ -23,16 +31,12 @@ import {
   type SparkConversationPart,
   type SparkJsonObject,
   type SparkMessageView,
-  type SparkSessionState,
-  type SparkSessionActivity,
-  type SparkSessionMediaReadRequest,
-  type SparkSessionMediaReadResult,
   type SparkSessionPromptHistory,
   type SparkSessionPromptHistoryEntry,
   type SparkSessionUsage,
   type SparkSessionView,
   type SparkToolCallView,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
 import { gitCommand } from "@zendev-lab/spark-platform-node";
 import {
   SPARK_DSH_MESSAGE_META_EVENT_TYPE,

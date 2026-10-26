@@ -2,7 +2,7 @@ import type {
   SparkArtifactCatalogEntry,
   SparkInvocationSummary,
   SparkSessionProjection,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import type { SparkLocalRpcOutput } from "@zendev-lab/spark-protocol/local-rpc-orpc-contract";
 
 import { listSparkWebSessions } from "./session-list.ts";

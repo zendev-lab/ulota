@@ -1,7 +1,7 @@
 import {
   parseSparkHumanWaitRespondent,
   type SparkDirectAnswerProvenance,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/interaction";
 import { SparkDaemonControlError } from "../../control-error.ts";
 import {
   SparkDaemonHumanWaitLookupError,

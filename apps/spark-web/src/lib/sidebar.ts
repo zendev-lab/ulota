@@ -3,7 +3,7 @@ import {
   channelSessionPresentation,
   sessionHasChannelBinding,
 } from "@zendev-lab/spark-ui/channel-session";
-import type { SparkSessionProjection } from "@zendev-lab/spark-protocol";
+import type { SparkSessionProjection } from "@zendev-lab/spark-protocol/daemon";
 import {
   isWorkspaceAdministrator,
   sessionWorkspaceId,

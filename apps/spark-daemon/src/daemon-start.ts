@@ -1,11 +1,9 @@
 import { existsSync, rmSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import WebSocket, { type RawData } from "ws";
-import {
-  createId,
-  parseSparkDaemonEvent,
-  runtimeProtocolVersion,
-} from "@zendev-lab/spark-protocol";
+import { createId } from "@zendev-lab/spark-protocol/domain";
+import { parseSparkDaemonEvent } from "@zendev-lab/spark-protocol/presentation";
+import { runtimeProtocolVersion } from "@zendev-lab/spark-protocol/runtime";
 import { defaultSparkSessionsRoot } from "@zendev-lab/spark-session/transcript";
 import { SparkSessionMailStore } from "@zendev-lab/spark-session";
 import { resolveSparkUserPaths, writePrivateFile } from "@zendev-lab/spark-platform-node";

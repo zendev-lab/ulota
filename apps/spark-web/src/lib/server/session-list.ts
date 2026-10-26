@@ -1,4 +1,7 @@
-import type { SparkSessionListRequest, SparkSessionProjection } from "@zendev-lab/spark-protocol";
+import type {
+  SparkSessionListRequest,
+  SparkSessionProjection,
+} from "@zendev-lab/spark-protocol/daemon";
 
 import { invokeSparkWebRpc, type SparkWebDaemonInvoker } from "./rpc.ts";
 

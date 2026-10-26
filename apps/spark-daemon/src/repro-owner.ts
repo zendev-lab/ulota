@@ -19,10 +19,10 @@ import {
 } from "@zendev-lab/spark-repro";
 import {
   createAutonomousAskInteractionRequestId,
-  parseSparkModelValue,
   type SparkEvidenceAnswerEvent,
-  type SparkSessionReproWorkView,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/interaction";
+import { parseSparkModelValue } from "@zendev-lab/spark-protocol/daemon";
+import { type SparkSessionReproWorkView } from "@zendev-lab/spark-protocol/presentation";
 import {
   createSparkRoleRegistry,
   defaultProjectRoleModelSettingsStore,

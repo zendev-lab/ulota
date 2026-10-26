@@ -1,8 +1,8 @@
 import {
   resolveSessionPendingTurns as resolveProtocolSessionPendingTurns,
   type SparkPendingTurn,
-} from "@zendev-lab/spark-protocol";
-import type { SparkSessionView } from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
+import type { SparkSessionView } from "@zendev-lab/spark-protocol/presentation";
 
 export type HubPendingTurn = SparkPendingTurn;
 

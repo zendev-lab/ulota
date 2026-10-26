@@ -2,7 +2,7 @@ import type {
   SparkAuthFlow,
   SparkAuthFlowStatus,
   SparkModelCatalogProvider,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 
 export function isTerminalAuthFlow(status: SparkAuthFlowStatus): boolean {
   return status === "succeeded" || status === "failed" || status === "cancelled";

@@ -1,5 +1,8 @@
 import type { JsonObject, JsonValue, ToolCall } from "@earendil-works/pi-ai";
-import { sparkJsonObjectSchema, sparkJsonValueSchema } from "@zendev-lab/spark-protocol";
+import {
+  sparkJsonObjectSchema,
+  sparkJsonValueSchema,
+} from "@zendev-lab/spark-protocol/presentation";
 
 /** Convert host values at the provider boundary using JSON wire semantics. */
 export function normalizeProviderJsonValue(value: unknown): JsonValue {

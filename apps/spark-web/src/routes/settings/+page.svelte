@@ -1,10 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import {
-    sparkModelValue,
-    type SparkModelControlSnapshot,
-    type SparkModelRef,
-  } from "@zendev-lab/spark-protocol";
+  import { sparkModelValue, type SparkModelControlSnapshot, type SparkModelRef } from "@zendev-lab/spark-protocol/daemon";
   import {
     Button,
     Checkbox,

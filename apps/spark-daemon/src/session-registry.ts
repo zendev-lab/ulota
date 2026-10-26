@@ -9,7 +9,7 @@ import type {
   SparkSessionState,
   SparkSessionScope,
   SparkThinkingLevel,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import { setImmediate as yieldToMacrotask } from "node:timers/promises";
 import {
   defaultSparkSessionRegistryRoot,

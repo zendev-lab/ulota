@@ -5,7 +5,7 @@ import {
   parseSparkMemoryApprovalBinding,
   type SparkMemoryApprovalBinding,
   type SparkMemoryApprovalProof,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import { type EvidenceRef } from "@zendev-lab/spark-invocation";
 import {
   readJsonFileOptional,

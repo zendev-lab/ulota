@@ -1,7 +1,7 @@
 import type {
   SparkSessionExportFormat,
   SparkSessionExportResult,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 
 import type { SparkWebDaemonInvoker } from "./rpc.ts";
 

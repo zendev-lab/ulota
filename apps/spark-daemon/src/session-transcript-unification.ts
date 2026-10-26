@@ -9,7 +9,7 @@ import {
   type SparkSessionRecord,
   workspaceSessionHash,
 } from "@zendev-lab/spark-session/transcript";
-import type { SparkSessionState } from "@zendev-lab/spark-protocol";
+import type { SparkSessionState } from "@zendev-lab/spark-protocol/daemon";
 import type { DaemonSessionRegistry } from "./session-registry.ts";
 
 export interface UnifyDaemonSessionTranscriptsInput {

@@ -1,10 +1,6 @@
 <script lang="ts">
-  import {
-    hasRequiredSparkAskGateSelections,
-    hasSparkAskAnswerContent,
-    type SparkInteractionRequest,
-    type SparkAskQuestionView,
-  } from "@zendev-lab/spark-protocol";
+  import { hasRequiredSparkAskGateSelections, hasSparkAskAnswerContent } from "@zendev-lab/spark-protocol/interaction";
+import { type SparkInteractionRequest, type SparkAskQuestionView } from "@zendev-lab/spark-protocol/presentation";
 
   export interface HumanInteractionPanelLabels {
     region: string;
