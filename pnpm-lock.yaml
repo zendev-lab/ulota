@@ -1215,6 +1215,9 @@ importers:
       '@zendev-lab/spark-invocation':
         specifier: workspace:^
         version: link:../spark-invocation
+      '@zendev-lab/spark-platform-node':
+        specifier: workspace:^
+        version: link:../spark-platform-node
       '@zendev-lab/spark-tasks':
         specifier: workspace:^
         version: link:../spark-tasks
@@ -1237,6 +1240,9 @@ importers:
       '@zendev-lab/spark-invocation':
         specifier: workspace:^
         version: link:../spark-invocation
+      '@zendev-lab/spark-platform-node':
+        specifier: workspace:^
+        version: link:../spark-platform-node
       diff:
         specifier: ^9.0.0
         version: 9.0.0
@@ -1680,6 +1686,9 @@ importers:
       '@zendev-lab/spark-invocation':
         specifier: workspace:^
         version: link:../spark-invocation
+      '@zendev-lab/spark-platform-node':
+        specifier: workspace:^
+        version: link:../spark-platform-node
       '@zendev-lab/spark-roles':
         specifier: workspace:^
         version: link:../spark-roles
@@ -1702,6 +1711,9 @@ importers:
       '@zendev-lab/spark-invocation':
         specifier: workspace:^
         version: link:../spark-invocation
+      '@zendev-lab/spark-platform-node':
+        specifier: workspace:^
+        version: link:../spark-platform-node
       '@zendev-lab/spark-text-rendering':
         specifier: workspace:^
         version: link:../spark-text-rendering

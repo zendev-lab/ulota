@@ -1,18 +1,10 @@
 # Contributing to Spark
 
-Thank you for improving Spark. This guide is the shared source for human
-contributor setup, development workflow, validation, documentation ownership,
-and pull-request expectations. Coding agents must also follow
-[`AGENTS.md`](./AGENTS.md).
-
 ## Requirements
 
-Source development requires:
-
-- Node.js `>=24`;
-- pnpm `>=11 <12`, matching the version pinned in `package.json`;
-- the Vite+ `vp` CLI used by repository formatting, lint, and type-aware checks;
-- Git.
+Use the Node.js and pnpm versions declared in [`package.json`](./package.json)
+and the Rust toolchain in [`rust-toolchain.toml`](./rust-toolchain.toml).
+Git is also required. Repository dependencies provide Vite+ (`vp`) and `prek`.
 
 `pnpm install` runs the `prepare` script and installs the `prek` commit hooks.
 Run `prek install` when Git hooks are missing from an existing checkout.

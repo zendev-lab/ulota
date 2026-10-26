@@ -28,6 +28,7 @@
     "@zendev-lab/spark-artifacts": "workspace:^",
     "@zendev-lab/spark-daemon-client": "workspace:^",
     "@zendev-lab/spark-invocation": "workspace:^",
+    "@zendev-lab/spark-platform-node": "workspace:^",
     "diff": "^9.0.0",
     "ignore": "^7.0.5",
     "minimatch": "^10.2.5",
