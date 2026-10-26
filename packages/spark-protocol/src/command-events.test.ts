@@ -248,6 +248,7 @@ describe("SparkCommand vocabulary", () => {
       "channel.qqbot.auth.cancel.request",
       "invocation.cancel.request",
       "artifact.content.request",
+      "human.request.list.request",
       "human.response.deliver.request",
       "diagnostics.request",
     ]);

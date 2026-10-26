@@ -85,5 +85,15 @@
   "saved": "已保存",
   "retry": "重试",
   "account": "个人账号",
-  "permissionPrerequisite": "请先关联设备并创建工作区对话，再授权个人工具。"
+  "permissionPrerequisite": "请先关联设备并创建工作区对话，再授权个人工具。",
+  "human": {
+    "region": "问题与审批",
+    "customAnswer": "自定义回答",
+    "customPlaceholder": "输入回答",
+    "selectPlaceholder": "选择回答",
+    "required": "请回答所有必填问题。",
+    "answer": "发送回答",
+    "answering": "发送中…",
+    "cancel": "取消请求"
+  }
 }

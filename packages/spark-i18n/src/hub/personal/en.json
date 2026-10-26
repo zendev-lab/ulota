@@ -85,5 +85,15 @@
   "saved": "Saved",
   "retry": "Try again",
   "account": "Personal account",
-  "permissionPrerequisite": "Link a device and create a workspace conversation before granting personal tool access."
+  "permissionPrerequisite": "Link a device and create a workspace conversation before granting personal tool access.",
+  "human": {
+    "region": "Questions and approvals",
+    "customAnswer": "Custom answer",
+    "customPlaceholder": "Enter your answer",
+    "selectPlaceholder": "Choose an answer",
+    "required": "Answer every required question.",
+    "answer": "Send answer",
+    "answering": "Sending…",
+    "cancel": "Cancel request"
+  }
 }
