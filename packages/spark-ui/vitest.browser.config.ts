@@ -15,7 +15,7 @@ const config = {
   plugins: [svelte()],
   optimizeDeps: {
     exclude: ["@lucide/svelte", "bits-ui", "svelte-streamdown"],
-    include: ["bits-ui > svelte-toolbelt > style-to-object", "svelte-streamdown > mermaid"],
+    include: ["bits-ui > svelte-toolbelt > style-to-object"],
   },
   resolve: {
     conditions: ["browser"],
