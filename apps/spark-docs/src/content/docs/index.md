@@ -16,23 +16,15 @@ sidebar:
   order: 1
 ---
 
-Ulota is the new product name for Spark. During the initial branding transition,
-commands remain `spark`, published packages remain `@zendev-lab/spark*`, and
-existing configuration and data paths continue to work.
+Ulota is the new product name for Spark. During the initial branding transition, commands remain `spark`, published packages remain `@zendev-lab/spark*`, and existing configuration and data paths continue to work.
 
-Ulota is a controlled coding-agent suite with one public `spark` command and
-three product surfaces:
+Ulota is a controlled coding-agent suite with one public `spark` command and three product surfaces:
 
 - the **local web workbench** for interactive work,
 - the **daemon** for durable sessions and background work, and
 - **Hub Web** for web-based control and projection.
 
-Start with [installation and your first run](/getting-started/), then
-[plan and implement a change](/guides/plan-and-execute/). Learn
-[the complete feature map](/concepts/feature-map/) when you want to see how
-CLI, daemon, local web, Hub, tools, automation, and collaboration fit together.
-Read [surface ownership](/concepts/surfaces/) only when you need to automate,
-operate remotely, or diagnose the system.
+Start with [installation and your first run](/getting-started/), then [plan and implement a change](/guides/plan-and-execute/). Learn [the complete feature map](/concepts/feature-map/) when you want to see how CLI, daemon, local web, Hub, tools, automation, and collaboration fit together. Read [surface ownership](/concepts/surfaces/) only when you need to automate, operate remotely, or diagnose the system.
 
 ## What this documentation covers
 
@@ -43,5 +35,4 @@ operate remotely, or diagnose the system.
 - inspecting configuration and state paths, and
 - diagnosing common local and remote-access failures.
 
-The implementation repository remains the source of truth. User-facing command
-examples in this site are checked against the source `spark --help` dispatcher.
+The implementation repository remains the source of truth. User-facing command examples in this site are checked against the source `spark --help` dispatcher.

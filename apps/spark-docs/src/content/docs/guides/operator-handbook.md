@@ -3,8 +3,7 @@ title: Operator handbook
 description: Run Spark end to end, connect Hub, create sessions, inspect invocations, and recover safely.
 ---
 
-This guide is the shortest complete path through a local Spark installation. It
-also defines the checks to run before changing state when something goes wrong.
+This guide is the shortest complete path through a local Spark installation. It also defines the checks to run before changing state when something goes wrong.
 
 ## Know which surface owns what
 
@@ -30,19 +29,16 @@ spark paths --json
 spark doctor
 ```
 
-`spark paths --json` is the authority for effective paths. Do not copy state or
-credentials between roots to repair a problem.
+`spark paths --json` is the authority for effective paths. Do not copy state or credentials between roots to repair a problem.
 
-For an isolated test, choose an explicit directory before starting any Spark
-process:
+For an isolated test, choose an explicit directory before starting any Spark process:
 
 ```bash
 export SPARK_HOME=/absolute/path/to/isolated-spark-home
 spark paths --json
 ```
 
-Every command in that test, including daemon and Hub commands, must use the
-same `SPARK_HOME`.
+Every command in that test, including daemon and Hub commands, must use the same `SPARK_HOME`.
 
 ## 2. Configure an authenticated model
 
@@ -54,16 +50,9 @@ spark daemon auth import pi --json
 spark daemon model list --all --json
 ```
 
-The import source is `PI_CODING_AGENT_DIR/auth.json` when that directory is set,
-otherwise `~/.pi/agent/auth.json`. The command imports only registered providers
-whose credential kind matches. It never expands `$ENV`/`${ENV}`, runs
-`!command`, or changes the Pi file. Existing Spark credentials are preserved;
-review the secret-free report before using `--overwrite`.
+The import source is `PI_CODING_AGENT_DIR/auth.json` when that directory is set, otherwise `~/.pi/agent/auth.json`. The command imports only registered providers whose credential kind matches. It never expands `$ENV`/`${ENV}`, runs `!command`, or changes the Pi file. Existing Spark credentials are preserved; review the secret-free report before using `--overwrite`.
 
-An all-skipped report still exits `0`. A source, parse, or Spark-store failure
-exits `1` and writes nothing; invalid command use exits `2`. Fix file
-readability or malformed JSON and rerun the same import. Do not copy credential
-values into a diagnostic.
+An all-skipped report still exits `0`. A source, parse, or Spark-store failure exits `1` and writes nothing; invalid command use exits `2`. Fix file readability or malformed JSON and rerun the same import. Do not copy credential values into a diagnostic.
 
 To configure a provider directly:
 
@@ -72,13 +61,9 @@ spark daemon auth login [provider]
 spark daemon model set <provider/model> --default --json
 ```
 
-Or start `spark web`, open **Settings**, and configure the provider and model
-there. Unavailable models remain visible with their reason and login action, but
-cannot become active. Enter API keys only in Spark's secret field or prompt. Do
-not put them in a repository, command history, or a Hub registration command.
+Or start `spark web`, open **Settings**, and configure the provider and model there. Unavailable models remain visible with their reason and login action, but cannot become active. Enter API keys only in Spark's secret field or prompt. Do not put them in a repository, command history, or a Hub registration command.
 
-Hub Web disables conversation submission when no authenticated model is
-available. A JSON CLI submission reports an actionable error:
+Hub Web disables conversation submission when no authenticated model is available. A JSON CLI submission reports an actionable error:
 
 ```json
 {
@@ -92,9 +77,7 @@ available. A JSON CLI submission reports an actionable error:
 
 Configure the provider, then retry the original submission once.
 
-`spark daemon login` is unrelated: it authorizes machine connectivity to
-Hub. Provider authentication is owned by the daemon and is exposed through
-`spark daemon auth` plus the model/provider settings in local Web and Hub.
+`spark daemon login` is unrelated: it authorizes machine connectivity to Hub. Provider authentication is owned by the daemon and is exposed through `spark daemon auth` plus the model/provider settings in local Web and Hub.
 
 ## 3. Start the daemon and Hub independently
 
@@ -116,13 +99,9 @@ spark hub web start --json
 spark hub web status --json
 ```
 
-Open the exact public URL. The scheme, hostname, and port used by the browser
-must match `SPARK_HUB_PUBLIC_URL`; for example, do not switch between
-`localhost` and `127.0.0.1` during setup.
+Open the exact public URL. The scheme, hostname, and port used by the browser must match `SPARK_HUB_PUBLIC_URL`; for example, do not switch between `localhost` and `127.0.0.1` during setup.
 
-Use `spark hub` instead when you want the foreground production host. The
-daemon and Hub are separate processes and should always be diagnosed
-separately.
+Use `spark hub` instead when you want the foreground production host. The daemon and Hub are separate processes and should always be diagnosed separately.
 
 ## 4. Create and register the first workspace
 
@@ -142,10 +121,7 @@ spark daemon workspace register . --name <workspace-name>
 spark daemon workspace register . --token <enrollment-token>
 ```
 
-`spark daemon login` binds the daemon installation (one per machine) to the
-Hub. The first `workspace register` records the workspace locally; the token
-form announces its Hub projection through the same daemon binding. The token
-is shown once and is not a provider credential.
+`spark daemon login` binds the daemon installation (one per machine) to the Hub. The first `workspace register` records the workspace locally; the token form announces its Hub projection through the same daemon binding. The token is shown once and is not a provider credential.
 
 Verify the daemon-owned binding:
 
@@ -153,16 +129,11 @@ Verify the daemon-owned binding:
 spark daemon workspace ls --json
 ```
 
-During registration, the daemon may use the local directory basename as a
-placeholder. After setup is finalized, Hub owns the configured workspace
-name and URL slug; the daemon continues to own the canonical local path and
-binding display name.
+During registration, the daemon may use the local directory basename as a placeholder. After setup is finalized, Hub owns the configured workspace name and URL slug; the daemon continues to own the canonical local path and binding display name.
 
 ## 5. Create, inspect, and attach a session
 
-Read the protected Administrator Session ID from
-`spark daemon session list --registry --json`, select an exact static RoleRef,
-then create an empty managed child:
+Read the protected Administrator Session ID from `spark daemon session list --registry --json`, select an exact static RoleRef, then create an empty managed child:
 
 ```bash
 spark daemon session spawn \
@@ -174,16 +145,13 @@ spark daemon session list --registry --json
 spark daemon session show <session-id> --json
 ```
 
-`spawn` creates no Invocation. Use `fork` with the same flags only when the
-child needs an independent copy of the supervisor's stable transcript prefix.
-Run attach commands from the same canonical workspace:
+`spawn` creates no Invocation. Use `fork` with the same flags only when the child needs an independent copy of the supervisor's stable transcript prefix. Run attach commands from the same canonical workspace:
 
 ```bash
 spark web
 ```
 
-Hub Web lists the same daemon-owned session under Conversations. Creating a
-second frontend does not create a second executor.
+Hub Web lists the same daemon-owned session under Conversations. Creating a second frontend does not create a second executor.
 
 ## 6. Submit and observe durable execution
 
@@ -220,15 +188,11 @@ spark bg --json "Queue durable background work."
 spark bg --session <session-id> "Continue the existing work."
 ```
 
-Do not resubmit because a browser looks idle. Check the invocation first; an
-unknown mutation or delivery outcome must fail closed rather than replay.
+Do not resubmit because a browser looks idle. Check the invocation first; an unknown mutation or delivery outcome must fail closed rather than replay.
 
 ## 7. Exercise the product workflow
 
-Describe the intended outcome in the [local web workbench](/guides/web/) or
-with `spark run`. One-shot `/plan`, `/execute`, and `/fleet`, plus Goal,
-Repro, and Workflow, remain daemon-owned operations; discover operator CLI
-forms with `spark daemon --help`.
+Describe the intended outcome in the [local web workbench](/guides/web/) or with `spark run`. One-shot `/plan`, `/execute`, and `/fleet`, plus Goal, Repro, and Workflow, remain daemon-owned operations; discover operator CLI forms with `spark daemon --help`.
 
 Use these surfaces together:
 
@@ -241,8 +205,7 @@ Use these surfaces together:
 - Goal, Repro, Workflow, and background loops remain distinct; do not collapse
   scheduled, running, retry-waiting, dormant, blocked, and stopped states.
 
-Continue with [local web](/guides/web/), [runs and sessions](/guides/runs-and-sessions/),
-[Hub Web](/guides/hub/), and [long-running work](/guides/automation/).
+Continue with [local web](/guides/web/), [runs and sessions](/guides/runs-and-sessions/), [Hub Web](/guides/hub/), and [long-running work](/guides/automation/).
 
 ## 8. Remote access
 
@@ -275,8 +238,7 @@ spark daemon session spawn --help
 spark daemon session fork --help
 ```
 
-If a packaged installation behaves differently, compare `spark version --json`
-with the source or package version you intended to run.
+If a packaged installation behaves differently, compare `spark version --json` with the source or package version you intended to run.
 
 ### Hub Web opens but setup or submission does not advance
 
@@ -289,23 +251,15 @@ spark daemon workspace ls --json
 spark daemon logs --lines 200
 ```
 
-Use exactly one hostname during the setup flow. If a token was consumed, mint a
-new token instead of trying to recover or replay it.
+Use exactly one hostname during the setup flow. If a token was consumed, mint a new token instead of trying to recover or replay it.
 
 ### Hub reports that a binding belongs to another workspace
 
-Do not delete either database. Inspect `spark daemon workspace ls --json` and
-the Hub workspace settings. A binding can have only one active Hub lease.
-Unbind it deliberately from the current Hub workspace before
-registering it elsewhere.
+Do not delete either database. Inspect `spark daemon workspace ls --json` and the Hub workspace settings. A binding can have only one active Hub lease. Unbind it deliberately from the current Hub workspace before registering it elsewhere.
 
 ### No authenticated model is available
 
-Run `spark daemon auth status --json` and
-`spark daemon model list --all --json`. Then use
-`spark daemon auth login <provider>`, or open **Settings** in local Web or
-**Models and providers** in Hub. Hub Web should enable submission only after
-the daemon reports an available authenticated model.
+Run `spark daemon auth status --json` and `spark daemon model list --all --json`. Then use `spark daemon auth login <provider>`, or open **Settings** in local Web or **Models and providers** in Hub. Hub Web should enable submission only after the daemon reports an available authenticated model.
 
 ### A run appears stuck
 
@@ -323,8 +277,7 @@ Inspect before retrying. Frontend elapsed time is not execution truth.
 spark paths --json
 ```
 
-Confirm that the terminal, daemon, and Hub use the same intended root. Do
-not restart a process owned by another service manager or another test root.
+Confirm that the terminal, daemon, and Hub use the same intended root. Do not restart a process owned by another service manager or another test root.
 
 ## 10. Stop an isolated run
 
@@ -346,6 +299,4 @@ spark daemon session list --registry --json
 spark daemon invocation list --json
 ```
 
-Record the exact version, `SPARK_HOME` or XDG roots, failing command, exit code,
-and invocation/session IDs when reporting a problem. Never include provider
-credentials or one-time registration and browser keys.
+Record the exact version, `SPARK_HOME` or XDG roots, failing command, exit code, and invocation/session IDs when reporting a problem. Never include provider credentials or one-time registration and browser keys.

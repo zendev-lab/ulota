@@ -3,9 +3,7 @@ title: Command discovery and CLI
 description: Find the commands supported by the installed Spark version and use the stable command namespaces.
 ---
 
-Spark's runtime help is the authoritative command catalog for the version you
-are actually running. This page explains where to look and how the namespaces
-fit together; it intentionally does not duplicate every subcommand and flag.
+Spark's runtime help is the authoritative command catalog for the version you are actually running. This page explains where to look and how the namespaces fit together; it intentionally does not duplicate every subcommand and flag.
 
 ## Discover the installed command surface
 
@@ -17,10 +15,7 @@ spark daemon --help
 spark hub --help
 ```
 
-Nested commands accept `--help` as well. The root help, version, diagnostics,
-install, and update surface is parsed by the Rust CLI; companion help remains
-owned by the routed Node app. Help is read-only and does not start a daemon,
-Hub, or workflow.
+Nested commands accept `--help` as well. The root help, version, diagnostics, install, and update surface is parsed by the Rust CLI; companion help remains owned by the routed Node app. Help is read-only and does not start a daemon, Hub, or workflow.
 
 ## Command namespaces
 
@@ -32,9 +27,7 @@ Hub, or workflow.
 | `spark hub` | Run and administer Hub coordination and Web surfaces | `spark hub --help` |
 | ACP and MCP adapters | Connect compatible clients through their configured Spark adapter | See [collaboration and clients](/guides/collaboration/) |
 
-The daemon owns persistent execution state. The native root router and Hub
-commands translate user intent into their owning runtime; they do not maintain
-parallel session or execution state.
+The daemon owns persistent execution state. The native root router and Hub commands translate user intent into their owning runtime; they do not maintain parallel session or execution state.
 
 ## Common entry points
 
@@ -64,14 +57,7 @@ spark hub --help
 
 ## Local web workbench
 
-`spark web` starts the local browser workbench for every workspace bound to the
-same daemon. It binds loopback by default and talks to the Spark daemon through
-`spark-daemon-client`. Every normal request requires a daemon access token.
-Binding `0.0.0.0` automatically exposes the host's local IPv4 interface
-addresses; there is no separate trusted-host configuration. Direct Web accepts
-loopback and local interface IP literals only and validates Host, Origin, Fetch
-Metadata, and cross-site mutation provenance before authentication. Hub remains
-the multi-daemon proxy and the supported DNS-based remote-access boundary.
+`spark web` starts the local browser workbench for every workspace bound to the same daemon. It binds loopback by default and talks to the Spark daemon through `spark-daemon-client`. Every normal request requires a daemon access token. Binding `0.0.0.0` automatically exposes the host's local IPv4 interface addresses; there is no separate trusted-host configuration. Direct Web accepts loopback and local interface IP literals only and validates Host, Origin, Fetch Metadata, and cross-site mutation provenance before authentication. Hub remains the multi-daemon proxy and the supported DNS-based remote-access boundary.
 
 ```bash
 spark web
@@ -79,14 +65,9 @@ spark web --port 4310
 spark web --host 0.0.0.0 --port 4310
 ```
 
-The command prints immediately usable workbench URLs carrying a daemon-issued
-process token without opening a browser. It also prints the token separately
-and revokes it during normal shutdown. The links work for loopback and LAN
-access.
+The command prints immediately usable workbench URLs carrying a daemon-issued process token without opening a browser. It also prints the token separately and revokes it during normal shutdown. The links work for loopback and LAN access.
 
-Daemon access tokens are owned by the daemon, which stores only hashes. Use the
-following commands for separately managed tokens, to inspect metadata after an
-unclean launcher exit, or to revoke a token:
+Daemon access tokens are owned by the daemon, which stores only hashes. Use the following commands for separately managed tokens, to inspect metadata after an unclean launcher exit, or to revoke a token:
 
 ```text
 spark daemon access create [--label <note>] [--expires-at <iso>] [--json]
@@ -94,20 +75,9 @@ spark daemon access list [--json]
 spark daemon access revoke <token-id> [--json]
 ```
 
-Opening a printed URL verifies the token through the daemon, stores it in an
-HttpOnly, SameSite=Lax cookie, removes it from the address bar, and continues to
-the requested page. Document navigation without a valid token opens the Spark
-Access page for manual entry. The `?token=…` carrier remains navigation-only;
-the `x-spark-web-token` header remains available for automation. API and
-WebSocket requests retain carrier-level
-401/503 responses rather than HTML login pages. Missing, wrong, expired, and
-revoked tokens do not expose token-state detail, and verification fails closed
-while the daemon is unreachable.
+Opening a printed URL verifies the token through the daemon, stores it in an HttpOnly, SameSite=Lax cookie, removes it from the address bar, and continues to the requested page. Document navigation without a valid token opens the Spark Access page for manual entry. The `?token=…` carrier remains navigation-only; the `x-spark-web-token` header remains available for automation. API and WebSocket requests retain carrier-level 401/503 responses rather than HTML login pages. Missing, wrong, expired, and revoked tokens do not expose token-state detail, and verification fails closed while the daemon is unreachable.
 
-Use `spark daemon auth --help` and `spark daemon model --help` to discover
-the authentication and model operations supported by the installed version.
-Use [configuration and paths](/reference/configuration-and-paths/) before
-copying, migrating, or repairing state.
+Use `spark daemon auth --help` and `spark daemon model --help` to discover the authentication and model operations supported by the installed version. Use [configuration and paths](/reference/configuration-and-paths/) before copying, migrating, or repairing state.
 
 ## Exit behavior and automation
 
@@ -120,9 +90,7 @@ copying, migrating, or repairing state.
   Browser appearance, transcript text, and elapsed time are not execution
   truth.
 
-Human-readable failures use the same machine-readable catalog across the native
-router, daemon, Web,
-Hub, ACP, MCP, and updater commands:
+Human-readable failures use the same machine-readable catalog across the native router, daemon, Web, Hub, ACP, MCP, and updater commands:
 
 ```text
 error [DAEMON_START_FAILED]: Spark daemon failed to start
@@ -132,18 +100,11 @@ hint: Run "spark daemon logs --lines 100" to inspect the startup log.
 details: no such column: serialization_key
 ```
 
-The first line states the outcome and includes a diagnostic code. `hint` lines
-are safe next actions; `details` keeps the low-level cause separate so it can be
-copied into a report. Treat this text as a human interface, not a parsing
-contract. Commands that support `--json` retain their documented JSON payload
-for automation.
+The first line states the outcome and includes a diagnostic code. `hint` lines are safe next actions; `details` keeps the low-level cause separate so it can be copied into a report. Treat this text as a human interface, not a parsing contract. Commands that support `--json` retain their documented JSON payload for automation.
 
-`spark daemon stop --wait` returns only after the exact owned daemon process
-has exited or been replaced. Recovery paths use this fence before starting a
-successor.
+`spark daemon stop --wait` returns only after the exact owned daemon process has exited or been replaced. Recovery paths use this fence before starting a successor.
 
-`spark daemon login` authorizes this machine to connect to Hub. It never
-configures an AI provider.
+`spark daemon login` authorizes this machine to connect to Hub. It never configures an AI provider.
 
 ## Provider authentication and models
 
@@ -157,17 +118,9 @@ spark daemon model status [--session <id>] [--json]
 spark daemon model set <provider/model> (--session <id>|--default) [--json]
 ```
 
-`auth import pi` reads `PI_CODING_AGENT_DIR/auth.json` when that directory is
-set, otherwise `~/.pi/agent/auth.json`. It does not start Pi, execute shell
-commands, or expand environment references. Existing Spark credentials win
-unless `--overwrite` is explicit. Exit `0` means the transaction completed,
-including an all-skipped report; `1` is a read/parse/store failure and `2` is
-invalid CLI usage.
+`auth import pi` reads `PI_CODING_AGENT_DIR/auth.json` when that directory is set, otherwise `~/.pi/agent/auth.json`. It does not start Pi, execute shell commands, or expand environment references. Existing Spark credentials win unless `--overwrite` is explicit. Exit `0` means the transaction completed, including an all-skipped report; `1` is a read/parse/store failure and `2` is invalid CLI usage.
 
-Provider login is owned by the daemon and is exposed through
-`spark daemon auth login` and the provider settings in local Web or Hub.
-Reports contain provider IDs, credential kinds, counts, and reason codes, never
-credential values.
+Provider login is owned by the daemon and is exposed through `spark daemon auth login` and the provider settings in local Web or Hub. Reports contain provider IDs, credential kinds, counts, and reason codes, never credential values.
 
 ## Daemon-global Channels
 
@@ -178,11 +131,7 @@ spark daemon channel reload --json
 spark daemon channel notify --action test --json
 ```
 
-Channel control is daemon-scoped and does not accept `--workspace`. Configure
-replaces the global file after validating all accounts and routes. Use
-`spark daemon channel --help` for adapter-specific fields and supported notify
-actions, and see [daemon-global Channels](/guides/channels/) before migrating
-credentials.
+Channel control is daemon-scoped and does not accept `--workspace`. Configure replaces the global file after validating all accounts and routes. Use `spark daemon channel --help` for adapter-specific fields and supported notify actions, and see [daemon-global Channels](/guides/channels/) before migrating credentials.
 
 ## Sessions and invocations
 
@@ -196,10 +145,7 @@ spark daemon invocation stream <invocation-id> --after <cursor> --limit 500 --js
 spark daemon invocation cancel <invocation-id> --reason <text> --json
 ```
 
-`spawn` creates an empty child; `fork` copies only the supervisor's stable
-transcript prefix into an independent child JSONL. Both require an exact static
-RoleRef and create no Invocation. The retired `session create`, `session clone`,
-and source-argument transcript fork commands are not aliases.
+`spawn` creates an empty child; `fork` copies only the supervisor's stable transcript prefix into an independent child JSONL. Both require an exact static RoleRef and create no Invocation. The retired `session create`, `session clone`, and source-argument transcript fork commands are not aliases.
 
 ## Hub and workspace delegations
 
@@ -213,29 +159,17 @@ spark hub delegation reply <delegation-id> --text <answer> --json
 spark hub delegation cancel <delegation-id> --reason <text> --json
 ```
 
-Hub owns delegation routing, lifecycle, audit, and bounded receipts. The target
-daemon owns execution in its protected Workspace Administrator Session. Delegation
-receipts expose target Artifact refs and bounded verification summaries, never
-the target workspace's internal evidence store.
+Hub owns delegation routing, lifecycle, audit, and bounded receipts. The target daemon owns execution in its protected Workspace Administrator Session. Delegation receipts expose target Artifact refs and bounded verification summaries, never the target workspace's internal evidence store.
 
 ## ACP clients
 
-Start the daemon before configuring an ACP client to launch `spark acp`. The
-adapter currently supports session new, text prompt, cancel, streamed assistant
-and tool updates, and tool permission. Session load/resume/fork, provider
-selection, and MCP-over-ACP are not advertised. stdout is reserved for ACP
-NDJSON; startup recovery details go to stderr.
+Start the daemon before configuring an ACP client to launch `spark acp`. The adapter currently supports session new, text prompt, cancel, streamed assistant and tool updates, and tool permission. Session load/resume/fork, provider selection, and MCP-over-ACP are not advertised. stdout is reserved for ACP NDJSON; startup recovery details go to stderr.
 
 ## MCP clients
 
-Configure an MCP client to launch `spark-mcp`, or invoke the equivalent
-`spark mcp` router command. The client should start it with the intended
-workspace as `cwd`; `SPARK_MCP_MEMORY_FILE` can explicitly select the canonical
-workspace memory file when that is not possible.
+Configure an MCP client to launch `spark-mcp`, or invoke the equivalent `spark mcp` router command. The client should start it with the intended workspace as `cwd`; `SPARK_MCP_MEMORY_FILE` can explicitly select the canonical workspace memory file when that is not possible.
 
-The supported tools are `spark_memory_status` and `spark_memory_list`. Both are
-read-only and delegate to Spark's Memory owner. stdout is reserved for MCP
-frames; startup diagnostics go to stderr.
+The supported tools are `spark_memory_status` and `spark_memory_list`. Both are read-only and delegate to Spark's Memory owner. stdout is reserved for MCP frames; startup diagnostics go to stderr.
 
 ## Workspaces and remote Hub
 
@@ -250,14 +184,6 @@ spark daemon workspace merge --into <target-id> --path <parent> --all-nested --d
 spark hub access create --daemon <runtime-id> [--daemon <runtime-id> ...] [--user <name>]
 ```
 
-Use `--allow-insecure-http` only for an explicitly trusted private network.
-Prefer HTTPS for every non-loopback Hub URL.
+Use `--allow-insecure-http` only for an explicitly trusted private network. Prefer HTTPS for every non-loopback Hub URL.
 
-`workspace stop` only pauses a connection; it does not free the registered
-path. `workspace unregister` frees the path while retaining history, and
-`workspace move` preserves the workspace ID at a new path. `workspace merge`
-expands the target to the parent path and retains each source ID as an alias,
-so existing session and invocation references remain resolvable. Lifecycle
-changes show a plan first, require confirmation unless `--yes` is passed, and
-can be inspected without mutation with `--dry-run --json`. Use `workspace ls
---all` to inspect merged or unregistered records.
+`workspace stop` only pauses a connection; it does not free the registered path. `workspace unregister` frees the path while retaining history, and `workspace move` preserves the workspace ID at a new path. `workspace merge` expands the target to the parent path and retains each source ID as an alias, so existing session and invocation references remain resolvable. Lifecycle changes show a plan first, require confirmation unless `--yes` is passed, and can be inspected without mutation with `--dry-run --json`. Use `workspace ls --all` to inspect merged or unregistered records.

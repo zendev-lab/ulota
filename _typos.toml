@@ -15,8 +15,4 @@ unsupport = "unsupport"
 typebox = "typebox"
 
 [files]
-extend-exclude = [
-  ".spark/**",
-  "**/.pi-lens/**",
-  "packages/spark-i18n/src/paraglide/**"
-]
+extend-exclude = [".spark/**", "**/.pi-lens/**", "packages/spark-i18n/src/paraglide/**"]

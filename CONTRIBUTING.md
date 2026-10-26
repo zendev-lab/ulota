@@ -1,18 +1,10 @@
 # Contributing to Ulota
 
-Thank you for improving Ulota. This guide is the shared source for human
-contributor setup, development workflow, validation, documentation ownership,
-and pull-request expectations. Coding agents must also follow
-[`AGENTS.md`](./AGENTS.md).
-
 ## Requirements
 
-Source development requires:
-
-- Node.js `>=24`;
-- pnpm `>=11 <12`, matching the version pinned in `package.json`;
-- the Vite+ `vp` CLI used by repository formatting, lint, and type-aware checks;
-- Git.
+Use the Node.js and pnpm versions declared in [`package.json`](./package.json)
+and the Rust toolchain in [`rust-toolchain.toml`](./rust-toolchain.toml).
+Git is also required. Repository dependencies provide Vite+ (`vp`) and `prek`.
 
 `pnpm install` runs the `prepare` script and installs the `prek` commit hooks.
 Run `prek install` when Git hooks are missing from an existing checkout.
@@ -85,8 +77,7 @@ frontend-derived state machine.
 6. Run targeted validation, then the applicable repository gates below.
 7. Review the complete diff for generated files, secrets, runtime state, and
    accidental package-boundary changes.
-8. Open a Draft PR with the motivation, user or developer impact, and exact
-   validation performed.
+8. Open a Draft PR as described in [Pull requests](#pull-requests).
 
 ## Validation
 
@@ -263,9 +254,10 @@ Keep pull requests focused and explain:
 - compatibility, migration, or security implications (see [SECURITY.md](./SECURITY.md) for private vulnerability reporting);
 - stack dependencies when the PR does not target `main`.
 
-Repository CI owns automated validation reporting; the PR body does not need to
-duplicate command lists or test counts. Use `Notes` for manual checks, known
-limitations, or exceptions that CI cannot express.
+Repository CI owns automated validation reporting; the PR body does not list
+local test runs, commands, test counts, or CI status. Use `说明` for manual
+checks, known limitations, key trade-offs, or exceptions that CI cannot express,
+and omit it when there is nothing to add.
 
 PR titles are checked by CI. Follow the repository's emoji conventional-title
 style, for example:
