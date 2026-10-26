@@ -18,7 +18,7 @@ test("loads code, math and diagram renderers for a completed response", async ()
   await expect
     .poll(
       () =>
-        screen.container.querySelector("[data-streamdown-mermaid] svg[role='img']")?.textContent,
+        screen.container.querySelector("[data-streamdown-mermaid] [role='img'] svg")?.textContent,
     )
     .toContain("Ready");
   await screen.unmount();
