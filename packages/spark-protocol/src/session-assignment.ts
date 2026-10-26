@@ -529,8 +529,8 @@ function validateSessionProjection(
         });
       }
       if (
-        (record.purpose === "channel" &&
-          (record.lifecycle !== "open" || record.placement !== "active")) ||
+        record.lifecycle !== "open" ||
+        record.placement !== "active" ||
         record.retention !== "audit"
       ) {
         context.addIssue({

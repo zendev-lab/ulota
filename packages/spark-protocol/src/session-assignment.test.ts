@@ -236,12 +236,15 @@ describe("session lineage protocol", () => {
     }
   });
 
-  it("requires the workspace-owned Administrator projection to remain audit-retained", () => {
-    const administrator = workspaceRecord({ kind: "root" });
-    expect(() => parseSparkSessionProjection({ ...administrator, retention: "retain" })).toThrow(
-      /audit-retained/u,
-    );
-  });
+  it.each([{ lifecycle: "closed" }, { placement: "archived" }, { retention: "retain" }])(
+    "rejects an invalid workspace Administrator projection: %j",
+    (invalid) => {
+      const administrator = workspaceRecord({ kind: "root" });
+      expect(() => parseSparkSessionProjection({ ...administrator, ...invalid })).toThrow(
+        /open, active, and audit-retained/u,
+      );
+    },
+  );
 
   it("keeps derived fields out of strict stored state", () => {
     const projection = workspaceRecord({

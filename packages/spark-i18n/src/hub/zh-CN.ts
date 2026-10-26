@@ -1,5 +1,16 @@
 const messages = {
   personal: {
+    human: {
+      region: "问题与审批",
+      customAnswer: "自定义回答",
+      customPlaceholder: "输入回答",
+      selectPlaceholder: "选择回答",
+      required: "请回答所有必填问题。",
+      answer: "发送回答",
+      answering: "发送中…",
+      cancel: "取消请求",
+    },
+
     title: "个人",
     body: "由你的 Hub 托管的物品、待办与订阅。",
     back: "返回工作台",

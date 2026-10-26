@@ -1,5 +1,16 @@
 const messages = {
   personal: {
+    human: {
+      region: "Questions and approvals",
+      customAnswer: "Custom answer",
+      customPlaceholder: "Enter your answer",
+      selectPlaceholder: "Choose an answer",
+      required: "Answer every required question.",
+      answer: "Send answer",
+      answering: "Sending…",
+      cancel: "Cancel request",
+    },
+
     title: "Personal",
     body: "Your inventory, tasks and subscriptions, hosted by your Hub.",
     back: "Back to workbench",

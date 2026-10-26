@@ -468,6 +468,7 @@ export const runtimeServerCommandKindOptions = [
   "channel.qqbot.auth.cancel.request",
   "invocation.cancel.request",
   "artifact.content.request",
+  "human.request.list.request",
   "human.response.deliver.request",
   "diagnostics.request",
 ] as const satisfies readonly SparkCommandKind[];
@@ -550,10 +551,8 @@ export const runtimeServerCommandSpecifications = {
     allowDetached: true,
   }),
   "artifact.content.request": workspaceReadCommand(),
-  "human.response.deliver.request": workspaceMutationCommand({
-    allowBorrowed: true,
-    allowDetached: true,
-  }),
+  "human.request.list.request": sessionCommand("read"),
+  "human.response.deliver.request": sessionCommand("mutation"),
   "diagnostics.request": workspaceReadCommand(),
 } as const satisfies Record<RuntimeServerCommandKind, RuntimeServerCommandSpecification>;
 
