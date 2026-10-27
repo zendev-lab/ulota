@@ -23,7 +23,7 @@ for (const group of ["apps", "packages"]) {
 
 for (const { directory, args } of suites) {
   const result = spawnSync(
-    "pnpm",
+    "pnpm", // NOSONAR S4036: the developer/CI owns PATH; this runner grants no extra authority.
     [
       "exec",
       "vp",

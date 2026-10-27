@@ -68,14 +68,14 @@ repo = "local"
 hooks = [
   { id = "spark-source-check", name = "Spark source checks", entry = "pnpm run check:source", language = "system", pass_filenames = false, stages = ["pre-commit"] },
   { id = "rumdl", name = "Markdown structure", entry = "rumdl check", language = "python", additional_dependencies = ["rumdl==0.3.0"], types = ["markdown"], exclude = "^packages/spark-i18n/src/paraglide/", stages = ["pre-commit"] },
-  { id = "vale", name = "Documentation terminology", entry = "vale", language = "python", additional_dependencies = ["vale==3.25.1.0"], types = ["markdown"], stages = ["pre-commit"] },
+  { id = "vale", name = "Documentation terminology", entry = "vale", language = "python", additional_dependencies = ["vale==3.25.1.0"], require_serial = true, types = ["markdown"], stages = ["pre-commit"] },
   { id = "lychee", name = "Local documentation links", entry = "node scripts/check-doc-links.mjs", language = "python", additional_dependencies = ["lychee-bin==0.24.2"], types = ["markdown"], stages = ["pre-commit"] },
   { id = "ast-grep", name = "Shared package structure", entry = "ast-grep scan", language = "python", additional_dependencies = ["ast-grep-cli==0.51.0"], pass_filenames = false, files = "(\\.ts$|^quality/ast-grep/|^sgconfig\\.yml$)", stages = ["pre-commit"] },
   { id = "ast-grep-tests", name = "Structure rule examples", entry = "ast-grep test --skip-snapshot-tests", language = "python", additional_dependencies = ["ast-grep-cli==0.51.0"], pass_filenames = false, files = "^quality/ast-grep/", stages = ["pre-commit"] },
   { id = "semgrep", name = "Production TLS verification", entry = "semgrep scan --config quality/semgrep --metrics=off --error apps packages scripts", language = "python", language_version = "python3.13", additional_dependencies = ["semgrep==1.182.1"], pass_filenames = false, files = "(\\.[cm]?[jt]s$|^quality/semgrep/)", stages = ["pre-commit"] },
   { id = "semgrep-tests", name = "Security rule examples", entry = "semgrep --test --config quality/semgrep quality/semgrep --metrics=off", language = "python", language_version = "python3.13", additional_dependencies = ["semgrep==1.182.1"], pass_filenames = false, files = "^quality/semgrep/", stages = ["pre-commit"] },
   { id = "shellcheck", name = "Shell script analysis", entry = "shellcheck", language = "python", additional_dependencies = ["shellcheck-py==0.11.0.1"], types = ["shell"], stages = ["pre-commit"] },
-  { id = "shfmt", name = "Shell script formatting", entry = "shfmt -d", language = "python", additional_dependencies = ["shfmt-py==4.2.0"], types = ["shell"], stages = ["pre-commit"] },
+  { id = "shfmt", name = "Shell script formatting", entry = "shfmt -d -i 2", language = "python", additional_dependencies = ["shfmt-py==4.2.0"], types = ["shell"], stages = ["pre-commit"] },
   { id = "hadolint", name = "Container build instructions", entry = "hadolint", language = "python", additional_dependencies = ["hadolint-bin==2.15.1"], types = ["dockerfile"], stages = ["pre-commit"] },
   { id = "renovate-schema", name = "Renovate configuration schema", entry = "check-jsonschema --builtin-schema vendor.renovate", language = "python", additional_dependencies = ["check-jsonschema==0.39.0"], files = "^\\.github/renovate\\.json$", stages = ["pre-commit"] },
 ]

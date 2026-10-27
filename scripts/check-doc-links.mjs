@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
 const result = spawnSync(
-  "lychee",
+  "lychee", // NOSONAR S4036: the developer's prek environment owns PATH; no privilege boundary.
   [
     "--offline",
     "--scheme",
@@ -15,7 +15,7 @@ const result = spawnSync(
     "index.md,README.md,.",
     // Lychee treats the version suffix as an extension instead of trying .md.
     "--remap",
-    "^(file:.*/guides/migration-0\\.2)/?$ $1.md",
+    String.raw`^(file:.*/guides/migration-0\.2)/?$ $1.md`,
     "--",
     ...process.argv.slice(2),
   ],
