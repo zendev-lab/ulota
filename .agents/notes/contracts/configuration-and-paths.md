@@ -168,7 +168,6 @@ Workflow and Role selectors remain backward-compatible (`builtin`, `workspace`,
 and `user` / `builtin`, `extension`, `project`, and `user`). Their project roots
 share the workspace/project source while preserving the common precedence.
 
-
 ## Inspection invariant
 
 The dispatcher exposes a read-only path-inspection surface that reports effective

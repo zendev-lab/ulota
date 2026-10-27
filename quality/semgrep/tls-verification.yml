@@ -1,0 +1,18 @@
+rules:
+  - id: tls-verification-disabled
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: Production network clients must verify TLS certificates.
+    metadata:
+      category: security
+      cwe: "CWE-295: Improper Certificate Validation"
+      references:
+        - https://nodejs.org/api/tls.html#tlsconnectoptions-callback
+    patterns:
+      - pattern-either:
+          - pattern: "{ ..., rejectUnauthorized: false, ... }"
+          - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+    paths:
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.spec.ts"

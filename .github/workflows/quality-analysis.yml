@@ -1,0 +1,183 @@
+name: Quality Analysis
+
+on:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust Quality and Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.98.1"
+          components: llvm-tools-preview
+      - name: Install pinned Rust checks
+        run: |
+          cargo install --locked cargo-machete --version 0.9.2
+          cargo install --locked cargo-deny --version 0.20.2
+          cargo install --locked cargo-llvm-cov --version 0.6.21
+      - run: cargo machete
+      - run: cargo deny check advisories
+      - run: cargo deny --manifest-path fuzz/Cargo.toml check advisories
+      - name: Inventory dependency licenses
+        run: |
+          mkdir -p reports
+          cargo deny list --format json > reports/rust-licenses.json
+      - name: Test with coverage and preserve documentation tests
+        run: |
+          mkdir -p coverage
+          cargo llvm-cov --workspace --locked --lcov --output-path coverage/rust.lcov
+          cargo test --workspace --doc --locked
+      - name: Upload Rust coverage
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
+        with:
+          files: coverage/rust.lcov
+          flags: rust
+          use_oidc: true
+          fail_ci_if_error: true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: rust-coverage
+          path: |
+            coverage/rust.lcov
+            reports/rust-licenses.json
+          if-no-files-found: error
+
+  typescript-coverage:
+    name: TypeScript Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:coverage
+      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
+        with:
+          files: coverage/lcov.info,apps/*/coverage/lcov.info,packages/*/coverage/lcov.info
+          flags: typescript
+          use_oidc: true
+          fail_ci_if_error: true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: typescript-coverage
+          path: |
+            coverage/lcov.info
+            apps/*/coverage/lcov.info
+            packages/*/coverage/lcov.info
+          if-no-files-found: error
+
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, rust]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+
+  rust-reports:
+    name: Rust Mutation and Fuzz
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.98.1"
+      - name: Install mutation and fuzz runners
+        run: |
+          cargo install --locked cargo-mutants --version 27.1.0
+          cargo install --locked cargo-fuzz --version 0.13.2
+          rustup toolchain install nightly-2026-10-26 --profile minimal
+      - name: Mutate native state persistence
+        run: |
+          mkdir -p reports/rust-mutation
+          cargo mutants --package spark-deployment --file 'packages/spark-deployment/native/src/state.rs' --jobs 2 --cargo-arg=--locked --output reports/rust-mutation
+      - name: Fuzz persisted contracts with AddressSanitizer
+        if: ${{ !cancelled() }}
+        run: |
+          cargo +nightly-2026-10-26 fetch --manifest-path fuzz/Cargo.toml --locked
+          mkdir -p fuzz/corpus/deployment_state
+          CARGO_NET_OFFLINE=true cargo +nightly-2026-10-26 fuzz run deployment_state fuzz/corpus/deployment_state fuzz/seeds/deployment_state -- -max_total_time=60 -max_len=4096
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: rust-quality-reports
+          path: |
+            reports/rust-mutation
+            fuzz/corpus
+            fuzz/artifacts
+          if-no-files-found: error
+
+  workflow-audit:
+    name: Online Workflow Audit
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.5"
+      - name: Audit action provenance and references
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uvx --with shellcheck-py==0.11.0.1 --with pyflakes==3.4.0 jactionlint==2.3.0 --online=strict --online-report=workflow-audit.json --shellcheck=shellcheck --pyflakes=pyflakes
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: workflow-audit
+          path: workflow-audit.json
+          if-no-files-found: error

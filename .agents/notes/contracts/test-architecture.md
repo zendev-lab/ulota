@@ -113,7 +113,10 @@ CSS, or documentation to prove that an implementation fragment exists.
 
 Repository policy belongs to dedicated static tools invoked by `pnpm run check:static`:
 
-- Actionlint and Zizmor own GitHub Actions parsing and security analysis;
+- Jactionlint and Zizmor own GitHub Actions parsing and security analysis;
+- ast-grep rejects process termination in shared library sources; Semgrep checks production TLS
+  verification. Their isolated examples include both accepted and rejected programs;
+- rumdl, Vale, and Lychee check Markdown structure, project terminology, and local links;
 - JSON Schema, Syncpack, and Knip own generic inventory and manifest consistency;
 - Dependency Cruiser owns import direction, cycles, deep-link bans, transport boundaries, and the
   daemon execution worker import graph;
@@ -121,6 +124,22 @@ Repository policy belongs to dedicated static tools invoked by `pnpm run check:s
   manifests and keeps test and mutation discovery fail-closed;
 - Astro/Starlight own documentation parsing and compilation; focused tests exercise locale
   selection and path mapping as behavior.
+
+`pnpm run test:coverage` discovers the existing Vitest test scripts and records TypeScript and
+JavaScript coverage with repository-relative source paths. Svelte component interaction remains in
+the browser lane; the reported source denominator does not include Svelte templates. Rust coverage
+uses `cargo llvm-cov --workspace --locked`, with documentation tests also run explicitly. Coverage
+uploads must succeed before the coverage job passes; no new percentage threshold is imposed.
+
+Native state properties exercise persistence, configuration bounds, and rejection of incompatible
+state. The weekly Rust mutation job targets that state boundary. The fuzz target checks serialized
+state, build metadata, configuration round trips, and same-version update rejection using the
+committed seed corpus and AddressSanitizer. Rust dependencies are checked by cargo-machete and
+cargo-deny advisories; license output is an inventory rather than a new license policy.
+
+Local workflow analysis is offline. The trusted default-branch workflow also runs strict online
+Jactionlint and retains the query report; skipped network queries are not successful audits. Zizmor
+remains because it still detects negated bot conditions that Jactionlint does not detect.
 
 Do not add a repository-wide source, YAML, schema-string, prompt, or prose keyword scanner. If a
 maintained parser or analyzer owns the format, configure it. If the concern is product behavior,

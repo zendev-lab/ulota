@@ -9,23 +9,34 @@ hooks = [
   { id = "check-yaml", exclude = "^pnpm-lock\\.yaml$", stages = ["pre-commit"] },
   { id = "check-json", stages = ["pre-commit"] },
   { id = "check-merge-conflict", stages = ["pre-commit"] },
-  { id = "end-of-file-fixer", stages = ["pre-commit"] },
-  { id = "mixed-line-ending", stages = ["pre-commit"] },
-  { id = "trailing-whitespace", stages = ["pre-commit"] },
+  # Fuzz corpus files are byte inputs, including a version without a line terminator.
+  { id = "end-of-file-fixer", args = ["--check"], exclude = "^fuzz/seeds/", stages = ["pre-commit"] },
+  { id = "mixed-line-ending", args = ["--fix=no"], stages = ["pre-commit"] },
+  { id = "trailing-whitespace", args = ["--check"], stages = ["pre-commit"] },
 ]
 
 [[repos]]
 repo = "https://github.com/tombi-toml/tombi-pre-commit"
 rev = "v1.9.0"
 hooks = [
-  { id = "tombi-format", exclude = "^Cargo\\.lock$", stages = ["pre-commit"] },
+  { id = "tombi-format", args = ["--check"], exclude = "(^|/)Cargo\\.lock$", stages = ["pre-commit"] },
   { id = "tombi-lint", args = ["--error-on-warnings"], stages = ["pre-commit"] },
 ]
 
 [[repos]]
-repo = "https://github.com/rhysd/actionlint"
-rev = "v1.7.12"
-hooks = [{ id = "actionlint", stages = ["pre-commit"] }]
+repo = "local"
+hooks = [
+  {
+    id = "jactionlint",
+    name = "GitHub Actions correctness and security",
+    entry = "jactionlint --no-online --shellcheck=shellcheck --pyflakes=pyflakes",
+    language = "python",
+    additional_dependencies = ["jactionlint==2.3.0", "shellcheck-py==0.11.0.1", "pyflakes==3.4.0"],
+    pass_filenames = false,
+    files = '^(\.github/|(.*/)?action\.ya?ml$|prek\.toml$)',
+    stages = ["pre-commit"],
+  },
+]
 
 [[repos]]
 repo = "https://github.com/zizmorcore/zizmor-pre-commit"
@@ -55,5 +66,21 @@ hooks = [{ id = "zendev-message-check", args = ["--profile", "zendev"], stages =
 [[repos]]
 repo = "local"
 hooks = [
-  { id = "spark-check-fix", name = "Spark static checks --fix", entry = "pnpm run fix", language = "system", pass_filenames = false, stages = ["pre-commit"] },
+  { id = "spark-source-check", name = "Spark source checks", entry = "pnpm run check:source", language = "system", pass_filenames = false, stages = ["pre-commit"] },
+  { id = "rumdl", name = "Markdown structure", entry = "rumdl check", language = "python", additional_dependencies = ["rumdl==0.3.0"], types = ["markdown"], exclude = "^packages/spark-i18n/src/paraglide/", stages = ["pre-commit"] },
+  { id = "vale", name = "Documentation terminology", entry = "vale", language = "python", additional_dependencies = ["vale==3.25.1.0"], types = ["markdown"], stages = ["pre-commit"] },
+  { id = "lychee", name = "Local documentation links", entry = "node scripts/check-doc-links.mjs", language = "python", additional_dependencies = ["lychee-bin==0.24.2"], types = ["markdown"], stages = ["pre-commit"] },
+  { id = "ast-grep", name = "Shared package structure", entry = "ast-grep scan", language = "python", additional_dependencies = ["ast-grep-cli==0.51.0"], pass_filenames = false, files = "(\\.ts$|^quality/ast-grep/|^sgconfig\\.yml$)", stages = ["pre-commit"] },
+  { id = "ast-grep-tests", name = "Structure rule examples", entry = "ast-grep test --skip-snapshot-tests", language = "python", additional_dependencies = ["ast-grep-cli==0.51.0"], pass_filenames = false, files = "^quality/ast-grep/", stages = ["pre-commit"] },
+  { id = "semgrep", name = "Production TLS verification", entry = "semgrep scan --config quality/semgrep --metrics=off --error apps packages scripts", language = "python", language_version = "python3.13", additional_dependencies = ["semgrep==1.182.1"], pass_filenames = false, files = "(\\.[cm]?[jt]s$|^quality/semgrep/)", stages = ["pre-commit"] },
+  { id = "semgrep-tests", name = "Security rule examples", entry = "semgrep --test --config quality/semgrep quality/semgrep --metrics=off", language = "python", language_version = "python3.13", additional_dependencies = ["semgrep==1.182.1"], pass_filenames = false, files = "^quality/semgrep/", stages = ["pre-commit"] },
+  { id = "shellcheck", name = "Shell script analysis", entry = "shellcheck", language = "python", additional_dependencies = ["shellcheck-py==0.11.0.1"], types = ["shell"], stages = ["pre-commit"] },
+  { id = "shfmt", name = "Shell script formatting", entry = "shfmt -d", language = "python", additional_dependencies = ["shfmt-py==4.2.0"], types = ["shell"], stages = ["pre-commit"] },
+  { id = "hadolint", name = "Container build instructions", entry = "hadolint", language = "python", additional_dependencies = ["hadolint-bin==2.15.1"], types = ["dockerfile"], stages = ["pre-commit"] },
+  { id = "renovate-schema", name = "Renovate configuration schema", entry = "check-jsonschema --builtin-schema vendor.renovate", language = "python", additional_dependencies = ["check-jsonschema==0.39.0"], files = "^\\.github/renovate\\.json$", stages = ["pre-commit"] },
 ]
+
+[[repos]]
+repo = "https://github.com/gitleaks/gitleaks"
+rev = "v8.30.1"
+hooks = [{ id = "gitleaks", args = ["--redact"], stages = ["pre-commit"] }]

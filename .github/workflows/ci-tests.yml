@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   source:
+    timeout-minutes: 45
     name: Source Tests (${{ matrix.name }})
     strategy:
       fail-fast: false
@@ -39,6 +40,7 @@ jobs:
       - run: pnpm run test:unit
 
   process:
+    timeout-minutes: 25
     name: Process Tests (${{ matrix.name }})
     strategy:
       fail-fast: false
@@ -63,6 +65,7 @@ jobs:
       - run: pnpm run test:process:source
 
   repro-journey:
+    timeout-minutes: 30
     name: Repro Golden Journey (Ubuntu)
     runs-on: ubuntu-latest
     steps:

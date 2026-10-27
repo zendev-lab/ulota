@@ -1,0 +1,3 @@
+[advisories]
+# Keep dependency advisories visible; licenses are reported separately.
+ignore = []

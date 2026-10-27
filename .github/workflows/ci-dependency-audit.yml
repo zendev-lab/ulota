@@ -29,6 +29,7 @@ permissions:
 
 jobs:
   pull-request-dependencies:
+    timeout-minutes: 15
     name: New Dependency Vulnerabilities
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -43,7 +44,7 @@ jobs:
         run: git checkout "$GITHUB_BASE_REF"
 
       - name: Run scanner on existing code
-        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         env:
           GOTOOLCHAIN: auto
         continue-on-error: true
@@ -52,12 +53,13 @@ jobs:
             --format=json
             --output=old-results.json
             --lockfile=pnpm-lock.yaml
+            --lockfile=Cargo.lock
 
       - name: Checkout current branch
         run: git checkout -f "$GITHUB_SHA"
 
       - name: Run scanner on new code
-        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         env:
           GOTOOLCHAIN: auto
         continue-on-error: true
@@ -66,9 +68,10 @@ jobs:
             --format=json
             --output=new-results.json
             --lockfile=pnpm-lock.yaml
+            --lockfile=Cargo.lock
 
       - name: Run osv-scanner-reporter
-        uses: google/osv-scanner-action/osv-reporter-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        uses: google/osv-scanner-action/osv-reporter-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         with:
           scan-args: |-
             --output=results.sarif
@@ -78,6 +81,7 @@ jobs:
             --fail-on-vuln=true
 
   complete-dependencies:
+    timeout-minutes: 20
     name: Complete Dependency Vulnerability Audit
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -92,7 +96,7 @@ jobs:
 
       # Inline of osv-scanner-reusable.yml so the check stays two levels.
       - name: Run scanner
-        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         env:
           GOTOOLCHAIN: auto
         continue-on-error: true
@@ -101,9 +105,10 @@ jobs:
             --output=results.json
             --format=json
             --lockfile=pnpm-lock.yaml
+            --lockfile=Cargo.lock
 
       - name: Run osv-scanner-reporter
-        uses: google/osv-scanner-action/osv-reporter-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        uses: google/osv-scanner-action/osv-reporter-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         with:
           scan-args: |-
             --output=results.sarif

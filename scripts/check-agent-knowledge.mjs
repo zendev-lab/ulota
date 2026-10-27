@@ -22,7 +22,16 @@ const activeSourceExtensions = new Set([
   ".yaml",
   ".yml",
 ]);
-const skippedDirectoryNames = new Set([".git", ".spark", "coverage", "dist", "node_modules"]);
+const skippedDirectoryNames = new Set([
+  ".git",
+  ".spark",
+  ".stryker-tmp",
+  "coverage",
+  "dist",
+  "node_modules",
+  "reports",
+  "target",
+]);
 const archivedDocsRoots = [
   join(repositoryRoot, "apps", "spark-docs", "src", "content", "docs", "0.2"),
   join(repositoryRoot, "apps", "spark-docs", "src", "content", "docs", "zh", "0.2"),
