@@ -44,9 +44,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
     if (base !== "0".repeat(40)) {
       const range = `${base}${event === "pull_request" ? "..." : ".."}${head}`;
-      const paths = execFileSync("git", ["diff", "--name-only", "--no-renames", "-z", range], {
-        encoding: "utf8",
-      });
+      const paths = execFileSync(
+        "/usr/bin/git",
+        ["diff", "--name-only", "--no-renames", "-z", range],
+        {
+          encoding: "utf8",
+        },
+      );
       scope = selectCiScope(paths.split("\0").filter(Boolean));
     }
   }
