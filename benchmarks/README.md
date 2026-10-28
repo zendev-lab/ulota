@@ -40,7 +40,7 @@ Run the same non-interactive suite used by CodSpeed:
 pnpm run bench:codspeed
 ```
 
-The advisory workflow in `.github/workflows/ci-benchmarks.yml` runs every CPU
+The advisory workflow in `.github/workflows/ci-tests.yml` runs every CPU
 benchmark on `main`. Pull requests, merge groups, and `main` pushes use Vitest's
 changed-file dependency graph to select affected I/O benchmarks, while a daily
 schedule and manual dispatch refresh the complete suite. CodSpeed Partial Runs

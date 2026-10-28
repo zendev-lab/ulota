@@ -35,7 +35,7 @@ pnpm run test:mutation
 pnpm --filter @zendev-lab/dsh-channel-transports run test:mutation
 ```
 
-CI: `.github/workflows/ce-mutation.yml` (Monday 03:17 UTC + `workflow_dispatch`, `continue-on-error`, uploads HTML/JSON reports).
+CI: `.github/workflows/ci-tests.yml` (Monday 03:17 UTC + `workflow_dispatch`, `continue-on-error`, uploads HTML/JSON reports).
 
 ## Interpret the report
 
