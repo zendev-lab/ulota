@@ -2,12 +2,16 @@ name: Policy - PR
 
 on:
   pull_request:
+    branches:
+      - main
     types:
       - opened
       - edited
       - reopened
       - synchronize
   merge_group:
+    branches:
+      - main
     types:
       - checks_requested
 
