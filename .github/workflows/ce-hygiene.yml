@@ -1,0 +1,76 @@
+name: CE - Hygiene
+on:
+  schedule:
+    - cron: 17 4 * * 2
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  hygiene-reports:
+    name: Hygiene Reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate hygiene reports
+        run: pnpm run report:hygiene
+      - name: Inventory JavaScript dependency licenses
+        run: pnpm licenses list --json > reports/javascript-licenses.json
+
+      - name: Upload hygiene CE reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hygiene-ce-reports
+          path: |
+            reports/knip-report.json
+            reports/knip-console.txt
+            reports/jscpd/
+            reports/complexity.txt
+            reports/javascript-licenses.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  links:
+    name: External Documentation Links
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.5"
+      - name: Check active documentation links
+        run: |
+          python - <<'PY'
+          import subprocess
+          from pathlib import Path
+          files = subprocess.check_output(["git", "ls-files", "-z", "*.md"]).decode().split("\0")
+          # Archived documentation retains its historical references.
+          files = [path for path in files if path and "/docs/0.2/" not in path and "/docs/zh/0.2/" not in path]
+          command = ["uvx", "--from", "lychee-bin==0.24.2", "lychee", "--scheme", "https", "--scheme", "http", "--no-progress", "--root-dir", str(Path("apps/spark-docs/src/content/docs").resolve()), "--timeout", "20", "--max-retries", "1", "--format", "json", "--output", "links.json", "--"]
+          raise SystemExit(subprocess.call(command + files))
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: external-documentation-links
+          path: links.json
+          if-no-files-found: error

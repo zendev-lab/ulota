@@ -42,10 +42,10 @@ pnpm run bench:codspeed
 
 The advisory workflow in `.github/workflows/ci-tests.yml` runs every CPU
 benchmark on `main`. Pull requests, merge groups, and `main` pushes use Vitest's
-changed-file dependency graph to select affected I/O benchmarks, while a daily
-schedule and manual dispatch refresh the complete suite. CodSpeed Partial Runs
-fill skipped results from the latest baseline. Documentation-only pull requests
-skip the workflow.
+changed-file dependency graph to select affected I/O benchmarks. The independent
+`.github/workflows/ce-benchmarks.yml` workflow refreshes the complete suite daily
+and on manual dispatch. CodSpeed Partial Runs fill skipped results from the latest
+baseline. Documentation-only pull requests skip the benchmark jobs.
 
 CPU benchmarks run in CodSpeed simulation mode with a five-minute limit. Files
 named `*.walltime.bench.ts` are selected first on a regular Ubuntu runner. The
