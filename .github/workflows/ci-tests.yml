@@ -145,8 +145,8 @@ jobs:
         run: timeout 600 pnpm --filter @zendev-lab/spark-hub exec playwright install chromium
       - run: pnpm run test:browser
     if: github.event_name != 'push'
-  rust:
-    name: Rust Quality and Coverage
+  rust-coverage:
+    name: Rust Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -160,18 +160,8 @@ jobs:
         with:
           toolchain: "1.98.1"
           components: llvm-tools-preview
-      - name: Install pinned Rust checks
-        run: |
-          cargo install --locked cargo-machete --version 0.9.2
-          cargo install --locked cargo-deny --version 0.20.2
-          cargo install --locked cargo-llvm-cov --version 0.6.21
-      - run: cargo machete
-      - run: cargo deny check advisories
-      - run: cargo deny --manifest-path fuzz/Cargo.toml check advisories
-      - name: Inventory dependency licenses
-        run: |
-          mkdir -p reports
-          cargo deny list --format json > reports/rust-licenses.json
+      - name: Install coverage runner
+        run: cargo install --locked cargo-llvm-cov --version 0.6.21
       - name: Test with coverage and preserve documentation tests
         run: |
           mkdir -p coverage
@@ -188,9 +178,7 @@ jobs:
         if: ${{ !cancelled() }}
         with:
           name: rust-coverage
-          path: |
-            coverage/rust.lcov
-            reports/rust-licenses.json
+          path: coverage/rust.lcov
           if-no-files-found: error
 
   typescript-coverage:

@@ -96,6 +96,35 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check:docs
     if: github.event_name != 'push'
+  rust-dependencies:
+    name: Rust Dependency Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.98.1"
+      - name: Install dependency checks
+        run: |
+          cargo install --locked cargo-machete --version 0.9.2
+          cargo install --locked cargo-deny --version 0.20.2
+      - run: cargo machete
+      - run: cargo deny check advisories
+      - run: cargo deny --manifest-path fuzz/Cargo.toml check advisories
+      - name: Inventory dependency licenses
+        run: |
+          mkdir -p reports
+          cargo deny list --format json > reports/rust-licenses.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: rust-licenses
+          path: reports/rust-licenses.json
+          if-no-files-found: error
+
   codeql:
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-latest
