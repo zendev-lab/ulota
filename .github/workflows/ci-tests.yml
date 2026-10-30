@@ -10,9 +10,6 @@ on:
     types:
       - checks_requested
 
-  push:
-    branches:
-      - main
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
@@ -40,8 +37,8 @@ jobs:
         run: node --experimental-strip-types scripts/select-ci-scope.mts
         env:
           CI_EVENT: ${{ github.event_name }}
-          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
-          CI_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
+          CI_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
   source:
     timeout-minutes: 45
     name: Source Tests (${{ matrix.name }})
@@ -67,7 +64,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run test:unit
 
-    if: github.event_name != 'push'
   process:
     timeout-minutes: 25
     name: Process Tests (${{ matrix.name }})
@@ -93,7 +89,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run test:process:source
 
-    if: github.event_name != 'push'
   repro-journey:
     timeout-minutes: 30
     name: Repro Golden Journey (Ubuntu)
@@ -123,7 +118,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run test:journey:repro
 
-    if: github.event_name != 'push'
   browser:
     name: Browser Tests
     runs-on: ubuntu-latest
@@ -148,7 +142,6 @@ jobs:
       - name: Install Playwright chromium
         run: timeout 600 pnpm --filter @zendev-lab/spark-hub exec playwright install chromium
       - run: pnpm run test:browser
-    if: github.event_name != 'push'
   rust-coverage:
     name: Rust Coverage
     runs-on: ubuntu-latest
@@ -241,10 +234,7 @@ jobs:
         id: select
         run: node --experimental-strip-types scripts/select-benchmark-files.mts
         env:
-          BENCHMARK_ALL: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-          BENCHMARK_BASE_SHA:
-            ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before
-            || '' }}
+          BENCHMARK_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
           BENCHMARK_LANE: walltime
 
     needs:
@@ -269,9 +259,6 @@ jobs:
         id: select
         run: node --experimental-strip-types scripts/select-benchmark-files.mts
         env:
-          BENCHMARK_ALL:
-            ${{ github.event_name == 'push' || github.event_name == 'schedule' || github.event_name ==
-            'workflow_dispatch' }}
           BENCHMARK_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
           BENCHMARK_LANE: simulation
       - name: Run CodSpeed benchmarks
@@ -361,4 +348,4 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
     needs: scope
-    if: github.event_name == 'pull_request' && github.base_ref == 'main' && needs.scope.outputs.mutation == 'true'
+    if: github.event_name == 'pull_request' && needs.scope.outputs.mutation == 'true'

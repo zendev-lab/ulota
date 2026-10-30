@@ -10,37 +10,12 @@ on:
     types:
       - checks_requested
 
-  push:
-    branches:
-      - main
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 permissions:
   contents: read
 jobs:
-  scope:
-    name: Select CI scope
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      dependencies: ${{ steps.scope.outputs.dependencies }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-      - name: Select jobs for changed paths
-        id: scope
-        run: node --experimental-strip-types scripts/select-ci-scope.mts
-        env:
-          CI_EVENT: ${{ github.event_name }}
-          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
-          CI_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
   pre-commit:
     timeout-minutes: 20
     name: Pre-commit Checks
@@ -61,7 +36,6 @@ jobs:
 
       - run: pnpm exec prek run --all-files --skip spark-source-check
 
-    if: github.event_name != 'push'
   project:
     timeout-minutes: 30
     name: Project Checks
@@ -82,7 +56,6 @@ jobs:
         run: pnpm run check:architecture-transition -- --base-ref origin/main
       - run: pnpm run check:static
 
-    if: github.event_name != 'push'
   documentation:
     timeout-minutes: 15
     name: Documentation Checks
@@ -99,7 +72,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check:docs
-    if: github.event_name != 'push'
   rust-dependencies:
     name: Rust Dependency Checks
     runs-on: ubuntu-latest
@@ -155,30 +127,6 @@ jobs:
               - quality/semgrep/**
       - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
 
-  workflow-audit:
-    name: Online Workflow Audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: "0.13.5"
-      - name: Audit action provenance and references
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run:
-          uvx --with shellcheck-py==0.11.0.1 --with ruff==0.17.3 jactionlint==2.3.0 --online=strict
-          --online-report=workflow-audit.json --shellcheck=shellcheck --ruff=ruff
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: ${{ !cancelled() }}
-        with:
-          name: workflow-audit
-          path: workflow-audit.json
-          if-no-files-found: error
-    if: github.ref == 'refs/heads/main'
   pull-request-dependencies:
     timeout-minutes: 15
     name: New Dependency Vulnerabilities
@@ -230,7 +178,6 @@ jobs:
             --gh-annotations=true
             --fail-on-vuln=true
 
-    needs: scope
     permissions:
       actions: read
       contents: read
@@ -299,6 +246,4 @@ jobs:
         run: |
           echo "::error::Artifact upload failed. This is most likely caused by an error during scanning earlier in the workflow."
           exit 1
-    needs: scope
-    if: >-
-      github.event_name != 'pull_request' && (github.event_name != 'push' || needs.scope.outputs.dependencies == 'true')
+    if: github.event_name == 'merge_group'
