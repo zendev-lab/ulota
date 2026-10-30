@@ -29,9 +29,9 @@ hooks = [
   {
     id = "jactionlint",
     name = "GitHub Actions correctness and security",
-    entry = "jactionlint --no-online --shellcheck=shellcheck --pyflakes=pyflakes",
+    entry = "jactionlint --no-online --shellcheck=shellcheck --ruff=ruff",
     language = "python",
-    additional_dependencies = ["jactionlint==2.3.0", "shellcheck-py==0.11.0.1", "pyflakes==3.4.0"],
+    additional_dependencies = ["jactionlint==2.3.0", "shellcheck-py==0.11.0.1", "ruff==0.17.3"],
     pass_filenames = false,
     files = '^(\.github/|(.*/)?action\.ya?ml$|prek\.toml$)',
     stages = ["pre-commit"],
