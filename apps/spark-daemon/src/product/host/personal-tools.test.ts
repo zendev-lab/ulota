@@ -81,6 +81,28 @@ it("activates only granted tools and sends the host session and call id rather t
       { cwd: root, sessionId: "trusted-session" },
     );
     expect(requests.at(-1)?.body.capability).toBe("todos");
+    vi.stubGlobal("fetch", async (url: URL, init: RequestInit) => {
+      requests.push({ url: String(url), body: JSON.parse(String(init.body)) });
+      return Response.json(
+        String(url).endsWith("/access")
+          ? { capabilities: ["subscriptions"] }
+          : { result: { items: [] } },
+      );
+    });
+    await host.emit("before_agent_start", {});
+    expect(host.getActiveTools()).toContain("subscription");
+    expect(host.getActiveTools()).not.toContain("personal_todo");
+    const subscription = host
+      .listTools()
+      .find((entry) => entry.config.name === "subscription")!.config;
+    await subscription.execute(
+      "subscription-call",
+      { action: "list", input: {} },
+      new AbortController().signal,
+      () => {},
+      { cwd: root, sessionId: "trusted-session" },
+    );
+    expect(requests.at(-1)?.body.capability).toBe("subscriptions");
     const attempts = requests.length;
     await expect(
       tool.execute(
@@ -96,6 +118,7 @@ it("activates only granted tools and sends the host session and call id rather t
     await host.emit("before_agent_start", {});
     expect(host.getActiveTools()).not.toContain("inventory");
     expect(host.getActiveTools()).not.toContain("personal_todo");
+    expect(host.getActiveTools()).not.toContain("subscription");
   } finally {
     vi.unstubAllGlobals();
     rmSync(root, { recursive: true, force: true });

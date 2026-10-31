@@ -43,6 +43,7 @@
     "@zendev-lab/spark-ui": "workspace:*",
     "@zendev-lab/ulota-inventory": "workspace:*",
     "@zendev-lab/ulota-personal-todos": "workspace:*",
+    "@zendev-lab/ulota-subscriptions": "workspace:*",
     "smol-toml": "^1.6.1",
     "svelte": "^5.38.8",
     "typebox": "catalog:",

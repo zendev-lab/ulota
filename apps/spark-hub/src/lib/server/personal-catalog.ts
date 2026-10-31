@@ -1,14 +1,23 @@
+import { executeSubscription } from "@zendev-lab/ulota-subscriptions";
 import { executePersonalTodo } from "@zendev-lab/ulota-personal-todos";
-import { personalTodoSchema } from "@zendev-lab/spark-protocol";
 import { executeInventory } from "@zendev-lab/ulota-inventory";
-import { inventoryItemSchema, type PersonalCapability } from "@zendev-lab/spark-protocol";
+import {
+  inventoryItemSchema,
+  personalTodoSchema,
+  personalSubscriptionSchema,
+  type PersonalCapability,
+} from "@zendev-lab/spark-protocol";
 import {
   createPersonalRecordRepository,
   withPersonalOperation,
 } from "@zendev-lab/spark-hub-storage-sqlite";
 import { requirePersonalCapability } from "@zendev-lab/spark-hub-coordination/personal";
 import { getDatabase } from "./db.ts";
-export const installedPersonalCapabilities: readonly PersonalCapability[] = ["inventory", "todos"];
+export const installedPersonalCapabilities: readonly PersonalCapability[] = [
+  "inventory",
+  "todos",
+  "subscriptions",
+];
 export function executeHostedPersonalCapability(
   userId: string,
   capability: PersonalCapability,
@@ -25,6 +34,11 @@ export function executeHostedPersonalCapability(
         });
       case "todos":
         return executePersonalTodo(todoRepositoryForUser(userId), {
+          action: request.action,
+          input: request.input,
+        });
+      case "subscriptions":
+        return executeSubscription(subscriptionRepositoryForUser(userId), {
           action: request.action,
           input: request.input,
         });
@@ -59,5 +73,12 @@ export function todoRepositoryForUser(userId: string) {
   requirePersonalCapability(getDatabase(), userId, "todos");
   return createPersonalRecordRepository(getDatabase(), "todos", userId, (value) =>
     personalTodoSchema.parse(value),
+  );
+}
+
+export function subscriptionRepositoryForUser(userId: string) {
+  requirePersonalCapability(getDatabase(), userId, "subscriptions");
+  return createPersonalRecordRepository(getDatabase(), "subscriptions", userId, (value) =>
+    personalSubscriptionSchema.parse(value),
   );
 }

@@ -19,3 +19,5 @@ export * from "./personal.ts";
 export * from "./personal-inventory.ts";
 
 export * from "./personal-todos.ts";
+
+export * from "./personal-subscriptions.ts";

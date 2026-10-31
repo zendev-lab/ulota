@@ -2,12 +2,20 @@ import type { SparkHostAPI } from "@zendev-lab/spark-invocation";
 import {
   inventoryToolParametersSchema,
   personalTodoToolParametersSchema,
+  subscriptionToolParametersSchema,
 } from "@zendev-lab/spark-protocol";
 import { registerPersonalTools } from "./personal-tools.ts";
 export function registerPersonalCapabilities(api: SparkHostAPI, sparkHome?: string) {
   registerPersonalTools(
     api,
     [
+      {
+        name: "subscription",
+        capability: "subscriptions",
+        description:
+          "Manage personal subscriptions and calendar renewal. Costs are estimates grouped by currency, never combined across currencies. Renew advances the stored due date by one cycle; Lifetime cannot renew. No reminder scheduler. Mutations require current revision.",
+        parameters: subscriptionToolParametersSchema.toJSONSchema(),
+      },
       {
         name: "personal_todo",
         capability: "todos",

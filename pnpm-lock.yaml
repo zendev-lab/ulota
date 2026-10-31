@@ -802,6 +802,9 @@ importers:
       '@zendev-lab/ulota-personal-todos':
         specifier: workspace:*
         version: link:../../packages/ulota-personal-todos
+      '@zendev-lab/ulota-subscriptions':
+        specifier: workspace:*
+        version: link:../../packages/ulota-subscriptions
       smol-toml:
         specifier: ^1.6.1
         version: 1.8.0
@@ -1856,6 +1859,19 @@ importers:
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@4.1.11)(@vitest/browser-preview@4.1.11)(@voidzero-dev/vite-plus-core@1.1.0(@types/node@24.13.3)(@volar/typescript@2.4.28(typescript@6.0.3))(esbuild@0.28.2)(jiti@2.7.0)(publint@0.3.24)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0))(jsdom@27.4.0(supports-color@10.2.2))
 
   packages/ulota-personal-todos:
+    dependencies:
+      '@zendev-lab/spark-protocol':
+        specifier: workspace:*
+        version: link:../spark-protocol
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@4.1.11)(@vitest/browser-preview@4.1.11)(@voidzero-dev/vite-plus-core@1.1.0(@types/node@24.13.3)(@volar/typescript@2.4.28(typescript@6.0.3))(esbuild@0.28.2)(jiti@2.7.0)(publint@0.3.24)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0))(jsdom@27.4.0(supports-color@10.2.2))
+
+  packages/ulota-subscriptions:
     dependencies:
       '@zendev-lab/spark-protocol':
         specifier: workspace:*

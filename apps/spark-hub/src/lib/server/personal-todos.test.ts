@@ -1,24 +1,17 @@
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { migrate, openMemoryDatabase } from "@zendev-lab/spark-hub-storage-sqlite";
+import { createPersonalTestDatabase } from "./test-support/personal-fixture.ts";
 import { setPersonalCapability } from "@zendev-lab/spark-hub-coordination/personal";
 import { personalTodoSchema } from "@zendev-lab/spark-protocol";
 const state = vi.hoisted(() => ({ db: undefined as unknown }));
 vi.mock("./db.ts", () => ({ getDatabase: () => state.db }));
 import { executeHostedPersonalCapability, todoRepositoryForUser } from "./personal-catalog.ts";
 import { personalTodoSnapshot } from "@zendev-lab/ulota-personal-todos";
-let db: ReturnType<typeof openMemoryDatabase>;
+let db: ReturnType<typeof createPersonalTestDatabase>;
 beforeEach(() => {
-  db = openMemoryDatabase();
-  migrate(db);
+  db = createPersonalTestDatabase(["todos"]);
   state.db = db;
-  const now = new Date().toISOString();
-  for (const id of ["alice", "bob"]) {
-    db.prepare(
-      "INSERT INTO users (id,display_name,role,status,created_at,updated_at) VALUES (?,?,'owner','active',?,?)",
-    ).run(id, id, now, now);
-    setPersonalCapability(db, id, "todos", true);
-  }
 });
+
 afterEach(() => db.close());
 function create(title: string, input: Record<string, unknown> = {}) {
   return personalTodoSchema.parse(
