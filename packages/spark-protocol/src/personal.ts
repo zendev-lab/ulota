@@ -38,6 +38,7 @@ export const personalSessionGrantSchema = z
   .object({
     bindingId: z.string().min(1),
     sessionId: z.string().min(1),
+    operationId: z.string().min(1).max(256).optional(),
     capability: personalCapabilitySchema,
     canWrite: z.boolean(),
   })
@@ -45,6 +46,7 @@ export const personalSessionGrantSchema = z
 export const personalExecuteRequestSchema = z
   .object({
     sessionId: z.string().min(1),
+    operationId: z.string().min(1).max(256).optional(),
     capability: personalCapabilitySchema,
     action: z.string().min(1),
     input: z.record(z.string(), z.unknown()).default({}),
@@ -67,3 +69,11 @@ export const personalServerUrlSchema = z.url().refine((value) => {
 export const personalStoredCredentialSchema = personalBoundCredentialSchema.extend({
   serverUrl: personalServerUrlSchema,
 });
+
+export const personalWebOperationSchema = z
+  .object({
+    action: z.string().min(1),
+    input: z.record(z.string(), z.unknown()).default({}),
+    operationId: z.string().min(1).max(256).optional(),
+  })
+  .strict();

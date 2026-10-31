@@ -97,6 +97,7 @@ export async function requestPersonalHub(
   input: Record<string, unknown> = {},
   signal?: AbortSignal,
   fetchFn = fetch,
+  operationId?: string,
 ) {
   const binding = readPersonalCredential(paths);
   if (!binding)
@@ -112,7 +113,11 @@ export async function requestPersonalHub(
       redirect: "error",
       signal: signal ?? AbortSignal.timeout(15_000),
       headers: { "content-type": "application/json", authorization: `Bearer ${binding.token}` },
-      body: JSON.stringify(capability ? { sessionId, capability, action, input } : { sessionId }),
+      body: JSON.stringify(
+        capability
+          ? { sessionId, capability, action, input, ...(operationId ? { operationId } : {}) }
+          : { sessionId },
+      ),
     });
   } catch {
     throw new SparkDaemonControlError(

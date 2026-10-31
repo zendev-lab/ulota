@@ -41,6 +41,7 @@
     "@zendev-lab/spark-protocol": "workspace:*",
     "@zendev-lab/spark-tasks": "workspace:*",
     "@zendev-lab/spark-ui": "workspace:*",
+    "@zendev-lab/ulota-inventory": "workspace:*",
     "smol-toml": "^1.6.1",
     "svelte": "^5.38.8",
     "typebox": "catalog:",

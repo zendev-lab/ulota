@@ -42,6 +42,8 @@ export function registerPersonalTools(
           String(params.action),
           (params.input ?? {}) as Record<string, unknown>,
           signal,
+          undefined,
+          JSON.stringify([sessionId, definition.capability, _id]),
         );
         return { content: [{ type: "text", text: JSON.stringify(result) }], details: { result } };
       },
