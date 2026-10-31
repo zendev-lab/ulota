@@ -39,6 +39,7 @@ for interpreting this file.
   second store, scheduler, state machine, or policy implementation.
 - The daemon owns persistent sessions, invocations, channels, local execution,
   autonomous timing, retries, and recovery.
+- Hub also hosts user-owned personal capability data; this does not grant it local execution ownership.
 - Hub owns cross-workspace registry, delegation, delivery, idempotency, audit,
   and bounded receipts. It does not own target execution, repositories, local
   artifacts, or internal evidence.

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -94,4 +94,25 @@ describe("Spark daemon config", () => {
       rmSync(malformedRoot, { recursive: true, force: true });
     }
   });
+});
+
+it("migrates a legacy installation to one durable local owner without a Hub", () => {
+  const root = mkdtempSync(join(tmpdir(), "ulota-owner-"));
+  const paths = resolveSparkPaths({
+    app: "daemon",
+    sparkHome: root,
+    overrides: { configFile: join(root, "daemon.toml") },
+  });
+  try {
+    writeFileSync(paths.configFile, 'installationId = "legacy-device"\ndisplayName = "Legacy"\n');
+    const first = readSparkDaemonConfig(paths);
+    expect(first.localOwnerId).toBe("owner-legacy-device");
+    expect(readSparkDaemonConfig(paths).localOwnerId).toBe(first.localOwnerId);
+    expect(readFileSync(paths.configFile, "utf8")).toContain(
+      'localOwnerId = "owner-legacy-device"',
+    );
+    expect(first.serverUrl).toBeUndefined();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

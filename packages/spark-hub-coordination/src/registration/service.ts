@@ -1628,7 +1628,7 @@ function revokeActiveRuntimeAccessTokens(
   ).run(revokedAt, runtimeId);
 }
 
-function authenticateRuntimeAccessToken(
+export function authenticateRuntimeAccessToken(
   db: DatabaseSync,
   runtimeId: string,
   runtimeToken: string | null,

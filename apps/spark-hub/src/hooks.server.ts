@@ -49,7 +49,8 @@ export const handle: Handle = async ({ event, resolve }) => {
     const clientAddress = getClientAddress(event);
     const decision = remoteAccessDecision({ url: event.url, clientAddress });
     event.locals.hasControlPlaneAccess = !decision.required || hubSession?.role === "owner";
-    if (decision.required && !hubSession) {
+    const personalDeviceRequest = event.url.pathname === "/api/v1/personal/bindings/redeem";
+    if (decision.required && !hubSession && !personalDeviceRequest) {
       return remoteAccessRequiredResponse(event);
     }
     if (

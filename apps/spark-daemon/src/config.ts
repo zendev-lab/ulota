@@ -16,6 +16,7 @@ export const DEFAULT_SPARK_DAEMON_APPROVAL_MODE: SparkDaemonApprovalMode = "allo
 export interface SparkDaemonConfig {
   installationId: string;
   displayName: string;
+  localOwnerId?: string;
   /** Unified approval behavior for daemon-owned agent turns. */
   approvalMode?: SparkDaemonApprovalMode;
   /** Maximum number of concurrently running root invocations across distinct sessions. */
@@ -84,6 +85,7 @@ export function defaultSparkDaemonConfig(): SparkDaemonConfig {
   return {
     installationId: `spark-daemon-${randomUUID()}`,
     displayName: hostname() || "Spark daemon",
+    localOwnerId: `owner-${randomUUID()}`,
   };
 }
 
@@ -92,10 +94,13 @@ export function readSparkDaemonConfig(paths: SparkPaths): SparkDaemonConfig {
     return defaultSparkDaemonConfig();
   }
 
-  return {
-    ...defaultSparkDaemonConfig(),
-    ...parseTomlSubset(readFileSync(paths.configFile, "utf8")),
-  };
+  const parsed = parseTomlSubset(readFileSync(paths.configFile, "utf8"));
+  const config = { ...defaultSparkDaemonConfig(), ...parsed };
+  if (!parsed.localOwnerId) {
+    config.localOwnerId = `owner-${config.installationId}`;
+    writeSparkDaemonConfig(paths, config);
+  }
+  return config;
 }
 
 export function writeSparkDaemonConfig(paths: SparkPaths, config: SparkDaemonConfig): void {
@@ -137,6 +142,7 @@ function parseTomlSubset(contents: string): Partial<SparkDaemonConfig> {
   }
   const config: Partial<SparkDaemonConfig> = {};
   if (values.installationId) config.installationId = values.installationId;
+  if (values.localOwnerId) config.localOwnerId = values.localOwnerId;
   if (values.displayName) config.displayName = values.displayName;
   if (approvalMode) config.approvalMode = approvalMode;
   if (invocationConcurrency !== undefined) config.invocationConcurrency = invocationConcurrency;
@@ -154,6 +160,7 @@ function serializeTomlSubset(config: SparkDaemonConfig): string {
   return [
     `installationId = "${escapeTomlString(config.installationId)}"`,
     `displayName = "${escapeTomlString(config.displayName)}"`,
+    `localOwnerId = "${escapeTomlString(config.localOwnerId ?? `owner-${config.installationId}`)}"`,
     config.approvalMode !== undefined
       ? `approvalMode = "${resolveSparkDaemonApprovalMode(config)}"`
       : undefined,

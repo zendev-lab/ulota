@@ -555,6 +555,7 @@ export interface EventIngestSequenceTable {
 }
 
 export interface SparkDatabase {
+  personal_bindings: PersonalBindingsTable;
   schema_migrations: SchemaMigrationsTable;
   app_settings: AppSettingsTable;
   users: UsersTable;
@@ -596,4 +597,17 @@ export interface SparkDatabase {
   artifact_cache_blobs: ArtifactCacheBlobsTable;
   events: EventsTable;
   event_ingest_sequence: EventIngestSequenceTable;
+}
+
+export interface PersonalBindingsTable {
+  id: string;
+  hub_instance_id: string;
+  user_id: string;
+  runtime_id: string;
+  local_owner_id: string | null;
+  pairing_hash: string | null;
+  pairing_expires_at: string;
+  credential_hash: string | null;
+  created_at: string;
+  revoked_at: string | null;
 }

@@ -309,6 +309,12 @@ export function hubSessionAllowsRequest(
   const segments = pathname.split("/").filter(Boolean).map(decodePathSegment);
   if (segments.length === 0) return true;
   if (segments[0] === "login" || segments[0] === "logout") return true;
+  if (
+    pathname === "/personal" ||
+    pathname.startsWith("/personal/") ||
+    pathname.startsWith("/api/v1/personal/")
+  )
+    return true;
   if (session.role === "owner") return true;
 
   if (segments[0] === "api" && segments[1] === "v1") {

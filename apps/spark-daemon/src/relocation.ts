@@ -261,6 +261,7 @@ async function applyLocalRelocation(
   const identityConfig: SparkDaemonConfig = {
     installationId: current.installationId,
     displayName: current.displayName,
+    localOwnerId: current.localOwnerId,
     ...(current.invocationConcurrency !== undefined
       ? { invocationConcurrency: current.invocationConcurrency }
       : {}),

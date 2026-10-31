@@ -522,6 +522,7 @@ describe("Spark daemon workspace registration", () => {
       });
       expect(readSparkDaemonConfig(paths)).toEqual({
         installationId: "install-test",
+        localOwnerId: "owner-install-test",
         displayName: "Test daemon",
       });
       expect(getSparkDaemonServerProfile(paths, "http://127.0.0.1:5173")).toMatchObject({
@@ -583,6 +584,7 @@ describe("Spark daemon workspace registration", () => {
       ]);
       expect(readSparkDaemonConfig(paths)).toEqual({
         installationId: "install-test",
+        localOwnerId: "owner-install-test",
         displayName: "Test daemon",
         invocationConcurrency: 8,
       });
