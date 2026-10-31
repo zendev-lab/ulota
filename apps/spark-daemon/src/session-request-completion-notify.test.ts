@@ -16,7 +16,7 @@ import type { DaemonSessionRegistry } from "./session-registry.ts";
 import { SessionRequestCompletionDeliveryStore } from "./store/session-request-completion-deliveries.ts";
 import { SparkInvocationStore } from "./store/invocations.ts";
 import { migrateSparkDaemonDatabase } from "./store/schema.ts";
-import { workspaceSessionRecord } from "../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../packages/spark-session/test/support/session-fixtures.ts";
 
 describe("session request completion notify", () => {
   it("submits one durable sender continuation for wake=true request completions", async () => {

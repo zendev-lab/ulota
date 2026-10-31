@@ -101,7 +101,7 @@ describe("HubShell browser contract", () => {
     });
 
     const daemonMenu = screen.getByRole("button", { name: "Authorized daemons" });
-    await expect.element(daemonMenu).toHaveTextContent("Build daemon");
+    await expect.element(daemonMenu).toMatchTextContent("Build daemon");
     await daemonMenu.click();
     expect(document.querySelector(".account-popover .daemon-item strong")?.textContent).toBe(
       "Build daemon",

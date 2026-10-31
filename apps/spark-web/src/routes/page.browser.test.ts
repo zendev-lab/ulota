@@ -107,7 +107,7 @@ describe("Spark Web conversation-first routes", () => {
 
     await expect
       .element(screen.getByRole("alert"))
-      .toHaveTextContent(
+      .toMatchTextContent(
         "The conversation was created, but the first message was not accepted: submission rejected",
       );
     await expect

@@ -100,7 +100,8 @@ async function discoverBenchmarks({
   all: boolean;
   baseSha: string | undefined;
 }): Promise<string[]> {
-  const vitest = await createVitest("benchmark", {
+  const vitest = await createVitest({
+    benchmark: { enabled: true },
     changed: all ? false : baseSha,
     config: benchmarkConfig,
     root: repositoryRoot,

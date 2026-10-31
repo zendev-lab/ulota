@@ -130,7 +130,7 @@ describe("Workspace page owner state", () => {
     expect(screen.container.textContent).not.toContain("private workspace A role failure");
 
     currentResponse.resolve({ created: true, role: { ref: "role:project/role-b" } });
-    await expect.element(screen.getByRole("status")).toHaveTextContent("role:project/role-b");
+    await expect.element(screen.getByRole("status")).toMatchTextContent("role:project/role-b");
     await expect.element(screen.getByRole("button", { name: "Create Role" })).toBeEnabled();
     await screen.unmount();
   });
@@ -165,7 +165,7 @@ describe("Workspace page owner state", () => {
     });
     await expect
       .element(screen.getByRole("status"))
-      .toHaveTextContent("executor: provider/model-b · project");
+      .toMatchTextContent("executor: provider/model-b · project");
     await expect.element(screen.getByRole("button", { name: "Inspect" })).toBeEnabled();
     await screen.unmount();
   });
@@ -217,7 +217,7 @@ describe("Workspace page owner state", () => {
     const screen = await render(WorkspacePage, { data: workspaceData("a") });
 
     await screen.getByRole("button", { name: "New session" }).click();
-    await screen.getByRole("button", { name: "Working directory" }).click();
+    await screen.getByRole("combobox", { name: "Working directory" }).click();
     await screen.getByRole("option", { name: /Artifact a/ }).click();
     await screen.getByRole("button", { name: "Browse subdirectory" }).click();
     await screen.getByRole("button", { name: "Use this directory" }).click();
@@ -236,7 +236,7 @@ describe("Workspace page owner state", () => {
 
     await expect
       .element(screen.getByRole("alert"))
-      .toHaveTextContent("directory owner unavailable");
+      .toMatchTextContent("directory owner unavailable");
     await screen.unmount();
   });
 });

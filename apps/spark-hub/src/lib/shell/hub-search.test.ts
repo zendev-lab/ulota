@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getHubDictionary } from "@zendev-lab/spark-i18n/hub";
 import { parseSparkSessionProjection } from "@zendev-lab/spark-protocol";
 import { buildHubSearchResults } from "./hub-search";
-import { workspaceSessionRecord } from "../../../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 const baseInput = {
   sessions: [

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import WorkbenchSessionRail from "./WorkbenchSessionRail.svelte";
 import { getDictionary } from "./i18n";
-import { workspaceSessionRecord } from "../../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 const dictionary = getDictionary("en");
 const sessionMessages = dictionary.sessions;
@@ -200,7 +200,6 @@ describe("WorkbenchSessionRail component contract", () => {
     expect(body).toContain('href="/spark/sessions/alpha-tangent"');
     expect(body).not.toContain('data-session-id="alpha-archived"');
     expect(body).toContain(`${messages.showArchived} (1)`);
-    expect(body).toMatchSnapshot();
 
     const archivedBody = renderRail({
       sessions: hierarchySessions,

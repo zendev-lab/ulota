@@ -10,7 +10,7 @@ import { createDaemonSessionRegistry } from "../session-registry.ts";
 import { SparkInvocationStore } from "../store/invocations.ts";
 import { openSparkDaemonDatabase } from "../store/schema.ts";
 import { handleLocalRpcLine } from "./dispatch.ts";
-import { createDaemonWorkspaceSession } from "../../../../test/support/session-fixtures.ts";
+import { createDaemonWorkspaceSession } from "../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 describe("session lookup and session ask answers", () => {
   const roots: string[] = [];
