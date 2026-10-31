@@ -606,6 +606,13 @@ try {
     });
   }
 
+  console.log("Probing installed Hub personal capability journey...");
+  await run("pnpm", ["exec", "tsx", "apps/spark-hub/e2e/personal-tools.ts"], {
+    cwd: root,
+    env: { ...process.env, ULOTA_PERSONAL_HUB_ENTRYPOINT: hub.argvPrefix[0] },
+    timeout: 120_000,
+  });
+
   const backgroundPort = await availablePort();
   const backgroundOrigin = `http://127.0.0.1:${backgroundPort}`;
   const backgroundEnvironment = {

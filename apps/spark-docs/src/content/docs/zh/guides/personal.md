@@ -25,3 +25,17 @@ title: 个人插件
 ## 订阅
 
 启用后使用 `/personal/subscriptions` 或 `subscription` 工具。续订按下次付款日期推进一个日历周期，月末会约束到目标月最后一天，终身订阅不可续订。取消订阅同时关闭自动续订。费用按币种分别估算，沿用每月 30 天、每年 365 天的成本口径，不自动换汇。累计费用不是付款账本。提醒天数仅作为数据保留，没有后台提醒任务。
+
+## 从 BoneHub 导入
+
+在仓库运行以下命令，选择明确的旧数据库路径（可省略任一来源）：
+
+```sh
+pnpm exec tsx scripts/export-bonehub.mts --inventory /path/item_manager.db --todos /path/todo_manager.db --subscriptions /path/subscription_manager.db --output /private/bonehub-export.json
+```
+
+导出使用只读 SQLite 事务，包含已提交 WAL；每个数据库各自保持一致快照，不存在跨三个文件的共同事务。不会执行迁移或修改源业务数据。请保留原库，私有导出包也包含个人数据。旧物品 `note`/`notes`、JSON 标签、订阅整型布尔值和待办依赖表会显式规范化；不符合当前模型的日期、数字或关系会拒绝导入。遗留但已不在物品模型中的 `depreciation_ratio` 不迁入，包内会警告。
+
+登录 Hub，启用包中涉及的工具，打开 `/personal/import` 上传、预览，再确认导入。最大 10 MiB；较大上传须由管理者设置 `BODY_SIZE_LIMIT=16M` 后启动 Hub。所有新记录、旧 ID 映射和操作回执在同一事务写入。重复导入跳过已有记录；源变化、已删除目标单独报告，不覆盖 Hub 编辑。旧 App、iCloud 和原数据库继续保留。
+
+旧界面以 UTC ISO 时间戳存储的待办截止日期，会规范化为其存储的 UTC 日历日期。

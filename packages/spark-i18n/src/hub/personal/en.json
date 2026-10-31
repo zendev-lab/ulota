@@ -169,6 +169,27 @@
     "Yearly": "Yearly",
     "Lifetime": "Lifetime"
   },
+  "importFields": {
+    "title": "Import BoneHub data",
+    "description": "Preview a read-only export, then explicitly import into your current Hub account.",
+    "sources": "Select your existing item_manager.db, todo_manager.db and/or subscription_manager.db when running the export command in this repository.",
+    "exportHint": "Omit databases you do not want to import. The exporter reads committed SQLite snapshots including WAL, keeps sources unchanged, and creates a private JSON file without overwriting an existing file. Keep the export private.",
+    "sizeHint": "Maximum package size: 10 MiB. If your Hub rejects a larger upload, ask its operator to raise the upload limit.",
+    "package": "Export package",
+    "preview": "Validate and preview",
+    "report": "Import report",
+    "confirm": "Import new records",
+    "noOverwrite": "Repeated imports skip existing records. Changed sources and deleted targets are reported; Hub edits are never overwritten.",
+    "done": "Import committed. You can open your personal tools to review the records.",
+    "empty": "This package contains no records.",
+    "disabled": "Enable every capability present in this package before importing.",
+    "relationFailure": "Task relationships are missing or cyclic. No records were imported. Correct the package and preview it again.",
+    "failure": "Could not import this package. No partial import was committed. Check the package format, enabled tools and connection, then select the package again.",
+    "create": "New record",
+    "skip": "Already imported — skipped",
+    "source_changed": "Source changed — preserved Hub record",
+    "target_missing": "Imported target was deleted — skipped"
+  },
   "human": {
     "region": "Questions and approvals",
     "customAnswer": "Custom answer",

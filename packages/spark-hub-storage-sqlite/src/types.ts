@@ -558,6 +558,7 @@ export interface SparkDatabase {
   personal_inventory: PersonalRecordsTable;
   personal_todos: PersonalRecordsTable;
   personal_subscriptions: PersonalRecordsTable;
+  personal_legacy_imports: PersonalLegacyImportsTable;
   personal_operation_receipts: PersonalOperationReceiptsTable;
   personal_capability_settings: PersonalCapabilitySettingsTable;
   personal_session_grants: PersonalSessionGrantsTable;
@@ -652,4 +653,13 @@ export interface PersonalOperationReceiptsTable {
   request_hash: string;
   result_json: string;
   created_at: string;
+}
+
+export interface PersonalLegacyImportsTable {
+  user_id: string;
+  capability: "inventory" | "todos" | "subscriptions";
+  legacy_id: string;
+  record_id: string;
+  source_hash: string;
+  imported_at: string;
 }

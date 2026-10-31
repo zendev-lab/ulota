@@ -217,6 +217,9 @@ jobs:
           fi
           node scripts/verify-release-state.mjs --artifact-only
 
+      - name: Install Chromium for the installed Hub journey
+        run: timeout 600 pnpm --filter @zendev-lab/spark-hub exec playwright install chromium
+
       - name: Smoke the exact lockstep artifacts
         run: >-
           node scripts/smoke-npm-product.mjs

@@ -169,6 +169,27 @@
     "Yearly": "每年",
     "Lifetime": "终身"
   },
+  "importFields": {
+    "title": "导入 BoneHub 数据",
+    "description": "预览只读导出包，确认后导入当前 Hub 账号。",
+    "sources": "在本仓库运行导出命令，明确选择已有 item_manager.db、todo_manager.db 和/或 subscription_manager.db。",
+    "exportHint": "可省略不需要导入的数据库。导出器读取包含 WAL 的已提交 SQLite 快照，保持源库不变，并创建私有 JSON 文件，不覆盖已有文件。请妥善保管导出包。",
+    "sizeHint": "导入包最大 10 MiB。若 Hub 拒绝较大文件，请联系管理者提高上传限制。",
+    "package": "导出包",
+    "preview": "校验并预览",
+    "report": "导入报告",
+    "confirm": "导入新记录",
+    "noOverwrite": "重复导入跳过已有记录；源记录变化或导入目标已删除会单独报告，不覆盖 Hub 中的编辑。",
+    "done": "导入已提交，可前往个人工具核对记录。",
+    "empty": "导入包没有记录。",
+    "disabled": "请先启用导入包中涉及的所有个人工具。",
+    "relationFailure": "待办关系缺失或成环，没有写入任何记录。请修正导入包后重新预览。",
+    "failure": "无法导入此包，没有提交部分数据。请检查格式、工具启用状态与连接后重新选择文件。",
+    "create": "新记录",
+    "skip": "已导入，跳过",
+    "source_changed": "源记录已变化，保留 Hub 记录",
+    "target_missing": "导入目标已删除，跳过"
+  },
   "human": {
     "region": "问题与审批",
     "customAnswer": "自定义回答",
