@@ -122,7 +122,17 @@ export const sparkDelegationRpcErrorCodeOptions = [
   "delegation_invocation_mismatch",
 ] as const;
 
+export const sparkPersonalRpcErrorCodeOptions = [
+  "personal_unbound",
+  "personal_binding_exists",
+  "personal_pairing_failed",
+  "personal_unbind_failed",
+  "personal_unavailable",
+  "personal_request_failed",
+  "personal_pairing_invalid",
+] as const;
 export const sparkDaemonRpcDomainErrorCodeOptions = [
+  ...sparkPersonalRpcErrorCodeOptions,
   ...sparkDaemonLifecycleRpcErrorCodeOptions,
   ...sparkChannelRpcErrorCodeOptions,
   ...sparkLoopRpcErrorCodeOptions,

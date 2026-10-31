@@ -8,6 +8,19 @@ import {
 export const localeCookieName = "spark_web_locale";
 
 const en = {
+  personal: {
+    title: "Personal",
+    body: "Link this device to your Hub account to use personal tools.",
+    hubUrl: "Hub address",
+    code: "Pairing code",
+    bind: "Link account",
+    unbind: "Unlink account",
+    openHub: "Open personal tools in Hub",
+    linked: "Account linked",
+    unbound: "No account linked",
+    failure:
+      "Could not complete this action. Check your Hub connection and pairing code, then retry.",
+  },
   shell: {
     overview: "New conversation",
     workspaces: "Workspaces",
@@ -462,6 +475,18 @@ type SparkWebSharedMessages = WidenStrings<typeof sharedEn> & {
 };
 
 const zhCN = {
+  personal: {
+    title: "个人",
+    body: "将此设备关联到 Hub 账号，使用个人工具。",
+    hubUrl: "Hub 地址",
+    code: "配对码",
+    bind: "关联账号",
+    unbind: "解除关联",
+    openHub: "在 Hub 打开个人工具",
+    linked: "已关联账号",
+    unbound: "尚未关联账号",
+    failure: "操作未完成，请检查 Hub 连接和配对码后重试。",
+  },
   shell: {
     overview: "新对话",
     workspaces: "工作空间",

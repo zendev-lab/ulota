@@ -237,7 +237,7 @@ export class SparkSessionRegistry {
     const scope = createScope(input);
     const lineage = input.lineage ?? requireAdministratorLineage(file.sessions, scope);
     assertLineageWithinScope(file.sessions, lineage, scope, input.cwd, input.cwdArtifactRef);
-    if (lineage.kind === "root") {
+    if (lineage.kind === "root" && !(scope.kind === "daemon" && input.purpose === "personal")) {
       throw new SparkSessionRegistryError(
         "workspace_administrator_session_mutation_forbidden",
         "workspace-owned Sessions are created only by ensureWorkspaceAdministrator()",
@@ -245,7 +245,8 @@ export class SparkSessionRegistry {
     }
     if (
       input.fleetWorker &&
-      (lineage.origin.kind !== "session" ||
+      (lineage.kind !== "child" ||
+        lineage.origin.kind !== "session" ||
         lineage.parentSessionId !== input.fleetWorker.ownerSessionId)
     ) {
       throw new SparkSessionRegistryError(
@@ -253,7 +254,7 @@ export class SparkSessionRegistry {
         "Fleet worker binding must match its supervising Session owner",
       );
     }
-    const record: SparkSessionState = {
+    const record = parseSparkSessionState({
       sessionId,
       scope,
       lifecycle: input.lifecycle ?? "open",
@@ -262,12 +263,18 @@ export class SparkSessionRegistry {
       lineage,
       incarnation: 1,
       visibility:
-        input.visibility ?? (lineage.origin.kind === "invocation" ? "internal" : "public"),
+        input.visibility ??
+        (lineage.kind === "child" && lineage.origin.kind === "invocation" ? "internal" : "public"),
       retention:
-        input.retention ?? (lineage.origin.kind === "invocation" ? "discard_on_close" : "retain"),
+        input.retention ??
+        (lineage.kind === "child" && lineage.origin.kind === "invocation"
+          ? "discard_on_close"
+          : "retain"),
       purpose:
         input.purpose?.trim() ||
-        (lineage.origin.kind === "invocation" ? "role_call" : "interactive"),
+        (lineage.kind === "child" && lineage.origin.kind === "invocation"
+          ? "role_call"
+          : "interactive"),
       bindings: [],
       tags: [],
       archiveHistory: [],
@@ -282,7 +289,7 @@ export class SparkSessionRegistry {
       ...(input.model ? { model: { ...input.model } } : {}),
       ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
       ...(input.maxOutputTokens ? { maxOutputTokens: input.maxOutputTokens } : {}),
-    };
+    });
     file.sessions.push(record);
     await this.saveFile(file);
     return record;
@@ -1911,10 +1918,8 @@ export function createSparkSessionId(): string {
   return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function createScope(
-  input: CreateSparkSessionInput,
-): Extract<SparkSessionScope, { kind: "workspace" }> {
-  if (input.scope.kind !== "workspace") {
+function createScope(input: CreateSparkSessionInput): SparkSessionScope {
+  if (input.scope.kind !== "workspace" && input.purpose !== "personal") {
     throw new SparkSessionRegistryError(
       "invalid_scope",
       "New top-level sessions must belong to a workspace.",

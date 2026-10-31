@@ -26,45 +26,68 @@ export function channelSessionWorkspacePath(
 export async function ensureChannelSessionWorkspace(
   paths: Pick<ChannelPathRoots, "dataDir">,
   sessionId: string,
+) {
+  return ensureDaemonSessionWorkspace(paths, sessionId, "channels");
+}
+export async function ensurePersonalSessionWorkspace(
+  paths: Pick<ChannelPathRoots, "dataDir">,
+  sessionId: string,
+) {
+  return ensureDaemonSessionWorkspace(paths, sessionId, "personal");
+}
+export async function validatePersonalSessionWorkspace(
+  paths: Pick<ChannelPathRoots, "dataDir">,
+  sessionId: string,
+  cwd?: string,
+) {
+  return validateDaemonSessionWorkspace(paths, sessionId, cwd, "personal");
+}
+async function ensureDaemonSessionWorkspace(
+  paths: Pick<ChannelPathRoots, "dataDir">,
+  sessionId: string,
+  area: "channels" | "personal",
 ): Promise<string> {
   assertSafeRoot(paths.dataDir);
   await mkdir(paths.dataDir, { recursive: true, mode: 0o700 });
   await assertDirectoryNotLink(paths.dataDir);
   await chmodPrivate(paths.dataDir);
   let current = resolve(paths.dataDir);
-  for (const segment of [
-    "channels",
-    "sessions",
-    validateChannelSessionId(sessionId),
-    "workspace",
-  ]) {
+  for (const segment of [area, "sessions", validateChannelSessionId(sessionId), "workspace"]) {
     current = join(current, segment);
     await mkdir(current, { recursive: true, mode: 0o700 });
     await assertDirectoryNotLink(current);
     await chmodPrivate(current);
   }
-  return await validateChannelSessionWorkspace(paths, sessionId, current);
+  return await validateDaemonSessionWorkspace(paths, sessionId, current, area);
 }
 
 /** Revalidate the stored cwd immediately before every Channel execution. */
 export async function validateChannelSessionWorkspace(
   paths: Pick<ChannelPathRoots, "dataDir">,
   sessionId: string,
-  cwd = channelSessionWorkspacePath(paths, sessionId),
+  cwd?: string,
+) {
+  return validateDaemonSessionWorkspace(paths, sessionId, cwd, "channels");
+}
+async function validateDaemonSessionWorkspace(
+  paths: Pick<ChannelPathRoots, "dataDir">,
+  sessionId: string,
+  requestedCwd: string | undefined,
+  area: "channels" | "personal",
 ): Promise<string> {
+  const cwd =
+    requestedCwd ??
+    join(paths.dataDir, area, "sessions", validateChannelSessionId(sessionId), "workspace");
   assertSafeRoot(paths.dataDir);
-  const expected = resolve(channelSessionWorkspacePath(paths, sessionId));
+  const expected = resolve(
+    join(paths.dataDir, area, "sessions", validateChannelSessionId(sessionId), "workspace"),
+  );
   if (!isAbsolute(cwd) || resolve(cwd) !== expected) {
     throw new Error(`Channel Session ${sessionId} cwd does not match its daemon-private directory`);
   }
   await assertDirectoryNotLink(paths.dataDir);
   let current = resolve(paths.dataDir);
-  for (const segment of [
-    "channels",
-    "sessions",
-    validateChannelSessionId(sessionId),
-    "workspace",
-  ]) {
+  for (const segment of [area, "sessions", validateChannelSessionId(sessionId), "workspace"]) {
     current = join(current, segment);
     await assertDirectoryNotLink(current);
   }

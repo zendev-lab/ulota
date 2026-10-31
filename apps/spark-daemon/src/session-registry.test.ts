@@ -487,3 +487,26 @@ function deferred(): { promise: Promise<void>; resolve(): void } {
   });
   return { promise, resolve };
 }
+
+it("creates an explicitly personal root in a daemon-private directory and preserves it after restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ulota-personal-session-"));
+  roots.push(root);
+  const registry = createDaemonSessionRegistry(root, { daemonId: "device" });
+  const session = await registry.create({
+    scope: { kind: "daemon" },
+    purpose: "personal",
+    roleBinding: { kind: "none" },
+    placement: "child",
+  });
+  expect(session).toMatchObject({
+    scope: { kind: "daemon", daemonId: "device" },
+    purpose: "personal",
+    lineage: { kind: "root" },
+    visibility: "owner",
+    bindings: [],
+  });
+  expect(session.cwd?.startsWith(root)).toBe(true);
+  expect(
+    await createDaemonSessionRegistry(root, { daemonId: "device" }).get(session.sessionId),
+  ).toEqual(session);
+});

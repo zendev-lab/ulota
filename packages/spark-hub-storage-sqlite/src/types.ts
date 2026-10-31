@@ -555,6 +555,9 @@ export interface EventIngestSequenceTable {
 }
 
 export interface SparkDatabase {
+  personal_capability_settings: PersonalCapabilitySettingsTable;
+  personal_session_grants: PersonalSessionGrantsTable;
+  personal_sessions: PersonalSessionsTable;
   personal_bindings: PersonalBindingsTable;
   schema_migrations: SchemaMigrationsTable;
   app_settings: AppSettingsTable;
@@ -610,4 +613,24 @@ export interface PersonalBindingsTable {
   credential_hash: string | null;
   created_at: string;
   revoked_at: string | null;
+}
+
+export interface PersonalCapabilitySettingsTable {
+  user_id: string;
+  capability: "inventory" | "todos" | "subscriptions";
+  enabled: 0 | 1;
+}
+export interface PersonalSessionGrantsTable {
+  user_id: string;
+  binding_id: string;
+  session_id: string;
+  capability: "inventory" | "todos" | "subscriptions";
+  can_write: 0 | 1;
+}
+export interface PersonalSessionsTable {
+  session_id: string;
+  user_id: string;
+  binding_id: string;
+  runtime_id: string;
+  created_at: string;
 }

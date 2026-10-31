@@ -265,6 +265,11 @@ const daemonChannelTurnInvokers = {
 >;
 
 const daemonAccessInvokers = {
+  "daemon.personal": (client, input, options) =>
+    parseSparkDaemonOrpcOutput(
+      sparkLocalRpcProcedureSchemas["daemon.personal"].output,
+      client.daemon.personal(input, options),
+    ),
   "daemon.access.create": (client, input, options) =>
     parseSparkDaemonOrpcOutput(
       sparkLocalRpcProcedureSchemas["daemon.access.create"].output,
@@ -292,6 +297,7 @@ const daemonAccessInvokers = {
     ),
 } satisfies Pick<
   SparkDaemonOrpcProcedureInvokerMap,
+  | "daemon.personal"
   | "daemon.access.create"
   | "daemon.access.list"
   | "daemon.access.revoke"

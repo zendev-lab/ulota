@@ -1,4 +1,6 @@
 import { resolve } from "node:path";
+import { ensurePersonalSessionWorkspace, resolveSparkPaths } from "@zendev-lab/spark-platform-node";
+import { randomUUID } from "node:crypto";
 
 import type {
   SparkSessionGetRequest,
@@ -265,8 +267,34 @@ export function createDaemonSessionRegistry(
       : {}),
   });
   const ownedRegistry: DaemonSessionRegistry = {
-    create: async (input) =>
-      await registry.create(await resolveCreateRequest(registry, input, options)),
+    create: async (input) => {
+      if (input.scope.kind === "daemon") {
+        if (!options.daemonId)
+          throw new SparkSessionRegistryError(
+            "invalid_scope",
+            "Personal roots require a daemon identity.",
+          );
+        const sessionId = input.sessionId ?? `sess_${randomUUID().replaceAll("-", "")}`;
+        if (!/^sess_[a-f0-9]{32}$/u.test(sessionId))
+          throw new SparkSessionRegistryError("invalid_scope", "Personal session id is invalid.");
+        const cwd = await ensurePersonalSessionWorkspace(
+          resolveSparkPaths({ app: "daemon", sparkHome }),
+          sessionId,
+        );
+        return registry.create({
+          ...input,
+          sessionId,
+          scope: { kind: "daemon", daemonId: options.daemonId },
+          lineage: { kind: "root" },
+          purpose: "personal",
+          visibility: "owner",
+          retention: "retain",
+          placement: "active",
+          cwd,
+        });
+      }
+      return registry.create(await resolveCreateRequest(registry, input, options));
+    },
     createSupervised: async (input) =>
       await registry.create(await resolveRegistryCreateInput(input, options)),
     list: async (request = {}) => await registry.list(resolveListRequest(request, options)),
@@ -451,6 +479,8 @@ async function resolveCreateRequest(
   input: SparkSessionCreateRequest,
   options: CreateDaemonSessionRegistryOptions,
 ): Promise<CreateSparkSessionInput> {
+  if (input.scope.kind !== "workspace")
+    throw new SparkSessionRegistryError("invalid_scope", "Ordinary sessions require a workspace.");
   const taskExecution = "taskExecution" in input ? input.taskExecution : undefined;
   const fleetWorker = "fleetWorker" in input ? input.fleetWorker : undefined;
   const {
@@ -555,7 +585,7 @@ async function resolveCreateRequest(
   return await resolveRegistryCreateInput(
     {
       ...ordinaryInput,
-      scope,
+      scope: input.scope,
       lineage,
       placement: "active",
     },

@@ -417,19 +417,20 @@ const sparkDaemonSessionStateSchema = sparkSessionStateBaseSchema
   .superRefine((record, context) => {
     if (record.lineage.kind === "root") {
       if (
-        record.purpose !== "channel" ||
+        (record.purpose !== "channel" && record.purpose !== "personal") ||
+        (record.purpose === "personal" && record.bindings.length !== 0) ||
         record.roleBinding.kind !== "none" ||
-        record.lifecycle !== "open" ||
-        record.placement !== "active" ||
+        (record.purpose === "channel" &&
+          (record.lifecycle !== "open" || record.placement !== "active")) ||
         record.retention !== "retain" ||
-        record.visibility !== "public" ||
+        record.visibility !== (record.purpose === "personal" ? "owner" : "public") ||
         !record.cwd ||
         record.cwdArtifactRef !== undefined
       ) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           message:
-            "daemon root Sessions must be open, active, public, retained Channel Sessions with a private cwd and no role or GitChange binding",
+            "daemon root Sessions must be retained Channel or personal Sessions with a private cwd and no role or GitChange binding",
           path: ["scope"],
         });
       }
@@ -541,18 +542,19 @@ function validateSessionProjection(
     }
   } else if (record.lineage.kind === "root") {
     if (
-      record.purpose !== "channel" ||
+      (record.purpose !== "channel" && record.purpose !== "personal") ||
+      (record.purpose === "personal" && record.bindings.length !== 0) ||
       record.roleBinding.kind !== "none" ||
-      record.lifecycle !== "open" ||
-      record.placement !== "active" ||
+      (record.purpose === "channel" &&
+        (record.lifecycle !== "open" || record.placement !== "active")) ||
       record.retention !== "retain" ||
-      record.visibility !== "public" ||
+      record.visibility !== (record.purpose === "personal" ? "owner" : "public") ||
       !record.cwd ||
       record.cwdArtifactRef !== undefined
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "daemon root projection must be a private-cwd Channel Session",
+        message: "daemon root projection must be a private-cwd Channel or personal Session",
         path: ["scope"],
       });
     }
@@ -608,7 +610,31 @@ const sparkWorkspaceSessionCreateRequestSchema = sparkSessionCreateRequestBaseSc
   .extend({ scope: sparkWorkspaceSessionScopeSchema })
   .superRefine(validateManagedSessionCreateBinding);
 
-export const sparkSessionCreateRequestSchema = sparkWorkspaceSessionCreateRequestSchema;
+const sparkPersonalSessionCreateRequestSchema = sparkSessionCreateRequestBaseSchema
+  .extend({
+    scope: z.object({ kind: z.literal("daemon") }).strict(),
+    purpose: z.literal("personal"),
+  })
+  .superRefine((input, context) => {
+    if (
+      input.cwd ||
+      input.cwdArtifactRef ||
+      input.sessionPath ||
+      input.supervisorSessionId ||
+      input.taskExecution ||
+      input.fleetWorker ||
+      input.roleBinding.kind !== "none"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Personal roots cannot select a workspace, path, role or supervisor.",
+      });
+    }
+  });
+export const sparkSessionCreateRequestSchema = z.union([
+  sparkWorkspaceSessionCreateRequestSchema,
+  sparkPersonalSessionCreateRequestSchema,
+]);
 
 const sparkManagedChildSessionRequestSchema = z
   .object({

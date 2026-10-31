@@ -34,7 +34,11 @@ import {
   resolveRoleModelSetting,
   type RoleSpec,
 } from "@zendev-lab/spark-roles";
-import { validateChannelSessionWorkspace, type SparkPaths } from "@zendev-lab/spark-platform-node";
+import {
+  validatePersonalSessionWorkspace,
+  validateChannelSessionWorkspace,
+  type SparkPaths,
+} from "@zendev-lab/spark-platform-node";
 import {
   loadSparkHeadlessSessionModule,
   type CreateSparkHeadlessSessionCompactorFn,
@@ -1658,6 +1662,9 @@ export async function executeSparkDaemonSessionCompactTask(
   ) {
     throw sessionCompactionFenceError(task, session);
   }
+  if (session.purpose === "personal") {
+    await validatePersonalSessionWorkspace(options.paths, session.sessionId, session.cwd);
+  }
   if (session.scope.kind === "daemon" && session.purpose === "channel") {
     await validateChannelSessionWorkspace(options.paths, session.sessionId, session.cwd);
   }
@@ -2089,6 +2096,9 @@ async function sessionContextForTask(
           : "session_archived",
       `cannot execute ${session.lifecycle} Session ${session.sessionId}`,
     );
+  }
+  if (session?.purpose === "personal") {
+    await validatePersonalSessionWorkspace(paths, session.sessionId, session.cwd);
   }
   if (session?.scope.kind === "daemon" && session.purpose === "channel") {
     await validateChannelSessionWorkspace(paths, session.sessionId, session.cwd);

@@ -1,4 +1,6 @@
+import personalMessages from "./personal/en.json" with { type: "json" };
 const messages = {
+  personal: personalMessages,
   common: {
     never: "never",
     justNow: "just now",

@@ -1,3 +1,8 @@
+const personalOwnership = vi.hoisted(() => ({ owner: undefined as string | undefined }));
+vi.mock("@zendev-lab/spark-hub-coordination/personal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@zendev-lab/spark-hub-coordination/personal")>()),
+  personalSessionOwner: () => personalOwnership.owner,
+}));
 import { SparkDaemonLocalRpcUnavailableError } from "@zendev-lab/spark-daemon-client";
 import type { Handle, RequestEvent } from "@sveltejs/kit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,6 +39,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   database.pinDatabase.mockReset();
   database.pinDatabase.mockImplementation(() => undefined);
+  personalOwnership.owner = undefined;
   database.getDatabase.mockReset();
   database.getDatabase.mockReturnValue({});
   auth.getCurrentHubSession.mockReset();
@@ -296,3 +302,23 @@ async function expectServiceUnavailable(response: Response): Promise<void> {
   expect(body.error.requestId).toMatch(/^msg_[a-f0-9]{32}$/u);
   expect(JSON.stringify(body)).not.toContain("/private/");
 }
+
+it.each([
+  "/api/v1/sessions/private/snapshot",
+  "/api/v1/%73essions/private/snapshot",
+  "/personal/%73essions/private",
+])("denies another owner's personal transcript through %s", async (path) => {
+  personalOwnership.owner = "other-user";
+  auth.getCurrentHubSession.mockReturnValue(hubSession("owner"));
+  const resolve = vi.fn();
+  try {
+    const response = await handle({
+      event: requestEvent(new URL(`http://127.0.0.1${path}`)),
+      resolve,
+    } as Parameters<Handle>[0]);
+    expect(response.status).toBe(403);
+    expect(resolve).not.toHaveBeenCalled();
+  } finally {
+    personalOwnership.owner = undefined;
+  }
+});

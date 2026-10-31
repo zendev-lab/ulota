@@ -223,7 +223,10 @@ requires an explicit binding operation.
 
 Daemon-internal `resolveChannelSession()` atomically matches or creates the
 root Session, private cwd, and initial binding in one registry revision. Public
-Session creation cannot request daemon scope or supply a Channel cwd. Inbound
+Session creation cannot supply a Channel cwd. Explicit `purpose: personal` creation
+may request daemon scope: the daemon derives its private cwd and installation
+identity, and the resulting root has owner visibility and no Channel bindings.
+Hub account and capability access follow [personal capabilities](personal-capabilities.md). Inbound
 messages persist an idempotent receipt before Invocation admission. Outbound
 effects are fail-closed: only a provider-proven `not_sent` or
 provider-deduplicated identity may retry automatically; ambiguous delivery is

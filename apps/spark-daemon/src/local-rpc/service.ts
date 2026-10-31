@@ -53,6 +53,7 @@ export interface LocalRpcServiceOptions {
  */
 export const localRpcServiceHandlerMethodGroups = {
   daemon: [
+    "daemon.personal",
     "daemon.status",
     "daemon.stop",
     "daemon.restart",

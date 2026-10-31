@@ -1,3 +1,4 @@
+import { personalSessionOwner } from "@zendev-lab/spark-hub-coordination/personal";
 import {
   sparkInvocationListResultSchema,
   sparkProtocolJsonObjectSchema,
@@ -107,8 +108,27 @@ function runtimeInvocationDiagnosticsClient(
     });
   return {
     daemonStatus: async () => await run("daemon.status.request", {}),
-    list: async (input) => await run("invocation.list.request", input),
-    status: async (invocationId) => await run("turn.status.request", { invocationId }),
+    list: async (input) => {
+      const list = sparkInvocationListResultSchema.parse(
+        await run("invocation.list.request", input),
+      );
+      const invocations = list.invocations.filter(
+        (row) => !row.sessionId || !personalSessionOwner(db, row.sessionId),
+      );
+      return {
+        ...list,
+        invocations,
+        total: list.total - (list.invocations.length - invocations.length),
+      };
+    },
+    status: async (invocationId) => {
+      const status = sparkTurnStatusResultSchema.parse(
+        await run("turn.status.request", { invocationId }),
+      );
+      if (status.sessionId && personalSessionOwner(db, status.sessionId))
+        throw new Error("Personal invocations are not available in general diagnostics.");
+      return status;
+    },
     stream: async (invocationId, after, limit) =>
       await run("turn.stream.subscribe", { invocationId, after, limit }),
   };

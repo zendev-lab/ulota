@@ -3,3 +3,16 @@ title: Personal capabilities
 ---
 
 Personal capabilities use an explicitly bound Hub account. Local daemon identity remains available without a Hub. Device registration alone does not grant access to personal data. Revoke a personal binding before replacing it; replacement never transfers existing records. Inventory, personal todos and subscriptions will be independently enabled. Their primary data is hosted by the Hub; offline writes and distributed synchronization are not available.
+
+## Link a device
+
+Open `/personal` on your Hub and sign in. Local users can explicitly choose the
+local Hub account. Create a pairing code for a registered device, open `/personal`
+on that device's local Web, and enter the Hub address and code. Pairing expires
+after ten minutes and requires that device's registration credentials.
+
+Enable personal tools separately. Start a personal conversation on a linked
+device, or explicitly grant a workspace conversation read or write access to a
+specific tool. Message-platform conversations cannot receive these grants.
+Revocation takes effect on subsequent requests. Personal conversations are excluded
+from general Hub session lists and require their owning account even on loopback.
