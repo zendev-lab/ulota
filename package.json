@@ -2,21 +2,21 @@
   "name": "@zendev-lab/spark",
   "version": "0.5.0",
   "private": true,
-  "description": "Spark monorepo: daemon-first agent orchestration across CLI, local web, Hub, and channels, with Pi retained only as an SDK kernel.",
+  "description": "Ulota monorepo: daemon-first agent orchestration across CLI, local web, Hub, and channels, with Pi retained only as an SDK kernel.",
   "keywords": [
     "Agentic Workflow",
     "Coding Agent",
-    "Spark"
+    "Ulota"
   ],
-  "homepage": "https://github.com/zendev-lab/spark#readme",
+  "homepage": "https://github.com/zendev-lab/ulota#readme",
   "bugs": {
-    "url": "https://github.com/zendev-lab/spark/issues"
+    "url": "https://github.com/zendev-lab/ulota/issues"
   },
   "license": "MIT",
   "author": "zrr1999",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zendev-lab/spark.git"
+    "url": "git+https://github.com/zendev-lab/ulota.git"
   },
   "bin": {
     "spark": "./apps/spark-cli/bin/spark"

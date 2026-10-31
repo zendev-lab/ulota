@@ -2,7 +2,7 @@
   "name": "@zendev-lab/spark-hub",
   "version": "0.5.0",
   "private": true,
-  "description": "Spark Hub control plane with an embedded SvelteKit management UI.",
+  "description": "Ulota Hub control plane with an embedded SvelteKit management UI.",
   "bin": {
     "spark-hub": "./bin/spark-hub"
   },

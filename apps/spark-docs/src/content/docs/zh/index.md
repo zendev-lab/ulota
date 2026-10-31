@@ -1,6 +1,6 @@
 ---
-title: Spark 文档
-description: 面向 Spark CLI、本地 Web 工作台、daemon 与 Hub 的用户文档。
+title: Ulota 文档
+description: 面向 Ulota CLI、本地 Web 工作台、daemon 与 Hub 的用户文档。
 template: splash
 hero:
   tagline: 描述目标，把它转换成可验证任务，然后从本地 Web 工作台或 Hub Web 监督实现。
@@ -16,7 +16,10 @@ sidebar:
   order: 1
 ---
 
-Spark 是一套受控的 coding-agent 工具，只有一个公开的 `spark` 命令和三个产品界面：
+Ulota 是 Spark 的新产品名称。本次先迁移品牌显示；命令仍为 `spark`，
+发布包仍为 `@zendev-lab/spark*`，原有配置和数据路径继续使用。
+
+Ulota 是一套受控的 coding-agent 工具，只有一个公开的 `spark` 命令和三个产品界面：
 
 - 用于交互工作的 **本地 Web 工作台**，
 - 负责持久会话与后台工作的 **daemon**，

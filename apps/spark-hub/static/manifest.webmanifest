@@ -1,7 +1,7 @@
 {
-  "name": "Spark Hub",
-  "short_name": "Spark",
-  "description": "Browser-managed Spark engineering agent hub.",
+  "name": "Ulota Hub",
+  "short_name": "Ulota",
+  "description": "Browser-managed Ulota engineering agent hub.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

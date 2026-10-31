@@ -38,7 +38,7 @@
   );
 </script>
 
-<svelte:head><title>{title} · Spark</title></svelte:head>
+<svelte:head><title>{title} · Ulota</title></svelte:head>
 
 <main class="error-shell">
   <a class="brand" href="/" aria-label={copy.home}>

@@ -23,7 +23,7 @@ describe("workspace control display", () => {
         en,
       ),
     ).toEqual({
-      connectionLabel: "Spark daemon connected",
+      connectionLabel: "Ulota daemon connected",
       borrowedLabel: "In use by 1 session",
       executorLabel: "Running · 2 active invocations · 3 active agents",
       controlLabel:
@@ -43,7 +43,7 @@ describe("workspace control display", () => {
         en,
       ),
     ).toMatchObject({
-      connectionLabel: "Spark daemon offline",
+      connectionLabel: "Ulota daemon offline",
       borrowedLabel: "Ready for new work",
       executorLabel: "Idle",
       controlLabel: "Read-only for now",
@@ -87,7 +87,7 @@ describe("workspace control display", () => {
     );
 
     expect(display).toMatchObject({
-      connectionLabel: "Spark daemon 已连接",
+      connectionLabel: "Ulota daemon 已连接",
       borrowedLabel: "可以开始新工作",
       executorLabel: "当前空闲",
       controlLabel: "可以远程执行",
@@ -97,6 +97,6 @@ describe("workspace control display", () => {
         { mode: "snapshot_only", reason: "daemon_disconnected", serverMutationAllowed: false },
         zhCN,
       ),
-    ).toBe("Spark daemon 当前离线。重新连接后，才可从 Hub 执行操作。");
+    ).toBe("Ulota daemon 当前离线。重新连接后，才可从 Hub 执行操作。");
   });
 });

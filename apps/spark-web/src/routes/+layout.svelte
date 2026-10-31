@@ -139,7 +139,7 @@
 </script>
 
 <svelte:head>
-  <title>Spark</title>
+  <title>Ulota</title>
   <meta name="theme-color" content="#2563EB" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icons/spark.svg" />
@@ -158,7 +158,7 @@
       >
         <Icon name={navigationExpanded ? "close" : "menu"} size={18} />
       </button>
-      <a href="/" class="brand"><span aria-hidden="true"><Icon name="spark" size={17} /></span><span>Spark</span></a>
+      <a href="/" class="brand"><span aria-hidden="true"><Icon name="spark" size={17} /></span><span>Ulota</span></a>
     </div>
     <div class="top-actions">
       <Button bind:element={searchTrigger} variant="ghost" size="compact" ariaExpanded={searchOpen} onclick={toggleSearch}>

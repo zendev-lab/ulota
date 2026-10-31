@@ -206,7 +206,7 @@
   </ul>
 {/snippet}
 
-<svelte:head><title>{copy.title} · Spark</title></svelte:head>
+<svelte:head><title>{copy.title} · Ulota</title></svelte:head>
 
 <section class="conversation-home">
   <div class="conversation-intro">

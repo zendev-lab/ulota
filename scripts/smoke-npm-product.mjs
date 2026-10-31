@@ -181,8 +181,8 @@ async function probeHubRoute(url, child, output) {
       `unexpected Hub route response ${response.status} ${contentType || "<missing content-type>"}`,
     );
   }
-  if (!/<title>[^<]*Spark[^<]*<\/title>/iu.test(body)) {
-    throw new Error("Hub route did not render the Spark document shell");
+  if (!/<title>[^<]*Ulota[^<]*<\/title>/iu.test(body)) {
+    throw new Error("Hub route did not render the Ulota document shell");
   }
   const clientAssetSources = new Set([
     ...[...body.matchAll(/<script[^>]+src="([^"]+)"/giu)].map((match) => match[1]),

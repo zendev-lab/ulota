@@ -236,7 +236,7 @@
     commandCopyStatus = result.ok ? "copied" : "failed";
     commandCopyError = result.ok ? null : clipboardFailureMessage(result);
     if (!result.ok) {
-      console.warn("Spark Hub command copy failed", result);
+      console.warn("Ulota Hub command copy failed", result);
     }
     window.setTimeout(
       () => {

@@ -110,7 +110,7 @@
     <div class="start-heading">
       <span class="spark-mark"><Icon name="spark" size={22} /></span>
       <div>
-        <p class="kicker">Spark</p>
+        <p class="kicker">Ulota</p>
         <h1>{copy.newConversation}</h1>
         <p>{copy.workspaceStartHint}</p>
       </div>

@@ -69,7 +69,7 @@ describe("Spark Web conversation-first routes", () => {
     const screen = await render(DashboardPage, { data });
 
     await expect
-      .element(screen.getByRole("heading", { name: "想和 Spark 一起做什么？" }))
+      .element(screen.getByRole("heading", { name: "想和 Ulota 一起做什么？" }))
       .toBeVisible();
     await expect.element(screen.getByText("本机 daemon")).not.toBeInTheDocument();
     await screen.unmount();

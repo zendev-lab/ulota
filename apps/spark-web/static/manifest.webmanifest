@@ -1,7 +1,7 @@
 {
-  "name": "Spark Web",
-  "short_name": "Spark",
-  "description": "Local Spark daemon Workbench.",
+  "name": "Ulota Web",
+  "short_name": "Ulota",
+  "description": "Local Ulota daemon Workbench.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

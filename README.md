@@ -1,17 +1,19 @@
-# Spark
+# Ulota
+
+Ulota is the new product name for Spark. This initial transition updates the browser-facing brand and documentation entry points. Existing `spark` commands, `@zendev-lab/spark*` packages, `SPARK_*` environment variables, state paths, and protocol identities retain their names and remain compatible.
 
 **A local-first coding-agent runtime for durable execution, verifiable workflows, and multi-workspace coordination.**
 
-Spark keeps agent work alive beyond one terminal process. A local daemon owns persistent sessions, invocations, background execution, retries, and recovery. The Hub coordinates registered workspaces and delegations without taking over their repositories or execution state. The local Web workbench, Hub Web UI, channels, and ACP are interfaces over those owners rather than competing runtimes.
+Ulota keeps agent work alive beyond one terminal process. A local daemon owns persistent sessions, invocations, background execution, retries, and recovery. The Hub coordinates registered workspaces and delegations without taking over their repositories or execution state. The local Web workbench, Hub Web UI, channels, and ACP are interfaces over those owners rather than competing runtimes.
 
-Use Spark when a coding task needs to continue, ask for a decision, produce traceable artifacts, survive frontend restarts, or move between terminal and browser supervision.
+Use Ulota when a coding task needs to continue, ask for a decision, produce traceable artifacts, survive frontend restarts, or move between terminal and browser supervision.
 
 ## Quick start
 
-Spark requires Node.js `>=24` and npm. The verified curl bootstrap is the recommended direct native entry; it installs the exact managed npm payload and keeps atomic upgrades and rollback:
+Ulota requires Node.js `>=24` and npm. The verified curl bootstrap is the recommended direct native entry; it installs the exact managed npm payload and keeps atomic upgrades and rollback:
 
 ```bash
-curl -fsSL https://github.com/zendev-lab/spark/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/zendev-lab/ulota/releases/latest/download/install.sh | sh
 spark doctor
 spark
 ```
@@ -41,11 +43,11 @@ The complete `@zendev-lab/spark` package installs matching daemon, Hub, and web 
 spark hub
 ```
 
-Spark starts or contacts the local daemon as needed. Use `spark-daemon status --json` when you need to inspect execution state directly.
+Ulota starts or contacts the local daemon as needed. Use `spark-daemon status --json` when you need to inspect execution state directly.
 
 See the [getting-started guide][getting-started] for provider configuration, package-manager-owned installations, background runs, sessions, and remote operation.
 
-## What Spark provides
+## What Ulota provides
 
 - **Durable execution** — sessions, invocations, background work, retries, and
   recovery belong to the daemon rather than a frontend process.
@@ -66,7 +68,7 @@ See the [getting-started guide][getting-started] for provider configuration, pac
 
 ## Architecture
 
-Spark separates dispatch, presentation, coordination, and execution:
+Ulota separates dispatch, presentation, coordination, and execution:
 
 ```text
 spark CLI / spark web ─────────► local spark-daemon ───► workspace + providers
@@ -128,7 +130,7 @@ The native root CLI accepts `spark daemon`, `spark hub`, `spark web`, `spark acp
 
 ## Distribution and status
 
-Spark publishes lockstep-versioned product distributions and platform-specific native CLI payloads from the same private monorepo:
+Ulota publishes lockstep-versioned product distributions and platform-specific native CLI payloads from the same private monorepo:
 
 - `@zendev-lab/spark` is the **complete installation meta package**. It pins the
   matching CLI, daemon, Hub, and web app packages and keeps `spark` available
@@ -143,9 +145,9 @@ The split is a deployment and trust boundary, not a source-code ownership split.
 
 GitHub Releases also publish verified native bootstrap archives, `native-release-manifest.json`, `SHA256SUMS`, provenance, and an exact-version `install.sh`. The bootstrap contains no Node runtime: it verifies Node 24 and npm, then delegates the product payload transaction to the native updater.
 
-Spark is under active development. Managed root installations provide explicit update and rollback behavior; source checkouts are never self-modified. Direct app installations are updated by their package manager or container deployment.
+Ulota is under active development. Managed root installations provide explicit update and rollback behavior; source checkouts are never self-modified. Direct app installations are updated by their package manager or container deployment.
 
-Spark is MIT-licensed. Source-derived component notices are recorded in [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md).
+Ulota is MIT-licensed. Source-derived component notices are recorded in [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md).
 
 [cli-reference]: https://spark-docs.2742392377.workers.dev/reference/cli/
 [docs]: https://spark-docs.2742392377.workers.dev/

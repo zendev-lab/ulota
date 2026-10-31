@@ -1,6 +1,6 @@
 ---
-title: Spark Docs
-description: User documentation for Spark across its CLI, local web workbench, daemon, and Hub surfaces.
+title: Ulota Docs
+description: User documentation for Ulota across its CLI, local web workbench, daemon, and Hub surfaces.
 template: splash
 hero:
   tagline: Describe a goal, turn it into verifiable tasks, and supervise the implementation from the local web workbench or Hub Web.
@@ -16,7 +16,9 @@ sidebar:
   order: 1
 ---
 
-Spark is a controlled coding-agent suite with one public `spark` command and three product surfaces:
+Ulota is the new product name for Spark. During the initial branding transition, commands remain `spark`, published packages remain `@zendev-lab/spark*`, and existing configuration and data paths continue to work.
+
+Ulota is a controlled coding-agent suite with one public `spark` command and three product surfaces:
 
 - the **local web workbench** for interactive work,
 - the **daemon** for durable sessions and background work, and

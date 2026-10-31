@@ -312,7 +312,7 @@
         if (notifiedAskIds.has(wait.interactionRequestId)) continue;
         notifiedAskIds.add(wait.interactionRequestId);
         void notifyWhenHidden(
-          "Spark is waiting for you",
+          "Ulota is waiting for you",
           wait.title,
           `ask-${wait.interactionRequestId}`,
           sessionId,
@@ -379,7 +379,7 @@
       if (statusChanged) void invalidate("spark:navigation");
       if (wasBusy && !isBusySessionStatus(latest.snapshot.status)) {
         void notifyWhenHidden(
-          "Spark turn completed",
+          "Ulota turn completed",
           currentSession?.name ?? sessionId,
           `turn-${sessionId}`,
           sessionId,
@@ -577,11 +577,11 @@
       return;
     }
     if (argument) {
-      throw new Error(`/${name} does not accept free-form arguments in Spark Web.`);
+      throw new Error(`/${name} does not accept free-form arguments in Ulota Web.`);
     }
     const view = sparkSlashActionBarForInput(text);
     const action = view ? sparkActionBarDefaultAction(view) : undefined;
-    if (!action) throw new Error(`Unsupported Spark Web command: /${name}`);
+    if (!action) throw new Error(`Unsupported Ulota Web command: /${name}`);
     await handleSlashAction(action, ownerSessionId, feedbackRequestToken);
   }
 
@@ -699,7 +699,7 @@
       case "loop.stop":
       case "repro.start":
       case "repro.stop":
-        throw new Error(`${action.label} requires its typed configuration panel; Spark Web will not invent missing owner inputs.`);
+        throw new Error(`${action.label} requires its typed configuration panel; Ulota Web will not invent missing owner inputs.`);
     }
   }
 
@@ -738,7 +738,7 @@
       actionFeedback = null;
       await webRpc("turn.cancel", {
         invocationId,
-        reason: "Removed from Spark Web queue",
+        reason: "Removed from Ulota Web queue",
       });
     } catch (error) {
       if (!ownsActionFeedback(ownerSessionId, feedbackRequestToken)) return;
@@ -895,7 +895,7 @@
       if (ownsActionFeedback(ownerSessionId, feedbackRequestToken)) {
         actionFeedback = {
           tone: "status",
-          message: "Created a random read-only Share for this Spark Web process.",
+          message: "Created a random read-only Share for this Ulota Web process.",
         };
       }
     } catch (error) {
@@ -1045,7 +1045,7 @@
             ? await webRpc("session.restore", { sessionId: session.sessionId })
             : await webRpc("session.close", {
                 sessionId: session.sessionId,
-                reason: "Closed from Spark Web",
+                reason: "Closed from Ulota Web",
               });
       if (data.window.snapshot.sessionId !== ownerSessionId) return;
       void invalidate("spark:navigation");
@@ -1179,7 +1179,7 @@
   );
 </script>
 
-<svelte:head><title>{currentSessionTitle} · Spark</title></svelte:head>
+<svelte:head><title>{currentSessionTitle} · Ulota</title></svelte:head>
 
 {#snippet queueActions(item: { id: string })}
   <Button variant="ghost" size="compact" onclick={() => void cancelQueuedTurn(item.id)}>

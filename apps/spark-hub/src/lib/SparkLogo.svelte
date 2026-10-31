@@ -1,6 +1,6 @@
 <script lang="ts">
   export let size = 36;
-  export let label = "Spark";
+  export let label = "Ulota";
 </script>
 
 <div class="logo" style:--size={`${size}px`} role="img" aria-label={label}>

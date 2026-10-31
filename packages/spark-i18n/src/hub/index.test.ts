@@ -19,6 +19,8 @@ describe("Hub dictionaries", () => {
     const en = getHubDictionary("en");
     const zh = getHubDictionary("zh-CN");
 
+    expect(en.layout.brand.name).toBe("Ulota");
+    expect(zh.layout.brand.name).toBe("Ulota");
     expect(en.common.justNow).toBe("just now");
     expect(zh.common.justNow).toBe("刚刚");
     expect(en.layout.nav.channels).toBe("Message platforms");

@@ -30,7 +30,7 @@
 </script>
 
 <svelte:head>
-  <title>{data.item.title} · {t.headTitleSuffix} · Spark</title>
+  <title>{data.item.title} · {t.headTitleSuffix} · Ulota</title>
 </svelte:head>
 
 <section class="inbox-detail-page">

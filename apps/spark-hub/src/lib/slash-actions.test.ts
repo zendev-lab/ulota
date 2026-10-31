@@ -134,7 +134,7 @@ describe("Hub slash action presentation", () => {
     const messages = getHubDictionary("zh-CN").sessions.workbench.slashActions;
 
     expect(hubSlashSubmissionError("/help anything", messages)).toBe(
-      "请使用输入框上方的“Spark 帮助”操作栏；这条 slash 命令没有发送给模型。",
+      "请使用输入框上方的“Ulota 帮助”操作栏；这条 slash 命令没有发送给模型。",
     );
     for (const input of ["/clear", "/compact", "/new", "/runs now"]) {
       expect(hubSlashSubmissionError(input, messages)).toContain("没有发送给模型");

@@ -176,7 +176,7 @@
 {/snippet}
 
 <svelte:head>
-  <title>Spark · {t.attention.title}</title>
+  <title>Ulota · {t.attention.title}</title>
 </svelte:head>
 
 <section class="attention-home" data-testid="attention-workbench">

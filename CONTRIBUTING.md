@@ -1,4 +1,4 @@
-# Contributing to Spark
+# Contributing to Ulota
 
 ## Requirements
 
@@ -12,8 +12,8 @@ Run `prek install` when Git hooks are missing from an existing checkout.
 ## Setup
 
 ```bash
-git clone https://github.com/zendev-lab/spark.git
-cd spark
+git clone https://github.com/zendev-lab/ulota.git
+cd ulota
 pnpm install
 pnpm run check
 ```
@@ -157,7 +157,7 @@ The inventory generates the layer rules used by Dependency Cruiser. Do not copy
 package-name layer policy into `.dependency-cruiser.cjs`. A temporary reverse
 edge must be an exact, non-growing inventory exception with a reason, owner, and
 existing exit task; never widen a complete layer pair for migration debt.
-Hub-private packages must not become dependencies of the daemon or shared Spark
+Hub-private packages must not become dependencies of the daemon or shared Ulota
 packages.
 
 Create a workspace only for a hard runtime, state, permission, protocol,
@@ -174,8 +174,8 @@ The boundary is based on the question being answered, not merely the directory
 name:
 
 ```text
-apps/spark-docs              → How do I use Spark?
-.agents/notes/contracts      → What must Spark guarantee?
+apps/spark-docs              → How do I use Ulota?
+.agents/notes/contracts      → What must Ulota guarantee?
 .agents/notes/runbooks       → How do maintainers validate, migrate, deploy, or release it?
 .agents/notes/decisions      → Why did this dated engineering decision change?
 ```
@@ -211,7 +211,7 @@ inventories, migration histories, or operator procedures in `README.md` or
 contract, or operation that owns the behavior.
 
 Pull-request sequencing, issue status, delivery notes, completed-work recaps,
-and active backlogs belong in the PR, issue tracker, or Spark runtime state—not
+and active backlogs belong in the PR, issue tracker, or Ulota runtime state—not
 in Agent Notes or package READMEs. Dated decisions retain only durable rationale;
 unresolved project-level direction remains in `EVOLUTION.md`.
 
