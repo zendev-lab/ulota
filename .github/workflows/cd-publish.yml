@@ -5,7 +5,11 @@ on:
     tags:
       - "v*"
   pull_request:
+    branches:
+      - main
   merge_group:
+    branches:
+      - main
     types:
       - checks_requested
 
@@ -18,6 +22,7 @@ permissions:
 
 jobs:
   documentation:
+    timeout-minutes: 15
     name: Documentation Deployment Dry Run
     runs-on: ubuntu-latest
     steps:
@@ -34,6 +39,7 @@ jobs:
       - run: pnpm --filter @zendev-lab/spark-docs exec wrangler deploy --dry-run
 
   container:
+    timeout-minutes: 20
     name: Container Build and Smoke
     runs-on: ubuntu-latest
     steps:
@@ -87,6 +93,7 @@ jobs:
           '
 
   native-cli:
+    timeout-minutes: 20
     name: Native CLI (${{ matrix.target }})
     strategy:
       fail-fast: false
@@ -120,6 +127,7 @@ jobs:
           cargo build --release --locked --target "${{ matrix.target }}" --package spark-cli
       - name: Smoke native routing and enforce the compressed size budget
         run: |
+          set -o pipefail
           binary="target/${{ matrix.target }}/release/spark"
           "${binary}" --help >/dev/null
           "${binary}" version --json | node -e '
@@ -147,6 +155,7 @@ jobs:
           retention-days: 7
 
   build:
+    timeout-minutes: 20
     name: Release Build
     needs: native-cli
     runs-on: ubuntu-latest
@@ -248,6 +257,7 @@ jobs:
           retention-days: 7
 
   publish:
+    timeout-minutes: 20
     name: Publish Release
     if: github.event_name == 'push' && github.ref_type == 'tag'
     needs:
@@ -286,6 +296,8 @@ jobs:
 
       - name: Stage draft GitHub Release
         if: steps.release.outputs.github_published != 'true'
+        # This action owns idempotent draft staging and rejects unmatched asset patterns.
+        # jactionlint ignore=superfluous-actions
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           draft: true
@@ -435,7 +447,6 @@ jobs:
           labels: ${{ steps.container-metadata.outputs.labels }}
           build-args: |
             SPARK_BUILD_GIT_SHA=${{ github.sha }}
-          cache-from: type=gha,scope=spark-hub
           cache-to: type=gha,mode=max,scope=spark-hub
 
       - name: Attest container image
@@ -448,6 +459,8 @@ jobs:
 
       - name: Publish GitHub Release after npm succeeds
         if: steps.release.outputs.github_published != 'true'
+        # Complete the draft staged above only after registry publication succeeds.
+        # jactionlint ignore=superfluous-actions
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           draft: false

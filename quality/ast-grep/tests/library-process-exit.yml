@@ -1,0 +1,8 @@
+id: library-process-exit
+valid:
+  - 'function decode() { throw new Error("invalid state"); }'
+  - "function decode() { return { ok: false }; }"
+  - 'const example = "process.exit(1)";'
+invalid:
+  - "function decode() { process.exit(1); }"
+  - "process.exit();"

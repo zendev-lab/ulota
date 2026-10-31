@@ -1,0 +1,12 @@
+id: library-process-exit
+language: TypeScript
+severity: error
+message: Return or throw to the process owner; shared package APIs must not terminate their host.
+note: packages/AGENTS.md assigns host-neutral behavior to packages and process lifecycle to applications.
+files:
+  - packages/*/src/**/*.ts
+ignores:
+  - "**/*.test.ts"
+  - "**/*.spec.ts"
+rule:
+  pattern: process.exit($$$ARGS)

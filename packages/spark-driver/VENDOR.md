@@ -2,7 +2,7 @@
 
 ## Upstream
 
-- Source: https://github.com/fitchmultz/pi-codex-goal
+- Source: <https://github.com/fitchmultz/pi-codex-goal>
 - Revision: cc2ac14d6a1e2bdf6baa1ee635bda0e08452bdd8
 - Upstream package version at revision: 0.1.21
 - Upstream license: MIT; retained in `UPSTREAM-LICENSE.txt`

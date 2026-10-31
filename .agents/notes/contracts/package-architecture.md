@@ -18,7 +18,7 @@ Generic monorepo mechanics are delegated to maintained open-source tools:
 | Concern | Authority | Primary source |
 | --- | --- | --- |
 | inventory JSON shape, required fields, and enums | JSON Schema 2020-12 in `architecture/packages.schema.json`, validated by the pinned `check-jsonschema` prek hooks | [check-jsonschema](https://github.com/python-jsonschema/check-jsonschema) |
-| dependency-version/specifier consistency across manifests | pinned Syncpack using `.syncpackrc.json` | [Syncpack](https://github.com/JoshuaKGoldberg/syncpack) |
+| dependency-version/specifier consistency across manifests | pinned Syncpack using `.syncpackrc.json` | [Syncpack](https://github.com/JamieMason/syncpack) |
 | imports from dependencies missing in the owning workspace manifest | Knip strict unlisted-dependency analysis | [Knip](https://knip.dev/features/monorepos-and-workspaces) |
 | cycles and dependency direction | Dependency Cruiser | [Dependency Cruiser](https://github.com/sverweij/dependency-cruiser) |
 | Spark package identity, explicit workspace dependency restrictions, generated layer direction, exact exceptions, Pi ownership, workspace-count policy, export targets, frozen compatibility, and workspace test and package mutation discovery | `architecture/packages.json`, `architecture/dependency-governance.cjs`, and the Spark-owned architecture checks | Spark-owned contract |

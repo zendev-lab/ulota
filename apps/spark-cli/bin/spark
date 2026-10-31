@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-REPOSITORY_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+REPOSITORY_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../../.." && pwd)
 
 BINARY="$REPOSITORY_ROOT/target/debug/spark"
 STAMP="$REPOSITORY_ROOT/target/.spark-cli-source-fingerprint"
@@ -37,7 +37,7 @@ if test ! -x "$BINARY" || test "$STAMPED_FINGERPRINT" != "$FINGERPRINT"; then
   while test "$acquired_build_lock" = false; do
     if mkdir "$BUILD_LOCK" 2>/dev/null; then
       acquired_build_lock=true
-      printf '%s\n' "$$" > "$BUILD_LOCK/pid"
+      printf '%s\n' "$$" >"$BUILD_LOCK/pid"
       break
     fi
     if test -x "$BINARY" && test -f "$STAMP" && test "$(sed -n '1p' "$STAMP")" = "$FINGERPRINT"; then
@@ -48,16 +48,16 @@ if test ! -x "$BINARY" || test "$STAMPED_FINGERPRINT" != "$FINGERPRINT"; then
       owner_pid=$(sed -n '1p' "$BUILD_LOCK/pid")
     fi
     case "$owner_pid" in
-      "" | *[!0-9]*) ;;
-      *)
-        if ! kill -0 "$owner_pid" 2>/dev/null; then
-          stale_lock="$BUILD_LOCK.stale.$$"
-          if mv "$BUILD_LOCK" "$stale_lock" 2>/dev/null; then
-            rm -f "$stale_lock/pid"
-            rmdir "$stale_lock" 2>/dev/null || true
-          fi
+    "" | *[!0-9]*) ;;
+    *)
+      if ! kill -0 "$owner_pid" 2>/dev/null; then
+        stale_lock="$BUILD_LOCK.stale.$$"
+        if mv "$BUILD_LOCK" "$stale_lock" 2>/dev/null; then
+          rm -f "$stale_lock/pid"
+          rmdir "$stale_lock" 2>/dev/null || true
         fi
-        ;;
+      fi
+      ;;
     esac
     sleep 0.1
   done
@@ -69,7 +69,7 @@ if test ! -x "$BINARY" || test "$STAMPED_FINGERPRINT" != "$FINGERPRINT"; then
         cargo build --quiet --locked --package spark-cli
       )
       temporary_stamp="$STAMP.$$"
-      printf '%s\n' "$FINGERPRINT" > "$temporary_stamp"
+      printf '%s\n' "$FINGERPRINT" >"$temporary_stamp"
       mv "$temporary_stamp" "$STAMP"
     fi
     cleanup_build_lock

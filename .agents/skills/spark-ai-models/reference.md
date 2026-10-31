@@ -4,11 +4,11 @@
 
 Research before editing. For Grok, start here:
 
-- Models: https://docs.x.ai/developers/models
-- Model page pattern: https://docs.x.ai/developers/models/grok-4.6
-- Pricing: https://docs.x.ai/developers/pricing
-- Reasoning / `xhigh`: https://docs.x.ai/developers/model-capabilities/text/reasoning
-- Prompt cache billing: https://docs.x.ai/developers/advanced-api-usage/prompt-caching/usage-and-pricing
+- Models: <https://docs.x.ai/developers/models>
+- Model page pattern: <https://docs.x.ai/developers/models/grok-4.6>
+- Pricing: <https://docs.x.ai/developers/pricing>
+- Reasoning / `xhigh`: <https://docs.x.ai/developers/model-capabilities/text/reasoning>
+- Prompt cache billing: <https://docs.x.ai/developers/advanced-api-usage/prompt-caching/usage-and-pricing>
 
 Baidu OneAPI is an internal gateway (`https://oneapi-comate.baidu-int.com`).
 Gateway model ids and prompt-length errors are authoritative for

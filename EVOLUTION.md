@@ -63,7 +63,6 @@ worktree 和原生 GitHub PR stack，Task 用耐久 artifactRefs 组织成果，
 的视图。GitHub stack 的可写拓扑由 gh stack 管理，默认创建 Draft PR。
 CI、review 和 conflict 反馈应以幂等事件回到原 session，并携带可审查的证据。
 
-
 见 [成果与内容职责收敛](https://github.com/zendev-lab/spark/pull/310)。
 
 ### 理由
@@ -152,7 +151,6 @@ Hub 以 daemon 为绑定单位，拥有跨 workspace 的协调、投递幂等、
 目标 daemon/workspace 始终拥有执行、副作用和本地成果。Hub 不复制 Artifact、
 直接接管目标 Session 或扩展跨 Hub Federation。浏览器未 ack 的乐观输入与 daemon
 耐久 pendingTurns 保持各自职责。
-
 
 见 [Hub 注册单位调整](https://github.com/zendev-lab/spark/pull/476)。
 
