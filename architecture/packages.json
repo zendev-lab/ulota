@@ -80,8 +80,8 @@
       "temporaryDependencyExceptions": []
     },
     "packageBudget": {
-      "current": 38,
-      "ceiling": 38,
+      "current": 39,
+      "ceiling": 39,
       "nonGrowth": true,
       "reason": "The user-approved BoneHub migration adds independently enabled personal capability owners. Inventory establishes a separate permission and state boundary; remaining personal domains are added in their own stack layers."
     },
@@ -372,6 +372,14 @@
       "path": "packages/ulota-inventory",
       "layer": "capability",
       "owner": "personal-inventory",
+      "stability": "internal",
+      "stateWriter": "hub",
+      "allowedWorkspaceDependencies": ["@zendev-lab/spark-protocol"]
+    },
+    "@zendev-lab/ulota-personal-todos": {
+      "path": "packages/ulota-personal-todos",
+      "layer": "capability",
+      "owner": "personal-todos",
       "stability": "internal",
       "stateWriter": "hub",
       "allowedWorkspaceDependencies": ["@zendev-lab/spark-protocol"]

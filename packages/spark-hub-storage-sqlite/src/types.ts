@@ -556,6 +556,7 @@ export interface EventIngestSequenceTable {
 
 export interface SparkDatabase {
   personal_inventory: PersonalRecordsTable;
+  personal_todos: PersonalRecordsTable;
   personal_operation_receipts: PersonalOperationReceiptsTable;
   personal_capability_settings: PersonalCapabilitySettingsTable;
   personal_session_grants: PersonalSessionGrantsTable;
