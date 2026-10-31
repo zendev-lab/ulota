@@ -159,11 +159,8 @@ export default function registerSparkProductPolicy(pi: SparkProductFacadeApi) {
 
   const eventHandlers = registerSparkProductEvents(pi, {
     refreshSparkWidget,
-    ensureWorkflowRunManager: (cwd, ctx) => workflowRunManagerController.ensure(cwd, ctx),
     turnContextController,
     sessionHeartbeatController,
-    createAskAutoAnswerResolver: (ctx) => (request, askCtx) =>
-      answerAskWithReviewer(request, askCtx, ctx),
   });
 
   const registeredSparkTools = new Map<string, SparkRegisteredToolConfig>();

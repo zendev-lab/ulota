@@ -40,10 +40,11 @@ test("agent-end TODO reconciliation queues one guarded follow-up per input cycle
     assert.equal(sent[0]?.message.authority, "runtime_control");
     assert.equal(sent[0]?.message.trust, "trusted");
     assert.deepEqual(sent[0]?.options, { deliverAs: "followUp", triggerTurn: true });
-    assert.match(sent[0]?.message.content ?? "", /todo-active.*Verify the release gate/);
-    assert.match(sent[0]?.message.content ?? "", /todo-pending.*Publish the summary/);
-    assert.match(sent[0]?.message.content ?? "", /todo-blocked.*Wait for approval/);
-    assert.doesNotMatch(sent[0]?.message.content ?? "", /todo-done/);
+    assert.deepEqual(sent[0]?.message.details, {
+      actionableTodoIds: ["todo-active", "todo-pending"],
+      actionableTodoCount: 2,
+      unfinishedTodoCount: 3,
+    });
 
     assert.equal(await controller.reconcile(ctx), false);
     assert.equal(sent.length, 1, "automatic follow-up must not recurse");
@@ -90,26 +91,7 @@ test("agent-end TODO reconciliation does not continue blocked or terminal checkl
   }
 });
 
-test("Spark product policy wires hook-owned reconciliation to turn_end with agent_end fallback", () => {
-  const handlers = new Map<string, (event: unknown, ctx: SparkToolContext) => unknown>();
-  registerSparkProductEvents(
-    {
-      on(event, handler) {
-        handlers.set(event, handler);
-      },
-      sendMessage() {},
-    },
-    {
-      refreshSparkWidget: async () => undefined,
-      ensureWorkflowRunManager: async () => undefined,
-    },
-  );
-
-  assert.ok(handlers.has("turn_end"));
-  assert.ok(handlers.has("agent_end"));
-});
-
-test("terminal turn_end reconciles in-run while tool and failed turns defer to agent_end", async () => {
+test("product events bound TODO reconciliation to each input cycle and terminal assistant turn", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "spark-terminal-todo-reconciliation-"));
   const handlers = new Map<string, (event: unknown, ctx: SparkToolContext) => unknown>();
   const sent: SentMessage[] = [];
@@ -124,7 +106,6 @@ test("terminal turn_end reconciles in-run while tool and failed turns defer to a
     },
     {
       refreshSparkWidget: async () => undefined,
-      ensureWorkflowRunManager: async () => undefined,
     },
   );
 
@@ -143,6 +124,19 @@ test("terminal turn_end reconciles in-run while tool and failed turns defer to a
     await handlers.get("agent_end")?.({}, terminalCtx);
     assert.equal(sent.length, 1, "agent_end fallback must not duplicate in-run reconciliation");
 
+    assert.deepEqual(
+      await handlers.get("input")?.({ text: "continue", source: "interactive" }, terminalCtx),
+      { action: "continue" },
+    );
+    await handlers.get("agent_end")?.({}, terminalCtx);
+    assert.equal(sent.length, 2, "new input must allow fallback reconciliation again");
+    assert.deepEqual(sent[1]?.options, { deliverAs: "followUp", triggerTurn: true });
+    await handlers.get("turn_end")?.(
+      { message: { stopReason: "stop", content: [{ type: "text", text: "Done" }] } },
+      terminalCtx,
+    );
+    assert.equal(sent.length, 2, "fallback reconciliation must also guard the new input cycle");
+
     for (const [sessionId, message] of [
       ["tooling", { stopReason: "toolUse", content: [{ type: "toolCall", name: "todo" }] }],
       ["failed", { stopReason: "error", content: [{ type: "text", text: "failed" }] }],
@@ -154,7 +148,7 @@ test("terminal turn_end reconciles in-run while tool and failed turns defer to a
       ]);
       await handlers.get("turn_end")?.({ message }, ctx);
     }
-    assert.equal(sent.length, 1, "non-terminal turn_end events must not reconcile");
+    assert.equal(sent.length, 2, "non-terminal turn_end events must not reconcile");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

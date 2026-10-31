@@ -148,7 +148,6 @@ test("extension lifecycle merges turn context and resets it after compact or swi
     },
     {
       refreshSparkWidget: async () => undefined,
-      ensureWorkflowRunManager: async () => undefined,
       turnContextController: {
         async collect() {
           if (projected) return [];

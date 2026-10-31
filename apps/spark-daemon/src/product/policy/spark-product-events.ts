@@ -1,10 +1,6 @@
 import { createHash } from "node:crypto";
 import { defaultTaskGraphStore } from "@zendev-lab/spark-tasks";
-import {
-  ensureSparkStateForActiveWorkspace,
-  handleSparkInput,
-  injectSparkHints,
-} from "./spark-active-injection.ts";
+import { ensureSparkStateForActiveWorkspace, injectSparkHints } from "./spark-active-injection.ts";
 import {
   cleanupOwnedBackgroundSubroles,
   resumeOwnedBackgroundSubroles,
@@ -37,14 +33,8 @@ interface SparkProductEventApi extends SparkModeMessageApi {
 
 export interface SparkProductEventDeps {
   refreshSparkWidget: (cwd: string, ctx?: SparkToolContext) => Promise<void>;
-  ensureWorkflowRunManager: (cwd: string, ctx: SparkToolContext) => Promise<void>;
   turnContextController?: Pick<SparkTurnContextController, "collect" | "reset">;
   sessionHeartbeatController?: SparkSessionHeartbeatController;
-  createAskAutoAnswerResolver?: (
-    ctx: SparkToolContext,
-  ) =>
-    | SparkToolContext["askAutoAnswerResolver"]
-    | Promise<SparkToolContext["askAutoAnswerResolver"]>;
 }
 
 export interface SparkProductEventHandlers {
@@ -73,19 +63,9 @@ export function registerSparkProductEvents(
     pendingSparkAgentInstructions.set(sessionKey, { instruction, goalId: options.goalId });
   }
 
-  const syncGoalAskAutoAnswerPolicy = (ctx: SparkToolContext) =>
-    syncSparkGoalAskAutoAnswerPolicy(ctx, deps);
-
-  pi.on?.("input", (event: unknown, ctx: SparkToolContext) => {
+  pi.on?.("input", async (_event: unknown, ctx: SparkToolContext) => {
     agentEndReconciliation.reset(ctx);
-    return handleSparkInput(event, ctx, {
-      piApi: pi,
-      deps: {
-        queueSparkAgentInstruction,
-        refreshSparkWidget: deps.refreshSparkWidget,
-        ensureWorkflowRunManager: deps.ensureWorkflowRunManager,
-      },
-    });
+    return { action: "continue" };
   });
   pi.on?.("before_role_start", async (event: unknown, ctx: SparkToolContext) =>
     injectSparkHints(event, ctx),
@@ -231,10 +211,7 @@ async function activePendingInstruction(
   return goal?.status === "active" && goal.goalId === pending.goalId ? pending : undefined;
 }
 
-export async function syncSparkGoalAskAutoAnswerPolicy(
-  ctx: SparkToolContext,
-  _deps: SparkProductEventDeps,
-): Promise<void> {
+async function syncGoalAskAutoAnswerPolicy(ctx: SparkToolContext): Promise<void> {
   const activeGoal = await currentActiveSessionGoal(ctx);
   ctx.askWaitTimeoutMs = activeGoal
     ? SPARK_AUTONOMOUS_ASK_WAIT_TIMEOUT_MS
