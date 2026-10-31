@@ -47,6 +47,7 @@
     {content}
     class="streamdown-content"
     baseTheme="shadcn"
+    highlightTheme="github-dark"
     {defaultOrigin}
     static={isStatic}
     components={resolvedComponents}

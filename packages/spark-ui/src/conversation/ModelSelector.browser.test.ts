@@ -58,4 +58,28 @@ describe("ModelSelector browser contract", () => {
     expect(onCommit).toHaveBeenCalledWith("frontier");
     await screen.unmount();
   });
+
+  it("returns focus to search after clearing an empty result", async () => {
+    const screen = await render(ModelSelector, {
+      id: "model-selector-clear",
+      groups: [
+        {
+          id: "spark",
+          label: "Spark",
+          options: [{ value: "balanced", label: "Balanced" }],
+        },
+      ],
+      ...labels,
+    });
+
+    await screen.getByRole("button", { name: "Model" }).click();
+    await screen.getByPlaceholder("Search models").fill("missing-model");
+    await expect.element(screen.getByText("No models found")).toBeVisible();
+    await screen.getByRole("button", { name: "Clear search" }).click();
+
+    await expect.element(screen.getByPlaceholder("Search models")).toHaveValue("");
+    await expect.element(screen.getByPlaceholder("Search models")).toHaveFocus();
+    await expect.element(screen.getByText("Balanced")).toBeVisible();
+    await screen.unmount();
+  });
 });

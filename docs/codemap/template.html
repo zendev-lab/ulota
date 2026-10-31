@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ulota · 代码地图</title>
+    <style>
+      :root {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        color: #0f172a;
+        background: #f8fafc;
+        line-height: 1.5;
+        font-size: 16px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      ::selection {
+        background: #eff6ff;
+        color: #0f172a;
+      }
+      input {
+        caret-color: #2563eb;
+      }
+      header {
+        padding: 32px max(24px, calc((100vw - 1400px) / 2));
+        background: white;
+        color: #0f172a;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      header p {
+        max-width: 75ch;
+        color: #475569;
+      }
+      h1 {
+        font-size: clamp(28px, 4vw, 46px);
+        line-height: 1.1;
+        margin: 12px 0;
+      }
+      h2 {
+        font-size: 20px;
+        margin: 0 0 12px;
+      }
+      h3 {
+        font-size: 15px;
+        margin: 22px 0 8px;
+      }
+      a {
+        color: #1d4ed8;
+        overflow-wrap: anywhere;
+        text-underline-offset: 3px;
+      }
+      header a {
+        color: #1d4ed8;
+      }
+      main {
+        max-width: 1448px;
+        margin: auto;
+        padding: 24px;
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(300px, 1fr);
+        gap: 24px;
+      }
+      .panel {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 22px;
+        min-width: 0;
+      }
+      .overview {
+        align-self: start;
+      }
+      .details {
+        align-self: start;
+        position: sticky;
+        top: 20px;
+        max-height: calc(100vh - 40px);
+        overflow: auto;
+      }
+      .controls {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        background: white;
+        color: inherit;
+        padding: 10px;
+        max-width: 100%;
+      }
+      input {
+        width: 100%;
+      }
+      label {
+        font-size: 13px;
+        flex: 1;
+        min-width: 170px;
+      }
+      label input,
+      label select {
+        display: block;
+        margin-top: 5px;
+      }
+      button {
+        cursor: pointer;
+        text-align: left;
+        min-height: 44px;
+      }
+      button:hover {
+        background: #eff6ff;
+      }
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      summary:focus-visible,
+      .details:focus {
+        outline: 3px solid #1d4ed8;
+        outline-offset: 3px;
+      }
+      .nodes {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 9px;
+      }
+      .node {
+        padding: 13px;
+        min-height: 77px;
+      }
+      .node strong {
+        display: block;
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
+      .node small {
+        color: #475569;
+      }
+      .node[aria-pressed="true"] {
+        background: #2563eb;
+        color: white;
+        border-color: #2563eb;
+      }
+      .node[aria-pressed="true"] small {
+        color: #ffffff;
+      }
+      .node.related {
+        border-color: #2563eb;
+        border-width: 2px;
+      }
+      .group {
+        margin-bottom: 20px;
+      }
+      .group h3 {
+        color: #475569;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin: 14px 0 8px;
+      }
+      .badge {
+        font-size: 12px;
+        border-radius: 20px;
+        background: #f1f5f9;
+        padding: 4px 10px;
+        display: inline-block;
+      }
+      .muted {
+        color: #475569;
+        font-size: 14px;
+      }
+      .flowbar {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 14px 0;
+      }
+      .flowbar button {
+        font-size: 13px;
+      }
+      .flowbar button[aria-pressed="true"] {
+        background: #2563eb;
+        color: white;
+      }
+      .full {
+        grid-column: 1/-1;
+      }
+      ol li {
+        margin: 12px 0;
+      }
+      ul {
+        padding-left: 20px;
+      }
+      li {
+        margin: 7px 0;
+        overflow-wrap: anywhere;
+      }
+      .relation {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 9px;
+        padding: 12px 0;
+        border-top: 1px solid #e2e8f0;
+        align-items: center;
+      }
+      .relation a {
+        font-size: 14px;
+      }
+      .relation p {
+        grid-column: 1/-1;
+        margin: 0;
+        font-size: 13px;
+        color: #475569;
+      }
+      details {
+        margin: 14px 0;
+      }
+      summary {
+        cursor: pointer;
+        padding: 8px 0;
+      }
+      code {
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      #status {
+        min-height: 24px;
+      }
+      .skip {
+        position: absolute;
+        left: -10000px;
+      }
+      .skip:focus {
+        position: static;
+      }
+      footer {
+        max-width: 1400px;
+        padding: 24px;
+        margin: auto;
+        font-size: 13px;
+        color: #475569;
+      }
+      @media (max-width: 760px) {
+        main {
+          display: block;
+          padding: 14px;
+        }
+        .panel {
+          margin-bottom: 14px;
+          padding: 16px;
+        }
+        .details {
+          position: static;
+          max-height: none;
+        }
+        .nodes {
+          grid-template-columns: 1fr 1fr;
+        }
+        header {
+          padding: 24px 18px;
+        }
+        .relation {
+          grid-template-columns: 1fr auto 1fr;
+        }
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        button {
+          transition: background-color 0.12s ease;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到地图</a>
+    <header>
+      <h1>Ulota：从意图到执行</h1>
+      <p>
+        探索模块职责边界，沿五条完整工作流追踪源码与测试证据。选择模块，查看其调用方和下游影响。
+      </p>
+      <a id="repo-guide" href="../../../../README.md">仓库指南</a> ·
+      <a id="map-guide" href="../../../../docs/codemap/README.md">地图维护</a> ·
+      <a href="codemap.json">JSON</a>
+    </header>
+    <main id="main">
+      <section class="panel full">
+        <h2>沿工作流浏览</h2>
+        <div id="flows" class="flowbar"></div>
+        <div id="flow"></div>
+      </section>
+      <section class="panel overview">
+        <h2>模块职责地图</h2>
+        <p class="muted">
+          共 20
+          个主要节点，文件按所属模块归组。详情中的箭头表示关系方向；选择工作流可突出显示参与模块。
+        </p>
+        <div class="controls">
+          <label
+            >查找模块或源码<input
+              id="search"
+              type="search"
+              placeholder="例如：会话、工作流、sqlite" /></label
+          ><label
+            >关系视图<select id="lens">
+              <option value="dataflow">运行时数据流</option>
+              <option value="dependency">构建依赖</option>
+            </select></label
+          >
+        </div>
+        <p id="status" class="muted" aria-live="polite"></p>
+        <p><a id="view-detail" href="#detail">查看所选模块详情</a></p>
+        <div id="nodes"></div>
+      </section>
+      <aside id="detail" class="panel details" tabindex="-1" aria-label="所选模块详情"></aside>
+      <section class="panel full">
+        <h2>证据与边界</h2>
+        <p id="baseline" class="muted"></p>
+        <ul id="limits"></ul>
+        <p class="muted">
+          测试列表展示源码中的声明，不代表测试已通过；请单独运行仓库检查。浏览地图无需服务器、网络、JavaScript
+          库或守护进程。
+        </p>
+      </section>
+    </main>
+    <footer>
+      使用 Tab 和
+      Enter/空格键浏览。本地源码链接需要此文件保持在仓库目录中；每份证据列表也提供固定到提交版本的源码链接。
+    </footer>
+    <script id="map-data" type="application/json">
+      __MAP_DATA__
+    </script>
+    <script>
+      "use strict";
+      const map = JSON.parse(document.getElementById("map-data").textContent),
+        byId = new Map(map.nodes.map((n) => [n.id, n]));
+      let selected = location.hash.slice(1),
+        activeFlow = null;
+      if (!byId.has(selected)) selected = "daemon";
+      const $ = (id) => document.getElementById(id),
+        el = (tag, text) => {
+          const e = document.createElement(tag);
+          if (text !== undefined) e.textContent = text;
+          return e;
+        };
+      function source(path, line) {
+        const row = el("li");
+        const local = el("a", path + (line ? ":" + line : ""));
+        const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+        local.href = "../../../../" + encodedPath;
+        if (location.protocol === "file:") row.append(local, " · ");
+        if ((map.baselineMissingPaths || []).includes(path)) {
+          row.append(
+            el(
+              "span",
+              (location.protocol === "file:" ? "" : path + " — ") + "本地新增，基线提交中尚不存在",
+            ),
+          );
+          return row;
+        }
+        const remote = el(
+          "a",
+          location.protocol === "file:" ? "基线源码" : path + (line ? ":" + line : ""),
+        );
+        remote.href =
+          "https://github.com/zendev-lab/ulota/blob/" +
+          encodeURIComponent(map.baseline) +
+          "/" +
+          encodedPath +
+          (line ? "#L" + encodeURIComponent(line) : "");
+        remote.target = "_blank";
+        remote.rel = "noopener";
+        row.append(remote);
+        return row;
+      }
+      function focusDetail() {
+        const detail = $("detail");
+        detail.focus({ preventScroll: true });
+        detail.scrollIntoView({ block: "start" });
+      }
+      function choose(id) {
+        selected = id;
+        history.replaceState(null, "", "#" + encodeURIComponent(id));
+        render();
+      }
+      function link(id) {
+        const a = el("a", byId.get(id).label);
+        a.href = "#" + encodeURIComponent(id);
+        a.onclick = (e) => {
+          e.preventDefault();
+          $("search").value = "";
+          choose(id);
+          focusDetail();
+        };
+        return a;
+      }
+      function list(title, paths, parent) {
+        const box = el("details"),
+          sum = el("summary", title + " (" + paths.length + ")"),
+          ul = el("ul");
+        paths.forEach((p) => ul.append(source(p)));
+        box.append(sum, ul);
+        parent.append(box);
+      }
+      function render() {
+        const query = $("search").value.trim().toLowerCase(),
+          kind = $("lens").value,
+          related = new Set(
+            map.edges
+              .filter((e) => e.kind === kind && (e.source === selected || e.target === selected))
+              .flatMap((e) => [e.source, e.target]),
+          );
+        const participants = new Set(activeFlow ? activeFlow.steps.map((s) => s.node) : []);
+        $("nodes").replaceChildren();
+        let count = 0;
+        for (const group of [...new Set(map.nodes.map((n) => n.group))]) {
+          const section = el("section");
+          section.className = "group";
+          section.append(el("h3", group));
+          const grid = el("div");
+          grid.className = "nodes";
+          for (const n of map.nodes.filter(
+            (n) =>
+              n.group === group &&
+              [n.label, n.role, ...n.files].join(" ").toLowerCase().includes(query),
+          )) {
+            count++;
+            const b = el("button");
+            b.className =
+              "node" + ((activeFlow ? participants : related).has(n.id) ? " related" : "");
+            b.setAttribute("aria-pressed", String(n.id === selected));
+            b.append(
+              el("strong", n.label),
+              el("small", n.files.length + " 个源码文件 · " + n.tests.length + " 条测试声明"),
+            );
+            b.onclick = () => {
+              choose(n.id);
+              $("nodes").querySelector('button[aria-pressed="true"]')?.focus();
+            };
+            grid.append(b);
+          }
+          if (grid.children.length) {
+            section.append(grid);
+            $("nodes").append(section);
+          }
+        }
+        $("status").textContent =
+          count +
+          " / " +
+          map.nodes.length +
+          " 个模块 · " +
+          (activeFlow ? "描边：工作流参与模块" : "描边：关联模块");
+        const n = byId.get(selected),
+          d = $("detail");
+        d.replaceChildren();
+        const badge = el("span", n.group);
+        badge.className = "badge";
+        d.append(
+          badge,
+          el("h2", n.label),
+          el("p", n.role),
+          el("h3", "下游影响"),
+          el("p", n.impact),
+        );
+        for (const [title, direction] of [
+          ["上游调用方与依赖方", "target"],
+          ["依赖与下游使用方", "source"],
+        ]) {
+          d.append(el("h3", title));
+          const edges = map.edges.filter((e) => e.kind === kind && e[direction] === selected);
+          if (!edges.length) d.append(el("p", "当前视图未记录此类关系。"));
+          for (const e of edges) {
+            const row = el("div");
+            row.className = "relation";
+            row.append(
+              link(e.source),
+              el("span", "→"),
+              link(e.target),
+              el("p", e.kind === "dependency" ? "生产环境包依赖，不表示运行时调用。" : e.label),
+            );
+            const ev = el("ul");
+            e.evidence.forEach((p) => ev.append(source(p)));
+            const details = el("details");
+            details.append(el("summary", "关系证据"), ev);
+            row.append(details);
+            d.append(row);
+          }
+        }
+        list("源码证据", n.evidence, d);
+        const meta = el("details");
+        meta.append(el("summary", "包与外部依赖"));
+        const ml = el("ul");
+        n.packageMetadata.forEach((p) =>
+          ml.append(
+            el(
+              "li",
+              p.name +
+                " · 层级：" +
+                p.layer +
+                " · 所属模块：" +
+                p.owner +
+                " · 状态写入方：" +
+                p.stateWriter,
+            ),
+          ),
+        );
+        n.externalDependencies.forEach((p) => {
+          const li = source(p.manifest);
+          li.prepend(el("code", p.name + " " + p.version + " — "));
+          ml.append(li);
+        });
+        meta.append(ml);
+        d.append(meta);
+        list("模块文件", n.files, d);
+        const ts = el("details");
+        ts.append(el("summary", "相关测试声明（" + n.tests.length + "）"), el("p", n.testNote));
+        const ul = el("ul");
+        n.tests.forEach((t) => {
+          const li = source(t.path, t.line);
+          li.prepend(el("code", t.symbol + " — "));
+          ul.append(li);
+        });
+        ts.append(ul);
+        d.append(ts);
+      }
+      function showFlow(flow) {
+        activeFlow = flow;
+        $("flows")
+          .querySelectorAll("button")
+          .forEach((b) =>
+            b.setAttribute("aria-pressed", String(b.dataset.id === (flow?.id || ""))),
+          );
+        $("flow").replaceChildren();
+        if (flow) {
+          $("flow").append(el("code", flow.command));
+          const ol = el("ol");
+          flow.steps.forEach((s) => {
+            const li = el("li");
+            li.append(link(s.node), " — " + s.description);
+            const evidence = el("details");
+            evidence.append(el("summary", "源码证据"));
+            const ul = el("ul");
+            s.evidence.forEach((p) => ul.append(source(p)));
+            evidence.append(ul);
+            li.append(evidence);
+            ol.append(li);
+          });
+          $("flow").append(ol);
+        } else
+          $("flow").append(
+            el(
+              "p",
+              "选择工作流，按顺序查看执行路径。这些步骤描述控制流与数据流；构建依赖请切换到对应关系视图。",
+            ),
+          );
+        render();
+      }
+      for (const f of [null, ...map.flows]) {
+        const b = el("button", f ? f.title : "概览");
+        b.dataset.id = f?.id || "";
+        b.onclick = () => showFlow(f);
+        $("flows").append(b);
+      }
+      $("baseline").textContent = "源码基线：" + map.baseline + " · 文件索引在文档构建时生成";
+      map.limitations.forEach((l) => $("limits").append(el("li", l)));
+      $("search").oninput = render;
+      $("lens").onchange = render;
+      window.onhashchange = () => {
+        if (byId.has(location.hash.slice(1))) {
+          selected = location.hash.slice(1);
+          render();
+        }
+      };
+      if (location.protocol !== "file:") {
+        $("repo-guide").href =
+          "https://github.com/zendev-lab/ulota/blob/" +
+          encodeURIComponent(map.baseline) +
+          "/README.md";
+        $("map-guide").href = "/zh/concepts/code-map/";
+      }
+      $("view-detail").onclick = (e) => {
+        e.preventDefault();
+        focusDetail();
+      };
+      showFlow(null);
+    </script>
+  </body>
+</html>

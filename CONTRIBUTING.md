@@ -4,7 +4,7 @@
 
 Use the Node.js and pnpm versions declared in [`package.json`](./package.json)
 and the Rust toolchain in [`rust-toolchain.toml`](./rust-toolchain.toml).
-Git is also required. Repository dependencies provide Vite+ (`vp`) and `prek`.
+Git and Python 3.9 or newer are also required; Python generates the documentation's code map. Repository dependencies provide Vite+ (`vp`) and `prek`.
 
 `pnpm install` runs the `prepare` script and installs the `prek` commit hooks.
 Run `prek install` when Git hooks are missing from an existing checkout.
@@ -45,6 +45,11 @@ For the current package dependency model, read
 [`.agents/notes/contracts/package-architecture.md`](./.agents/notes/contracts/package-architecture.md).
 For command and state ownership, read
 [`.agents/notes/contracts/command-planes.md`](./.agents/notes/contracts/command-planes.md).
+
+The [interactive code map](./docs/codemap/README.md) links module responsibilities
+and representative workflows to source evidence. Maintain its descriptions and
+template in `docs/codemap/`; the documentation build generates its file index
+and web assets. Generated maps and local validation results remain untracked.
 
 ## Choose the owner before changing code
 

@@ -87,6 +87,11 @@ export default defineConfig({
               translations: { zh: "功能地图" },
               link: "/concepts/feature-map/",
             },
+            {
+              label: "Interactive code map",
+              translations: { zh: "交互式代码地图" },
+              link: "/concepts/code-map/",
+            },
           ],
         },
         {
