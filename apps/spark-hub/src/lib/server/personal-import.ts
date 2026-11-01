@@ -43,14 +43,14 @@ function prepareRecords<T extends PersonalStoredRecord>(
   for (const record of records) {
     const mapping = personalLegacyMapping(getDatabase(), userId, capability, record.id);
     if (mapping) {
+      let status: ImportStatus;
+      if (!repository.get(mapping.recordId)) status = "target_missing";
+      else if (mapping.sourceHash === sourceHash(record)) status = "skip";
+      else status = "source_changed";
       report.push({
         capability,
         legacyId: record.id,
-        status: !repository.get(mapping.recordId)
-          ? "target_missing"
-          : mapping.sourceHash === sourceHash(record)
-            ? "skip"
-            : "source_changed",
+        status,
       });
       continue;
     }

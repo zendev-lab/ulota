@@ -1,3 +1,5 @@
+import type { PersonalRecordTable } from "./personal-records.ts";
+
 export interface SchemaMigrationsTable {
   version: string;
   name: string;
@@ -622,14 +624,14 @@ export interface PersonalBindingsTable {
 
 export interface PersonalCapabilitySettingsTable {
   user_id: string;
-  capability: "inventory" | "todos" | "subscriptions";
+  capability: PersonalRecordTable;
   enabled: 0 | 1;
 }
 export interface PersonalSessionGrantsTable {
   user_id: string;
   binding_id: string;
   session_id: string;
-  capability: "inventory" | "todos" | "subscriptions";
+  capability: PersonalRecordTable;
   can_write: 0 | 1;
 }
 export interface PersonalSessionsTable {
@@ -657,7 +659,7 @@ export interface PersonalOperationReceiptsTable {
 
 export interface PersonalLegacyImportsTable {
   user_id: string;
-  capability: "inventory" | "todos" | "subscriptions";
+  capability: PersonalRecordTable;
   legacy_id: string;
   record_id: string;
   source_hash: string;

@@ -139,7 +139,8 @@ try {
   ] as const) {
     await page.setViewportSize({ width, height });
     for (const path of ["", "inventory", "todos", "subscriptions", "import"]) {
-      const response = await page.goto(`${base}/personal${path ? `/${path}` : ""}`);
+      const suffix = path ? `/${path}` : "";
+      const response = await page.goto(`${base}/personal${suffix}`);
       if (response?.status() !== 200)
         throw new Error(`Personal ${path} returned ${response?.status()}`);
       if (!(await page.locator(".account").innerText()).includes("Personal proof"))

@@ -28,8 +28,8 @@ export const actions: Actions = {
         payload: JSON.stringify(payload),
         operationId: randomUUID(),
       };
-    } catch (caught) {
-      return failure(caught);
+    } catch (error_) {
+      return failure(error_);
     }
   },
   commit: async ({ locals, request }) => {
@@ -46,8 +46,8 @@ export const actions: Actions = {
         String(form.get("operationId") ?? ""),
       );
       return { imported: report };
-    } catch (caught) {
-      return failure(caught);
+    } catch (error_) {
+      return failure(error_);
     }
   },
 };
