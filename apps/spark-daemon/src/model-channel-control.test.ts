@@ -20,7 +20,7 @@ import {
 import type { SparkDaemonModelControl } from "./model-control.ts";
 import type { DaemonChannelIngressRuntime } from "./channels/ingress.ts";
 import { createDaemonSessionRegistry } from "./session-registry.ts";
-import { createDaemonWorkspaceSession } from "../../../test/support/session-fixtures.ts";
+import { createDaemonWorkspaceSession } from "../../../packages/spark-session/test/support/session-fixtures.ts";
 
 const model: SparkModelRef = {
   providerName: "fixture",

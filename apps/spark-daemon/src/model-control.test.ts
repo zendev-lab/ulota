@@ -10,7 +10,7 @@ import {
 } from "@zendev-lab/spark-llm-providers/control";
 import { createSparkDaemonModelControl } from "./model-control.js";
 import { createDaemonSessionRegistry } from "./session-registry.js";
-import { createDaemonWorkspaceSession } from "../../../test/support/session-fixtures.ts";
+import { createDaemonWorkspaceSession } from "../../../packages/spark-session/test/support/session-fixtures.ts";
 
 const roots: string[] = [];
 const model = { providerName: "baidu-oneapi", modelId: "ernie-4.5" };

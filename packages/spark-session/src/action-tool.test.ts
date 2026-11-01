@@ -9,7 +9,7 @@ import type {
 } from "@zendev-lab/spark-protocol";
 import { executeSparkSessionAction } from "./action-tool.ts";
 import { SparkSessionMailStore } from "./mail-store.ts";
-import { workspaceSessionRecord } from "../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../test/support/session-fixtures.ts";
 
 const roots: string[] = [];
 

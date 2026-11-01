@@ -13,7 +13,7 @@ import type {
 } from "@zendev-lab/spark-protocol";
 import { registerSparkSessionTool } from "./extension.ts";
 import type { SparkSessionToolContext } from "./action-tool.ts";
-import { workspaceSessionRecord } from "../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../test/support/session-fixtures.ts";
 
 const NOW = "2026-07-13T00:00:00.000Z";
 

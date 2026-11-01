@@ -20,7 +20,7 @@ import { SessionSupervisor } from "./session-supervisor.ts";
 import { executeSparkDaemonSideThreadControl } from "./side-thread-control.ts";
 import { SparkInvocationStore } from "./store/invocations.ts";
 import { migrateSparkDaemonDatabase } from "./store/schema.ts";
-import { createDaemonWorkspaceSession } from "../../../test/support/session-fixtures.ts";
+import { createDaemonWorkspaceSession } from "../../../packages/spark-session/test/support/session-fixtures.ts";
 
 const roots: string[] = [];
 

@@ -47,7 +47,7 @@ import type {
 import {
   createDaemonWorkspaceSession,
   workspaceSessionRecord,
-} from "../../../test/support/session-fixtures.ts";
+} from "../../../packages/spark-session/test/support/session-fixtures.ts";
 
 async function countSqliteAuthorizations<T>(
   db: DatabaseSync,

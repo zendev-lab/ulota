@@ -22,7 +22,7 @@ import { SparkInvocationStore } from "./store/invocations.ts";
 import { SparkLoopStore } from "./store/loops.ts";
 import { migrateSparkDaemonDatabase } from "./store/schema.ts";
 import { registerWorkspace } from "./store/workspaces.ts";
-import { createDaemonWorkspaceSession } from "../../../test/support/session-fixtures.ts";
+import { createDaemonWorkspaceSession } from "../../../packages/spark-session/test/support/session-fixtures.ts";
 
 describe("daemon session control admission", () => {
   it("lists only daemon Channel Sessions on a daemon-scoped route", async () => {

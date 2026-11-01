@@ -13,7 +13,7 @@ import { migrateLegacyLoopState } from "./loop-state-migration.ts";
 import { SparkLoopStore } from "./loops.ts";
 import { SparkInvocationStore } from "./invocations.ts";
 import { migrateSparkDaemonDatabase } from "./schema.ts";
-import { workspaceSessionRecord } from "../../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 describe("legacy autonomous loop migration", () => {
   it("DRV-STARTUP-004 imports legacy cadence once and strips frontend runtime fields", async () => {

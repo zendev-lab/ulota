@@ -11,7 +11,7 @@ import {
   getProjectedManagedSessionForHub,
   getProjectedManagedSessionSnapshotForHub,
 } from "./managed-sessions";
-import { workspaceSessionRecord } from "../../../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 describe("hub runtime session cache", () => {
   it("retains control only for explicit response timeouts with a stale projection", () => {

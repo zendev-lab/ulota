@@ -4,7 +4,7 @@ import { parseSparkSessionView, runtimeProtocolVersion } from "@zendev-lab/spark
 import { describe, expect, it } from "vitest";
 
 import { loadProjectedReproWorkbench } from "./repro-workbench.ts";
-import { workspaceSessionRecord } from "../../../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 type FixtureBinding = {
   artifactRef: `artifact:${string}`;

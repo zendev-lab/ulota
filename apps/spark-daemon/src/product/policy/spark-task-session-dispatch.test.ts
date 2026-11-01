@@ -15,7 +15,7 @@ import {
   dispatchManagedTaskSessions,
   reconcileManagedTaskSessions,
 } from "./spark-task-session-dispatch.ts";
-import { workspaceSessionRecord } from "../../../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 const roots: string[] = [];
 

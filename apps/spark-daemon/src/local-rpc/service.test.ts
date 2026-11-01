@@ -12,7 +12,7 @@ import { resolveSparkPaths } from "@zendev-lab/spark-platform-node";
 import { upsertSparkDaemonServerProfile } from "../server-profiles.ts";
 import type { SparkDaemonModelControl } from "../model-control.ts";
 import { createDaemonSessionRegistry } from "../session-registry.ts";
-import { createDaemonWorkspaceSession } from "../../../../test/support/session-fixtures.ts";
+import { createDaemonWorkspaceSession } from "../../../../packages/spark-session/test/support/session-fixtures.ts";
 import { openSparkDaemonDatabase } from "../store/schema.ts";
 import { SparkInvocationStore } from "../store/invocations.ts";
 import { SparkTokenUsageStore } from "../store/token-usage.ts";

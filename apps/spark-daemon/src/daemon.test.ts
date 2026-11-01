@@ -35,7 +35,7 @@ import { openSparkDaemonDatabase } from "./store/schema.js";
 import {
   createDaemonWorkspaceSession,
   workspaceSessionRecord,
-} from "../../../test/support/session-fixtures.ts";
+} from "../../../packages/spark-session/test/support/session-fixtures.ts";
 import {
   addWorkspace,
   applyWorkspaceLifecycleMutation,

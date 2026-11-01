@@ -7,7 +7,7 @@ import {
   recordInvocationUpdate,
 } from "@zendev-lab/spark-hub-coordination/projection-services";
 import { conversationActivityStatus, loadConversationSummaries } from "./conversation-summaries";
-import { workspaceSessionRecord } from "../../../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 function conversationFixture() {
   const db = openMemoryDatabase();

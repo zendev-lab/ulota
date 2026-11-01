@@ -9,7 +9,7 @@ import {
   testModelForHub,
   type HubModelControlClient,
 } from "./model-control";
-import { workspaceSessionRecord } from "../../../../../test/support/session-fixtures.ts";
+import { workspaceSessionRecord } from "../../../../../packages/spark-session/test/support/session-fixtures.ts";
 
 const model = { providerName: "baidu-oneapi", modelId: "ernie-4.5" };
 
