@@ -16,8 +16,8 @@ import {
   loadLatestSessionTimeline,
 } from "./timeline-window";
 import { adoptQueuedTurnIntoLiveState, adoptCancelledTurnIntoLiveState } from "./turn-adoption";
-import { createSessionLiveEventState } from "$lib/session-live-events";
-import { SESSION_TIMELINE_PAGE_SIZE } from "$lib/session-timeline";
+import { createSessionLiveEventState } from "#lib/session-live-events.ts";
+import { SESSION_TIMELINE_PAGE_SIZE } from "#lib/session-timeline.ts";
 import { parseSparkSessionView, type SparkActionView } from "@zendev-lab/spark-protocol";
 
 const reasons = {

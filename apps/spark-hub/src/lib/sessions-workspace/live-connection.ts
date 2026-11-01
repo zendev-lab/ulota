@@ -3,11 +3,11 @@ import {
   parseSessionSerializedEvent,
   sessionEventCursorStorageKey,
   type SessionLiveEventState,
-} from "$lib/session-live-events";
+} from "#lib/session-live-events.ts";
 import {
   openingSessionEventConnectionState,
   type SessionEventConnectionState,
-} from "$lib/session-event-connection";
+} from "#lib/session-event-connection.ts";
 
 export type SessionLiveConnectionHandlers = {
   getLiveEventState: () => SessionLiveEventState | null;

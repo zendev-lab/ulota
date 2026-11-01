@@ -1,9 +1,9 @@
 import { error, redirect } from "@sveltejs/kit";
-import { getDatabase } from "$lib/server/db";
-import { getProjectedManagedSessionForHub } from "$lib/server/managed-sessions";
-import { loadWorkspaceByRouteId } from "$lib/server/workspace-routing";
-import { workspaceIdForWorkbenchSession } from "$lib/workbench-session-scope";
-import { workspaceSessionPath } from "$lib/workspace-routes";
+import { getDatabase } from "#lib/server/db.ts";
+import { getProjectedManagedSessionForHub } from "#lib/server/managed-sessions.ts";
+import { loadWorkspaceByRouteId } from "#lib/server/workspace-routing.ts";
+import { workspaceIdForWorkbenchSession } from "#lib/workbench-session-scope.ts";
+import { workspaceSessionPath } from "#lib/workspace-routes.ts";
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ params, url }) => {

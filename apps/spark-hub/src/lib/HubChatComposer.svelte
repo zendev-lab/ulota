@@ -1,8 +1,8 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import type { SubmitFunction } from "@sveltejs/kit";
+  import type { SubmitFunction } from "$app/forms";
   import { Icon } from "@zendev-lab/spark-ui";
-  import type { HubChatContextCard, HubChatPromptSuggestion } from "$lib/hub-chat-types";
+  import type { HubChatContextCard, HubChatPromptSuggestion } from "#lib/hub-chat-types.ts";
   import type { IconName } from "@zendev-lab/spark-ui";
 
   type QueuedMessage = {

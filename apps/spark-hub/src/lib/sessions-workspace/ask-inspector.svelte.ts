@@ -1,5 +1,5 @@
 import type { SparkActionBarView } from "@zendev-lab/spark-protocol";
-import type { SessionInspectorLabels } from "$lib/session-workbench";
+import type { SessionInspectorLabels } from "#lib/session-workbench.ts";
 import type { SessionsWorkbenchCopy } from "./types";
 
 /** Build inspector copy labels from workbench i18n. */

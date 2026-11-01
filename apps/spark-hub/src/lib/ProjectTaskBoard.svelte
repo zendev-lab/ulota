@@ -1,8 +1,8 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { Icon } from "@zendev-lab/spark-ui";
-  import type { AppMessages } from "$lib/i18n";
-  import type { ProjectTaskBoardColumn } from "$lib/project-task-board";
+  import type { AppMessages } from "#lib/i18n.ts";
+  import type { ProjectTaskBoardColumn } from "#lib/project-task-board.ts";
 
   let {
     columns,

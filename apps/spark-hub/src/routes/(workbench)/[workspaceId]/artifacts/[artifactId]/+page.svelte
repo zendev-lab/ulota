@@ -1,13 +1,13 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import MemoryProposalDetail from "$lib/MemoryProposalDetail.svelte";
-  import MemoryQuarantineDetail from "$lib/MemoryQuarantineDetail.svelte";
+  import MemoryProposalDetail from "#lib/MemoryProposalDetail.svelte";
+  import MemoryQuarantineDetail from "#lib/MemoryQuarantineDetail.svelte";
   import { Button, Icon, Panel } from "@zendev-lab/spark-ui";
   import { GitChangePreview } from "@zendev-lab/spark-ui/git-change";
   import { WebPreview, WebPreviewBody } from "@zendev-lab/spark-ui/workbench";
-  import { gitChangePreviewFromContentRef } from "$lib/git-change-preview";
-  import { enumLabel, formatByteSize, formatRelativeTime } from "$lib/i18n";
-  import { workspacePath, workspaceSessionPath } from "$lib/workspace-routes";
+  import { gitChangePreviewFromContentRef } from "#lib/git-change-preview.ts";
+  import { enumLabel, formatByteSize, formatRelativeTime } from "#lib/i18n.ts";
+  import { workspacePath, workspaceSessionPath } from "#lib/workspace-routes.ts";
 
   let { data, form } = $props();
   let t = $derived(data.messages.artifactDetail);

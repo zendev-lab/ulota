@@ -1,11 +1,11 @@
 <script lang="ts">
   import { Icon } from "@zendev-lab/spark-ui";
-  import { daemonDisplayStatus } from "$lib/daemon-status";
-  import { formatRelativeTime, statusLabel as getStatusLabel } from "$lib/i18n";
+  import { daemonDisplayStatus } from "#lib/daemon-status.ts";
+  import { formatRelativeTime, statusLabel as getStatusLabel } from "#lib/i18n.ts";
   import { PageHeader } from "@zendev-lab/spark-ui";
   import { StatCard } from "@zendev-lab/spark-ui";
-  import { workspaceControlDisplay } from "$lib/workspace-control-display";
-  import { workspacePath, workspaceSessionsPath } from "$lib/workspace-routes";
+  import { workspaceControlDisplay } from "#lib/workspace-control-display.ts";
+  import { workspacePath, workspaceSessionsPath } from "#lib/workspace-routes.ts";
 
   let { data } = $props();
 

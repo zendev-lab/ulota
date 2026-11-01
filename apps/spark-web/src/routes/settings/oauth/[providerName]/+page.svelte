@@ -18,8 +18,8 @@
     authFlowStatusLabel,
     isTerminalAuthFlow,
     latestAuthProgress,
-  } from "$lib/provider-auth";
-  import { webRpc } from "$lib/web-rpc";
+  } from "#lib/provider-auth.ts";
+  import { webRpc } from "#lib/web-rpc.ts";
 
   let { data } = $props();
   let copy = $derived(data.messages.web.settings);

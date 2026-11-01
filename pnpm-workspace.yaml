@@ -123,7 +123,6 @@ overrides:
   "express-rate-limit>ip-address": "10.7.0"
   "hono": "4.13.5"
   "@modelcontextprotocol/sdk>@hono/node-server": "2.1.1"
-  "@sveltejs/kit>cookie": "0.7.2"
   "miniflare>undici": "8.10.1"
   "postcss": "8.5.28"
   "ajv>fast-uri": "4.1.4"

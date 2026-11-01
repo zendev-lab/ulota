@@ -1,14 +1,14 @@
 import { fail, redirect, error as kitError } from "@sveltejs/kit";
-import { getRequestDictionary, localeCookieName } from "$lib/i18n";
+import { getRequestDictionary, localeCookieName } from "#lib/i18n.ts";
 import {
   createWorkspaceResource,
   loadReposPage,
   updateWorkspaceResourceStatus,
 } from "@zendev-lab/spark-hub-coordination/hub-queries";
-import { getDatabase } from "$lib/server/db";
-import { formText } from "$lib/server/form-data";
-import { requireWorkspaceByRouteId } from "$lib/server/workspace-routing";
-import { workspacePath } from "$lib/workspace-routes";
+import { getDatabase } from "#lib/server/db.ts";
+import { formText } from "#lib/server/form-data.ts";
+import { requireWorkspaceByRouteId } from "#lib/server/workspace-routing.ts";
+import { workspacePath } from "#lib/workspace-routes.ts";
 import type { Actions, PageServerLoad, RequestEvent } from "./$types";
 
 type ResourceKind = "repo" | "doc" | "url" | "file" | "secret_ref" | "tool" | "other";

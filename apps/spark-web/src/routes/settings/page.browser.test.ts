@@ -3,11 +3,11 @@ import type { ComponentProps } from "svelte";
 import { render } from "vitest-browser-svelte";
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getDictionary } from "$lib/i18n";
+import { getDictionary } from "#lib/i18n.ts";
 import SettingsPage from "./+page.svelte";
 
 const { webRpc } = vi.hoisted(() => ({ webRpc: vi.fn() }));
-vi.mock("$lib/web-rpc", () => ({ webRpc }));
+vi.mock("#lib/web-rpc.ts", () => ({ webRpc }));
 
 function settingsData(): ComponentProps<typeof SettingsPage>["data"] {
   return {

@@ -3,7 +3,7 @@ import {
   listHubWorkspaceDelegationMessages,
   listHubWorkspaces,
 } from "@zendev-lab/spark-hub-coordination";
-import { getDatabase } from "$lib/server/db";
+import { getDatabase } from "#lib/server/db.ts";
 import type { PageServerLoad } from "./$types";
 
 // The global delegations ledger is a control-plane surface: remote member

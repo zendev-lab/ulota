@@ -5,8 +5,8 @@
   import { page } from "$app/state";
   import { Button, Dialog, Icon, Input, OperationsShell, Select, type SelectGroup } from "@zendev-lab/spark-ui";
   import { DialogClose, DialogTitle } from "@zendev-lab/spark-ui/headless";
-  import ConversationNavigation from "$lib/ConversationNavigation.svelte";
-  import { webRpc } from "$lib/web-rpc";
+  import ConversationNavigation from "#lib/ConversationNavigation.svelte";
+  import { webRpc } from "#lib/web-rpc.ts";
 
   let { children, data } = $props();
   let copy = $derived(data.messages.web.shell);

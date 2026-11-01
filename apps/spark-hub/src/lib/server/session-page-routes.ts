@@ -1,20 +1,20 @@
 import { error as httpError, fail, redirect } from "@sveltejs/kit";
 import { createId } from "@zendev-lab/spark-protocol";
-import { getRequestDictionary, localeCookieName } from "$lib/i18n";
+import { getRequestDictionary, localeCookieName } from "#lib/i18n.ts";
 import { titleFromPrompt } from "@zendev-lab/spark-hub-coordination/agents-product";
 import {
   cancelConversationTurnForHub,
   submitConversationTurnForHub,
-} from "$lib/server/conversation-control";
-import { formText } from "$lib/server/form-data";
+} from "#lib/server/conversation-control.ts";
+import { formText } from "#lib/server/form-data.ts";
 import {
   TurnAttachmentValidationError,
   attachmentPrompt,
   turnAttachmentsFromFormData,
-} from "$lib/server/turn-attachments";
-import { getDatabase } from "$lib/server/db";
-import { requireWorkspaceByRouteId } from "$lib/server/workspace-routing";
-import { conversationStartSessionId } from "$lib/server/conversation-submission";
+} from "#lib/server/turn-attachments.ts";
+import { getDatabase } from "#lib/server/db.ts";
+import { requireWorkspaceByRouteId } from "#lib/server/workspace-routing.ts";
+import { conversationStartSessionId } from "#lib/server/conversation-submission.ts";
 import {
   archiveManagedSessionForHub,
   closeManagedSessionForHub,
@@ -22,7 +22,7 @@ import {
   getManagedSessionForHub,
   getProjectedManagedSessionForHub,
   listProjectedManagedSessionsForHub,
-} from "$lib/server/managed-sessions";
+} from "#lib/server/managed-sessions.ts";
 import {
   loadModelControlForHub,
   loadProjectedModelControlForHub,
@@ -31,18 +31,18 @@ import {
   parseThinkingLevelValue,
   setSessionModelForHub,
   setSessionThinkingLevelForHub,
-} from "$lib/server/model-control";
+} from "#lib/server/model-control.ts";
 import {
   hubSubmissionIdempotencyKey,
   createHubSubmissionId,
-} from "$lib/server/submission-idempotency";
-import { workspaceIdForWorkbenchSession } from "$lib/workbench-session-scope";
+} from "#lib/server/submission-idempotency.ts";
+import { workspaceIdForWorkbenchSession } from "#lib/workbench-session-scope.ts";
 import { sessionHasChannelBinding } from "@zendev-lab/spark-ui/channel-session";
-import { hubSlashSubmissionError } from "$lib/slash-actions";
-import { workbenchSessionsPathFromPathname, workspaceSessionsPath } from "$lib/workspace-routes";
+import { hubSlashSubmissionError } from "#lib/slash-actions.ts";
+import { workbenchSessionsPathFromPathname, workspaceSessionsPath } from "#lib/workspace-routes.ts";
 import type { Actions } from "@sveltejs/kit";
 import type { Cookies } from "@sveltejs/kit";
-import type { HubConversationSummary } from "$lib/server/conversation-summaries";
+import type { HubConversationSummary } from "#lib/server/conversation-summaries.ts";
 
 interface SessionsPageParentData {
   activeWorkspace?: { id: string; slug: string } | null;

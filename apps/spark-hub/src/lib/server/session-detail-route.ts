@@ -2,15 +2,15 @@ import { error } from "@sveltejs/kit";
 import { createId } from "@zendev-lab/spark-protocol";
 import { latestEventCursor } from "@zendev-lab/spark-hub-coordination/events";
 import { loadSessionActivity } from "@zendev-lab/spark-hub-coordination/session-activity";
-import { getDatabase } from "$lib/server/db";
+import { getDatabase } from "#lib/server/db.ts";
 import {
   getProjectedManagedSessionForHub,
   getProjectedManagedSessionSnapshotForHub,
-} from "$lib/server/managed-sessions";
-import { loadProjectedModelControlForHub } from "$lib/server/model-control";
-import { createHubSubmissionId } from "$lib/server/submission-idempotency";
-import { workspaceIdForWorkbenchSession } from "$lib/workbench-session-scope";
-import type { HubConversationSummary } from "$lib/server/conversation-summaries";
+} from "#lib/server/managed-sessions.ts";
+import { loadProjectedModelControlForHub } from "#lib/server/model-control.ts";
+import { createHubSubmissionId } from "#lib/server/submission-idempotency.ts";
+import { workspaceIdForWorkbenchSession } from "#lib/workbench-session-scope.ts";
+import type { HubConversationSummary } from "#lib/server/conversation-summaries.ts";
 
 interface SessionPageParentData {
   activeWorkspace?: { id: string } | null;

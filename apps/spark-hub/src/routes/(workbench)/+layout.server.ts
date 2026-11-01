@@ -2,19 +2,19 @@ import {
   getProjectedManagedSessionForHub,
   listManagedSessionsForHub,
   listProjectedManagedSessionsForHub,
-} from "$lib/server/managed-sessions";
-import { loadConversationSummaries } from "$lib/server/conversation-summaries";
-import { getDatabase } from "$lib/server/db";
-import { loadPendingWorkbenchAsk } from "$lib/server/pending-ask";
-import { loadShellWorkspaceLayout } from "$lib/server/shell-layout";
+} from "#lib/server/managed-sessions.ts";
+import { loadConversationSummaries } from "#lib/server/conversation-summaries.ts";
+import { getDatabase } from "#lib/server/db.ts";
+import { loadPendingWorkbenchAsk } from "#lib/server/pending-ask.ts";
+import { loadShellWorkspaceLayout } from "#lib/server/shell-layout.ts";
 import {
   workspaceIdForWorkbenchSession,
   workspaceSessionsForWorkbench,
-} from "$lib/workbench-session-scope";
+} from "#lib/workbench-session-scope.ts";
 import {
   workbenchSessionIdFromPath,
   workbenchSessionsPathFromPathname,
-} from "$lib/workspace-routes";
+} from "#lib/workspace-routes.ts";
 import type { LayoutServerLoad } from "./$types";
 
 /**

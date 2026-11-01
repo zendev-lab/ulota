@@ -1,10 +1,10 @@
 import { getCurrentUserIdBySessionToken } from "@zendev-lab/spark-hub-coordination/hub-queries";
-import { getDatabase } from "$lib/server/db";
+import { getDatabase } from "#lib/server/db.ts";
 import {
   queueWorkspaceOccupancyCommand,
   workspaceExists,
   type WorkspaceOccupancyAction,
-} from "$lib/server/workspace-occupancy";
+} from "#lib/server/workspace-occupancy.ts";
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 

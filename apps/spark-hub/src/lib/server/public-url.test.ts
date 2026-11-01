@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { configureHubPublicUrl, normalizePublicUrl } from "./public-url.js";
+import { applyHubPublicUrl, configureHubPublicUrl, normalizePublicUrl } from "./public-url.js";
 
 describe("Hub public URL configuration", () => {
   it("uses a local origin by default", () => {
@@ -44,7 +44,41 @@ describe("Hub public URL configuration", () => {
     expect(env.ORIGIN).toBeUndefined();
     expect(env.ADDRESS_HEADER).toBe("x-forwarded-for");
     expect(env.PROTOCOL_HEADER).toBe("x-forwarded-proto");
+    expect(env.HOST_HEADER).toBe("x-forwarded-host");
     expect(env.XFF_DEPTH).toBe("2");
+  });
+
+  it.each([
+    [{}, "http", "127.0.0.1:5173"],
+    [
+      {
+        SPARK_HUB_PUBLIC_URL: "https://spark.example.test:8443",
+        SPARK_HUB_TRUST_PROXY: "loopback",
+      },
+      "https",
+      "spark.example.test:8443",
+    ],
+  ])("supplies the configured origin through adapter headers", (configured, protocol, host) => {
+    const env: Record<string, string | undefined> = {
+      ...configured,
+      PORT_HEADER: "x-untrusted-port",
+    };
+    const config = configureHubPublicUrl(env, { host: "127.0.0.1", port: 5173 });
+    const request = {
+      headers: {
+        host: "untrusted.example",
+        "x-forwarded-proto": "ftp",
+        "x-forwarded-host": "untrusted.example",
+        "x-spark-hub-protocol": "ftp",
+        "x-spark-hub-host": "untrusted.example",
+      } as Record<string, string | undefined>,
+    };
+
+    applyHubPublicUrl(request, config);
+
+    expect(request.headers[env.PROTOCOL_HEADER!]).toBe(protocol);
+    expect(request.headers[env.HOST_HEADER!]).toBe(host);
+    expect(env.PORT_HEADER).toBeUndefined();
   });
 
   it("requires an explicit trusted loopback proxy for remote domains", () => {

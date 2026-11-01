@@ -1,6 +1,6 @@
 import { error } from "@sveltejs/kit";
 
-import { readSparkWebLocalShare } from "$lib/server/local-share";
+import { readSparkWebLocalShare } from "#lib/server/local-share.ts";
 import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = ({ params }) => {

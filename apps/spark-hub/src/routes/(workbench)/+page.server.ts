@@ -1,11 +1,11 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { loadWorkbenchHome } from "@zendev-lab/spark-hub-coordination/hub-queries";
 import { archiveWorkspace } from "@zendev-lab/spark-hub-coordination/projection-services";
-import { getRequestDictionary, localeCookieName } from "$lib/i18n";
-import { activeWorkspaceCookieName } from "$lib/server/active-workspace";
-import { ensureCurrentOwnerSession } from "$lib/server/auth";
-import { getDatabase } from "$lib/server/db";
-import { formText } from "$lib/server/form-data";
+import { getRequestDictionary, localeCookieName } from "#lib/i18n.ts";
+import { activeWorkspaceCookieName } from "#lib/server/active-workspace.ts";
+import { ensureCurrentOwnerSession } from "#lib/server/auth.ts";
+import { getDatabase } from "#lib/server/db.ts";
+import { formText } from "#lib/server/form-data.ts";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ locals, url }) => {

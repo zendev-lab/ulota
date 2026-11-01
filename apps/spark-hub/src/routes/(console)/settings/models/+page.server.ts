@@ -1,7 +1,7 @@
 import { fail, redirect } from "@sveltejs/kit";
-import { getDictionary, localeCookieName, resolveRequestLocale } from "$lib/i18n";
-import { formText } from "$lib/server/form-data";
-import { requireSecretRequestContext } from "$lib/server/secret-request-context";
+import { getDictionary, localeCookieName, resolveRequestLocale } from "#lib/i18n.ts";
+import { formText } from "#lib/server/form-data.ts";
+import { requireSecretRequestContext } from "#lib/server/secret-request-context.ts";
 import {
   cancelProviderOAuthForHub,
   getProviderOAuthFlowForHub,
@@ -14,7 +14,7 @@ import {
   setProviderApiKeyForHub,
   startProviderOAuthForHub,
   testModelForHub,
-} from "$lib/server/model-control";
+} from "#lib/server/model-control.ts";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ parent, url }) => {

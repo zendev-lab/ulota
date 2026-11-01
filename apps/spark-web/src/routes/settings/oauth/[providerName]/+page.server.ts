@@ -1,6 +1,6 @@
 import { error } from "@sveltejs/kit";
-import { lookupOAuthSettingsProvider } from "$lib/provider-auth";
-import { invokeSparkWebRpc } from "$lib/server/rpc";
+import { lookupOAuthSettingsProvider } from "#lib/provider-auth.ts";
+import { invokeSparkWebRpc } from "#lib/server/rpc.ts";
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ params }) => {

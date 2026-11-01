@@ -6,17 +6,17 @@ const mocks = vi.hoisted(() => ({
   projected: vi.fn(),
 }));
 
-vi.mock("$lib/server/managed-sessions", () => ({
+vi.mock("#lib/server/managed-sessions.ts", () => ({
   getManagedSessionForHub: mocks.get,
   getManagedSessionSnapshotForHub: mocks.snapshot,
   getProjectedManagedSessionForHub: mocks.projected,
 }));
 
-vi.mock("$lib/session-snapshot-window", () => ({
+vi.mock("#lib/session-snapshot-window.ts", () => ({
   normalizeSessionSnapshotLimit: () => 80,
 }));
 
-vi.mock("$lib/workbench-session-scope", () => ({
+vi.mock("#lib/workbench-session-scope.ts", () => ({
   workspaceIdForWorkbenchSession: (session: { scope?: { kind?: string; workspaceId?: string } }) =>
     session.scope?.kind === "workspace" ? (session.scope.workspaceId ?? null) : null,
 }));

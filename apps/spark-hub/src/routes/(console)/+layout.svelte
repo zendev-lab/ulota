@@ -6,10 +6,10 @@
     currentConsolePageLabel,
     isConsoleNavItemActive,
     isControlPlanePath,
-  } from "$lib/console-nav";
-  import HubShell from "$lib/shell/HubShell.svelte";
-  import type { HubSearchSession } from "$lib/shell/hub-search";
-  import { workspacePath } from "$lib/workspace-routes";
+  } from "#lib/console-nav.ts";
+  import HubShell from "#lib/shell/HubShell.svelte";
+  import type { HubSearchSession } from "#lib/shell/hub-search.ts";
+  import { workspacePath } from "#lib/workspace-routes.ts";
 
   let { data, children } = $props();
 

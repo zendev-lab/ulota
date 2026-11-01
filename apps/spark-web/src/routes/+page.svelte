@@ -17,9 +17,9 @@
     sessionWorkspaceId,
     workspaceAdministratorSessionId,
     type SparkWebSession,
-  } from "$lib/daemon-surface";
-  import { sparkWebTurnMessageMetadata } from "$lib/memory-feedback";
-  import { webRpc } from "$lib/web-rpc";
+  } from "#lib/daemon-surface.ts";
+  import { sparkWebTurnMessageMetadata } from "#lib/memory-feedback.ts";
+  import { webRpc } from "#lib/web-rpc.ts";
 
   let { data } = $props();
   let copy = $derived(data.messages.web.home);

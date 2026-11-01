@@ -7,14 +7,14 @@ const mocks = vi.hoisted(() => ({
   loadWorkspaceByRouteId: vi.fn(),
 }));
 
-vi.mock("$lib/server/db", () => ({ getDatabase: mocks.getDatabase }));
-vi.mock("$lib/server/managed-sessions", () => ({
+vi.mock("#lib/server/db.ts", () => ({ getDatabase: mocks.getDatabase }));
+vi.mock("#lib/server/managed-sessions.ts", () => ({
   getProjectedManagedSessionForHub: mocks.getProjectedSession,
 }));
-vi.mock("$lib/server/shell-layout", () => ({
+vi.mock("#lib/server/shell-layout.ts", () => ({
   loadShellWorkspaceLayout: mocks.loadShellWorkspaceLayout,
 }));
-vi.mock("$lib/server/workspace-routing", () => ({
+vi.mock("#lib/server/workspace-routing.ts", () => ({
   loadWorkspaceByRouteId: mocks.loadWorkspaceByRouteId,
 }));
 

@@ -3,13 +3,13 @@ import {
   runtimeRelocationPreflightResponseSchema,
 } from "@zendev-lab/spark-protocol";
 import { json, type RequestHandler } from "@sveltejs/kit";
-import { errorJson } from "$lib/server/json";
+import { errorJson } from "#lib/server/json.ts";
 import {
   hubRuntimeRelocationInstanceId,
   preflightHubRuntimeRelocation,
   RuntimeRelocationPreflightError,
   RuntimeTokenRefreshError,
-} from "$lib/server/runtime-relocation";
+} from "#lib/server/runtime-relocation.ts";
 
 export const POST: RequestHandler = async ({ request, url, locals }) => {
   if (url.protocol !== "https:") {

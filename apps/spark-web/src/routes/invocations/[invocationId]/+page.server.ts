@@ -1,4 +1,4 @@
-import { loadSparkWebInvocationView } from "$lib/server/invocation-view";
+import { loadSparkWebInvocationView } from "#lib/server/invocation-view.ts";
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ params }) => ({

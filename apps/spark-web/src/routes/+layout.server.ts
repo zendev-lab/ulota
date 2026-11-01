@@ -1,5 +1,5 @@
-import { getDictionary, localeCookieName, resolveLocale } from "$lib/i18n";
-import { loadSparkWebNavigation } from "$lib/server/navigation";
+import { getDictionary, localeCookieName, resolveLocale } from "#lib/i18n.ts";
+import { loadSparkWebNavigation } from "#lib/server/navigation.ts";
 import type { ServerLoadEvent } from "@sveltejs/kit";
 
 export const load = async ({ cookies, request, url, depends }: ServerLoadEvent) => {

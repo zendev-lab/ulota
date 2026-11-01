@@ -1,4 +1,4 @@
-import { getDictionary, localeCookieName, resolveRequestLocale } from "$lib/i18n";
+import { getDictionary, localeCookieName, resolveRequestLocale } from "#lib/i18n.ts";
 import type { LayoutServerLoad } from "./$types";
 
 export const load: LayoutServerLoad = ({ cookies, request, url }) => {

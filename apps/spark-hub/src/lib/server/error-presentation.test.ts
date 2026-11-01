@@ -19,6 +19,7 @@ describe("Hub server error presentation", () => {
     });
 
     expect(presented).toEqual({
+      status: 500,
       code: INVOCATION_ROUTE_UNAVAILABLE_ERROR_CODE,
       message: "This invocation is managed by another Spark service.",
       requestId: "msg_other_service",
@@ -39,6 +40,7 @@ describe("Hub server error presentation", () => {
     });
 
     expect(presented).toEqual({
+      status: 500,
       code: "service_unavailable",
       message: HUB_SERVICE_UNAVAILABLE_MESSAGE,
       requestId: "msg_dependency_outage",
@@ -59,6 +61,7 @@ describe("Hub server error presentation", () => {
         requestId: "msg_runtime_timeout",
       }),
     ).toEqual({
+      status: 500,
       code: "service_unavailable",
       message: HUB_SERVICE_UNAVAILABLE_MESSAGE,
       requestId: "msg_runtime_timeout",
@@ -89,6 +92,7 @@ describe("Hub server error presentation", () => {
     });
 
     expect(presented).toEqual({
+      status: 500,
       code: "unexpected_error",
       message: "Internal Error",
       requestId: "msg_unexpected",

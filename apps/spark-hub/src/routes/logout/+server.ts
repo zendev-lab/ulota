@@ -1,6 +1,6 @@
 import { redirect, type RequestHandler } from "@sveltejs/kit";
-import { hashSecret, sessionCookieName, sessionRefreshCookieName } from "$lib/server/auth";
-import { getDatabase } from "$lib/server/db";
+import { hashSecret, sessionCookieName, sessionRefreshCookieName } from "#lib/server/auth.ts";
+import { getDatabase } from "#lib/server/db.ts";
 
 export const POST: RequestHandler = ({ cookies }) => {
   const sessionToken = cookies.get(sessionCookieName);

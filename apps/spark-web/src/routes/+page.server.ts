@@ -1,7 +1,7 @@
-import { invokeSparkWebRpc } from "$lib/server/rpc";
-import { isUnregisteredWorkspaceError } from "$lib/daemon-surface";
-import { loadSparkWebDashboard } from "$lib/server/dashboard";
-import { sparkWebLaunchDirectory } from "$lib/server/launch-directory";
+import { invokeSparkWebRpc } from "#lib/server/rpc.ts";
+import { isUnregisteredWorkspaceError } from "#lib/daemon-surface.ts";
+import { loadSparkWebDashboard } from "#lib/server/dashboard.ts";
+import { sparkWebLaunchDirectory } from "#lib/server/launch-directory.ts";
 import { error } from "@sveltejs/kit";
 import type { PageServerLoad } from "./$types";
 

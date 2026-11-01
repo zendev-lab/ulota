@@ -9,7 +9,7 @@
     SessionInspectorTab,
     SessionWorkbenchTask,
     SessionWorkbenchView,
-  } from "$lib/session-workbench";
+  } from "#lib/session-workbench.ts";
 
   let {
     view,

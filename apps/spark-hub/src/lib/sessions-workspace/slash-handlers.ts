@@ -5,7 +5,7 @@ import {
   hubDirectSessionCommandForInput,
   scheduleHubActionAfterCurrentEvent,
   type HubSlashCommandSuggestion,
-} from "$lib/slash-actions";
+} from "#lib/slash-actions.ts";
 import {
   sparkThinkingLevelOptions,
   type SparkActionView,

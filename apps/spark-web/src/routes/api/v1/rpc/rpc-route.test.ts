@@ -4,12 +4,12 @@ import { SparkDaemonRemoteError } from "@zendev-lab/spark-daemon-client";
 
 const invokeSparkWebRpcMock = vi.hoisted(() => vi.fn());
 
-vi.mock("$lib/server/rpc", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("$lib/server/rpc")>();
+vi.mock("#lib/server/rpc.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("#lib/server/rpc.ts")>();
   return { ...actual, invokeSparkWebRpc: invokeSparkWebRpcMock };
 });
 
-import { SparkWebRpcForbiddenError } from "$lib/server/rpc";
+import { SparkWebRpcForbiddenError } from "#lib/server/rpc.ts";
 import { POST } from "./+server";
 
 beforeEach(() => {

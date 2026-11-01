@@ -5,7 +5,7 @@ import {
   invokeSparkWebRpc,
   projectSparkWebRpcRemoteError,
   SparkWebRpcForbiddenError,
-} from "$lib/server/rpc";
+} from "#lib/server/rpc.ts";
 
 const invalidRequest = (message: string) =>
   json({ code: "invalid_request", message }, { status: 400 });

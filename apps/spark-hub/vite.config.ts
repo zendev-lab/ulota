@@ -1,3 +1,8 @@
+import adapter from "@sveltejs/adapter-node";
+import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
+import { execFileSync } from "node:child_process";
+import { typescriptWithSvelteImports } from "./src/svelte-preprocess.js";
+
 import { sveltekit } from "@sveltejs/kit/vite";
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import { WebSocketServer } from "ws";
@@ -6,8 +11,19 @@ import type { Duplex } from "node:stream";
 
 const runtimeWsPattern = /^\/api\/v1\/runtime\/runtimes\/(rt_[a-f0-9]{32})\/ws$/;
 
+const buildVersion =
+  process.env.SPARK_BUILD_GIT_SHA?.trim() ||
+  execFileSync("/usr/bin/git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+
 export default defineConfig({
-  plugins: [runtimeWebSocketDevServer(), sveltekit()],
+  plugins: [
+    runtimeWebSocketDevServer(),
+    sveltekit({
+      preprocess: [typescriptWithSvelteImports, vitePreprocess()],
+      adapter: adapter({ out: "build" }),
+      version: { name: buildVersion },
+    }),
+  ],
   build: {
     // Shiki's C++ grammar and Mermaid's shared parser are independent lazy
     // chunks. Their minified raw sizes are 638/662 kB while their compressed

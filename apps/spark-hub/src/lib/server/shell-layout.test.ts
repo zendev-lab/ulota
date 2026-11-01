@@ -6,8 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ getDatabase: vi.fn() }));
 
-vi.mock("$lib/server/db", () => ({ getDatabase: mocks.getDatabase }));
-vi.mock("$lib/server/active-workspace", () => ({
+vi.mock("#lib/server/db.ts", () => ({ getDatabase: mocks.getDatabase }));
+vi.mock("#lib/server/active-workspace.ts", () => ({
   activeWorkspaceCookieName: "spark_hub_active_workspace",
 }));
 

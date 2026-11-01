@@ -1,10 +1,10 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import AskQuestionField from "$lib/AskQuestionField.svelte";
+  import AskQuestionField from "#lib/AskQuestionField.svelte";
   import { Icon } from "@zendev-lab/spark-ui";
-  import { formatRelativeTime, statusLabel as getStatusLabel } from "$lib/i18n";
+  import { formatRelativeTime, statusLabel as getStatusLabel } from "#lib/i18n.ts";
   import { Button, Field, Panel, Textarea } from "@zendev-lab/spark-ui";
-  import { workspacePath, workspaceSessionPath } from "$lib/workspace-routes";
+  import { workspacePath, workspaceSessionPath } from "#lib/workspace-routes.ts";
 
   let { data, form } = $props();
   let t = $derived(data.messages.inboxDetail);

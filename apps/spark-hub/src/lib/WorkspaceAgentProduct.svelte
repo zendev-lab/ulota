@@ -1,27 +1,27 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import type { SubmitFunction } from "@sveltejs/kit";
+  import type { SubmitFunction } from "$app/forms";
   import { onMount } from "svelte";
   import {
     addOptimisticAgentsChatCommand,
     applyAgentsChatEvent,
     createAgentsChatLiveState,
     type AgentsChatSerializedEvent,
-  } from "$lib/agents-chat-live-state";
+  } from "#lib/agents-chat-live-state.ts";
   import { Icon } from "@zendev-lab/spark-ui";
   import { SafeMarkdown } from "@zendev-lab/spark-ui/markdown";
   import {
     activityKind,
     buildHubChatTranscriptTurns,
     type HubChatTranscriptTurn,
-  } from "$lib/hub-chat-transcript-view";
+  } from "#lib/hub-chat-transcript-view.ts";
   import {
     formatRelativeTime,
     statusLabel as getStatusLabel,
     type AppMessages,
     type Locale,
-  } from "$lib/i18n";
-  import { workspaceControlControlLabel } from "$lib/workspace-control-display";
+  } from "#lib/i18n.ts";
+  import { workspaceControlControlLabel } from "#lib/workspace-control-display.ts";
   import type { AgentsProductProjection } from "@zendev-lab/spark-hub-coordination/agents-product";
 
   type WorkspaceAgentProductData = AgentsProductProjection & {

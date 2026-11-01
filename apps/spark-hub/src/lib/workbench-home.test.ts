@@ -116,7 +116,7 @@ describe("workbench home attention surface", () => {
     vi.doMock("@zendev-lab/spark-hub-coordination/hub-queries", () => ({
       loadWorkbenchHome,
     }));
-    vi.doMock("$lib/server/db", () => ({ getDatabase: () => "db" }));
+    vi.doMock("#lib/server/db.ts", () => ({ getDatabase: () => "db" }));
     const pageServer = await import("../routes/(workbench)/+page.server");
     const result = pageServer.load({
       locals: { authorizedWorkspaceIds: ["ws_alpha"] },
@@ -130,6 +130,6 @@ describe("workbench home attention surface", () => {
       authorizedWorkspaceIds: ["ws_alpha"],
     });
     vi.doUnmock("@zendev-lab/spark-hub-coordination/hub-queries");
-    vi.doUnmock("$lib/server/db");
+    vi.doUnmock("#lib/server/db.ts");
   });
 });

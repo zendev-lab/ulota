@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { formatSparkCliError } from "@zendev-lab/spark-i18n/cli";
-import { configureHubPublicUrl } from "../src/lib/server/public-url.js";
+import { applyHubPublicUrl, configureHubPublicUrl } from "../src/lib/server/public-url.js";
 import { closeDatabase, getDatabase, pinDatabase, unpinDatabase } from "../src/lib/server/db.js";
 import {
   attachRuntimeWebSocket,
@@ -18,6 +18,7 @@ const buildHandlerUrl = new URL("../build/handler.js", import.meta.url);
 const { handler } = (await import(buildHandlerUrl.href)) as { handler: SvelteKitHandler };
 
 const server = createServer((request, response) => {
+  applyHubPublicUrl(request, publicUrl);
   handler(request, response);
 });
 

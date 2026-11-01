@@ -4,7 +4,7 @@
     ordinaryDaemonSessions,
     sessionWorkspaceId,
     type SparkWebSession,
-  } from "$lib/daemon-surface";
+  } from "#lib/daemon-surface.ts";
 
   let { data } = $props();
   let copy = $derived(data.messages.web.sessions);

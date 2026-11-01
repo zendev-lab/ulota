@@ -1,4 +1,4 @@
-import { invokeSparkWebRpc } from "$lib/server/rpc";
+import { invokeSparkWebRpc } from "#lib/server/rpc.ts";
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async () => {

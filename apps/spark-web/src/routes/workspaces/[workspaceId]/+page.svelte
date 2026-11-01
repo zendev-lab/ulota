@@ -23,8 +23,8 @@
     ordinarySessionsForWorkspace,
     workspaceAdministratorSessionId,
     type SparkWebSession,
-  } from "$lib/daemon-surface";
-  import { webRpc } from "$lib/web-rpc";
+  } from "#lib/daemon-surface.ts";
+  import { webRpc } from "#lib/web-rpc.ts";
 
   let { data } = $props();
   let copy = $derived(data.messages.web.workspace);

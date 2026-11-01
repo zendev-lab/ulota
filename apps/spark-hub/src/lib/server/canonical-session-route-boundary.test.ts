@@ -6,14 +6,14 @@ const mocks = vi.hoisted(() => ({
   detailLoad: vi.fn(),
 }));
 
-vi.mock("$lib/server/canonical-workspace-route", () => ({
+vi.mock("#lib/server/canonical-workspace-route.ts", () => ({
   loadCanonicalWorkspaceRoute: mocks.canonicalLoad,
 }));
-vi.mock("$lib/server/session-page-routes", () => ({
+vi.mock("#lib/server/session-page-routes.ts", () => ({
   actions: {},
   loadSessionsPage: mocks.listLoad,
 }));
-vi.mock("$lib/server/session-detail-route", () => ({
+vi.mock("#lib/server/session-detail-route.ts", () => ({
   loadSessionPage: mocks.detailLoad,
 }));
 

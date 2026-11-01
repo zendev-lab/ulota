@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { AppMessages } from "$lib/i18n";
+  import type { AppMessages } from "#lib/i18n.ts";
   import {
     hubCustomAnswerValue,
     type PendingWorkbenchAsk,
-  } from "$lib/pending-ask";
+  } from "#lib/pending-ask.ts";
   import { Textarea } from "@zendev-lab/spark-ui";
 
   let {

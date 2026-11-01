@@ -1,5 +1,6 @@
 import { SparkDaemonLocalRpcUnavailableError } from "@zendev-lab/spark-daemon-client";
-import type { Handle, RequestEvent } from "@sveltejs/kit";
+import type { Handle } from "@sveltejs/kit/hooks";
+import type { RequestEvent } from "@sveltejs/kit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const database = vi.hoisted(() => ({
@@ -20,15 +21,15 @@ const hubAccess = vi.hoisted(() => ({
   listUserDaemonGrantWorkspaceIds: vi.fn((): string[] => []),
 }));
 
-vi.mock("$lib/server/db", () => database);
-vi.mock("$lib/server/auth", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("$lib/server/auth")>()),
+vi.mock("#lib/server/db.ts", () => database);
+vi.mock("#lib/server/auth.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("#lib/server/auth.ts")>()),
   ...auth,
 }));
-vi.mock("$lib/server/remote-access", () => remoteAccess);
+vi.mock("#lib/server/remote-access.ts", () => remoteAccess);
 vi.mock("@zendev-lab/spark-hub-coordination/hub-access", () => hubAccess);
 
-import { handle } from "./hooks.server";
+import { handle, handleError } from "./hooks.server";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -296,3 +297,32 @@ async function expectServiceUnavailable(response: Response): Promise<void> {
   expect(body.error.requestId).toMatch(/^msg_[a-f0-9]{32}$/u);
   expect(JSON.stringify(body)).not.toContain("/private/");
 }
+
+describe("Hub error hook", () => {
+  it.each(["app", "framework"] as const)("preserves safe %s status and message", async (kind) => {
+    const event = requestEvent(new URL("https://spark.example/missing"));
+    event.locals.requestId = "msg_safe";
+    const result = await handleError({ kind, error: { status: 404, message: "Not found" }, event });
+    expect(result).toEqual({ status: 404, message: "Not found", requestId: "msg_safe" });
+  });
+  it("keeps unknown exception details out of the public response", async () => {
+    const event = requestEvent(new URL("https://spark.example/settings"));
+    event.locals.requestId = "msg_unknown";
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const result = await handleError({
+        kind: "unknown",
+        error: new Error("private credentials"),
+        event,
+      });
+      expect(result).toEqual({
+        status: 500,
+        code: "unexpected_error",
+        message: "Internal Error",
+        requestId: "msg_unknown",
+      });
+    } finally {
+      log.mockRestore();
+    }
+  });
+});

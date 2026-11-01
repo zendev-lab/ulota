@@ -5,17 +5,17 @@
     SlashActionBar,
     SlashCommandMenu,
   } from "@zendev-lab/spark-ui/conversation";
-  import { sparkActionFromPresentation } from "$lib/components/conversation/action-adapter";
-  import type { SlashActionAvailability } from "$lib/components/conversation";
+  import { sparkActionFromPresentation } from "#lib/components/conversation/action-adapter.ts";
+  import type { SlashActionAvailability } from "#lib/components/conversation/index.ts";
   import {
     ModelRuntimeControl,
     type ModelPickerGroup,
     type ModelRuntimeControlLabels,
-  } from "$lib/components/model-selector";
+  } from "#lib/components/model-selector/index.ts";
   import { Icon } from "@zendev-lab/spark-ui";
   import type { SparkActionBarView, SparkActionView } from "@zendev-lab/spark-protocol";
-  import type { SubmitFunction } from "@sveltejs/kit";
-  import type { HubSlashCommandSuggestion } from "$lib/slash-actions";
+  import type { SubmitFunction } from "$app/forms";
+  import type { HubSlashCommandSuggestion } from "#lib/slash-actions.ts";
   import type {
     ModelControlState,
     SessionsMessages,

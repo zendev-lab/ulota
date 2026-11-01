@@ -2,9 +2,9 @@ import {
   getManagedSessionForHub,
   getManagedSessionSnapshotForHub,
   getProjectedManagedSessionForHub,
-} from "$lib/server/managed-sessions";
-import { normalizeSessionSnapshotLimit } from "$lib/session-snapshot-window";
-import { workspaceIdForWorkbenchSession } from "$lib/workbench-session-scope";
+} from "#lib/server/managed-sessions.ts";
+import { normalizeSessionSnapshotLimit } from "#lib/session-snapshot-window.ts";
+import { workspaceIdForWorkbenchSession } from "#lib/workbench-session-scope.ts";
 import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 

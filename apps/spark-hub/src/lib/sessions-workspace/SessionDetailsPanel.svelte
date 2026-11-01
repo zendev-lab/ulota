@@ -1,8 +1,8 @@
 <script lang="ts">
-  import SessionInspector from "$lib/SessionInspector.svelte";
+  import SessionInspector from "#lib/SessionInspector.svelte";
   import { Icon } from "@zendev-lab/spark-ui";
-  import { visibleSessionStatus } from "$lib/conversation-status";
-  import type { SessionInspectorLabels, SessionWorkbenchView } from "$lib/session-workbench";
+  import { visibleSessionStatus } from "#lib/conversation-status.ts";
+  import type { SessionInspectorLabels, SessionWorkbenchView } from "#lib/session-workbench.ts";
   import type { SessionRecord, SessionsMessages } from "./types";
 
   type Props = {

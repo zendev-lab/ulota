@@ -1,7 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
-  import { ModelPicker, type ModelPickerGroup } from "$lib/components/model-selector";
+  import { ModelPicker, type ModelPickerGroup } from "#lib/components/model-selector/index.ts";
   import {
     brandIconForModelProvider,
     Button,

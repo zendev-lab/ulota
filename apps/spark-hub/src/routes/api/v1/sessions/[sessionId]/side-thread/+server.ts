@@ -1,13 +1,13 @@
 import {
   HubRuntimeSessionUnavailableError,
   isHubRuntimeSessionNotFoundError,
-} from "$lib/server/hub-runtime-session-client";
+} from "#lib/server/hub-runtime-session-client.ts";
 import {
   controlManagedSideThreadForHub,
   getLiveManagedSessionForHub,
   getManagedSideThreadSnapshotForHub,
-} from "$lib/server/managed-sessions";
-import { workspaceIdForWorkbenchSession } from "$lib/workbench-session-scope";
+} from "#lib/server/managed-sessions.ts";
+import { workspaceIdForWorkbenchSession } from "#lib/workbench-session-scope.ts";
 import {
   isSparkSideThreadErrorCode,
   sparkSideThreadConfigureRequestSchema,

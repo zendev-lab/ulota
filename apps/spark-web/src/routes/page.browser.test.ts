@@ -6,9 +6,9 @@ import type { ComponentProps } from "svelte";
 const mocks = vi.hoisted(() => ({ goto: vi.fn(), webRpc: vi.fn() }));
 
 vi.mock("$app/navigation", () => ({ goto: mocks.goto }));
-vi.mock("$lib/web-rpc", () => ({ webRpc: mocks.webRpc }));
+vi.mock("#lib/web-rpc.ts", () => ({ webRpc: mocks.webRpc }));
 
-import { getDictionary } from "$lib/i18n";
+import { getDictionary } from "#lib/i18n.ts";
 import DashboardPage from "./+page.svelte";
 import InvocationPage from "./invocations/[invocationId]/+page.svelte";
 

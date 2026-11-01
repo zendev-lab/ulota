@@ -5,7 +5,7 @@
     parseNotificationPreference,
     serializeNotificationPreference,
     type HubNotificationPayload,
-  } from "$lib/hub-notifications";
+  } from "#lib/hub-notifications.ts";
   import type { SerializedEvent } from "@zendev-lab/spark-hub-coordination/events";
   import { onMount } from "svelte";
 

@@ -1,7 +1,7 @@
 import { redirect } from "@sveltejs/kit";
-import { getDatabase } from "$lib/server/db";
-import { loadShellWorkspaceLayout } from "$lib/server/shell-layout";
-import { workspaceSessionsPath } from "$lib/workspace-routes";
+import { getDatabase } from "#lib/server/db.ts";
+import { loadShellWorkspaceLayout } from "#lib/server/shell-layout.ts";
+import { workspaceSessionsPath } from "#lib/workspace-routes.ts";
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ cookies, locals, url }) => {

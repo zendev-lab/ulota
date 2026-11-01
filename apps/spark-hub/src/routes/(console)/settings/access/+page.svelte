@@ -1,7 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { formatRelativeTime, statusLabel as getStatusLabel } from "$lib/i18n";
-  import TokenManagementSurface from "$lib/TokenManagementSurface.svelte";
+  import { formatRelativeTime, statusLabel as getStatusLabel } from "#lib/i18n.ts";
+  import TokenManagementSurface from "#lib/TokenManagementSurface.svelte";
   import { ConfirmDialog, Field, Input, PageHeader } from "@zendev-lab/spark-ui";
   import { DialogTrigger } from "@zendev-lab/spark-ui/headless";
 

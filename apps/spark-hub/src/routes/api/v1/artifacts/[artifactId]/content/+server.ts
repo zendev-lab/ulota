@@ -3,7 +3,7 @@ import {
   readArtifactPreviewContent,
   type ArtifactPreviewStatus,
 } from "@zendev-lab/spark-hub-coordination/artifact-cache";
-import { getDatabase } from "$lib/server/db";
+import { getDatabase } from "#lib/server/db.ts";
 
 /**
  * Lazy artifact content endpoint. Returns the cached preview body for `ready`

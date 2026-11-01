@@ -3,8 +3,8 @@ import {
   runtimeProtocolVersion,
 } from "@zendev-lab/spark-protocol";
 import { json, type RequestHandler } from "@sveltejs/kit";
-import { errorJson } from "$lib/server/json";
-import { hubRuntimeRelocationInstanceId } from "$lib/server/runtime-relocation";
+import { errorJson } from "#lib/server/json.ts";
+import { hubRuntimeRelocationInstanceId } from "#lib/server/runtime-relocation.ts";
 
 export const GET: RequestHandler = ({ locals }) => {
   const instanceId = hubRuntimeRelocationInstanceId();

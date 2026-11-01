@@ -1,6 +1,6 @@
 import { error as kitError } from "@sveltejs/kit";
 import { loadInboxPage } from "@zendev-lab/spark-hub-coordination/hub-queries";
-import { getDatabase } from "$lib/server/db";
+import { getDatabase } from "#lib/server/db.ts";
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ params }) => {

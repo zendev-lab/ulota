@@ -1,7 +1,7 @@
 import { fail, redirect } from "@sveltejs/kit";
-import { ensureCurrentOwnerSession } from "$lib/server/auth";
-import { getDatabase } from "$lib/server/db";
-import { formText } from "$lib/server/form-data";
+import { ensureCurrentOwnerSession } from "#lib/server/auth.ts";
+import { getDatabase } from "#lib/server/db.ts";
+import { formText } from "#lib/server/form-data.ts";
 import {
   approveRuntimeDeviceAuthorization,
   denyRuntimeDeviceAuthorization,

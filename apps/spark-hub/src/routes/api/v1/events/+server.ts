@@ -1,4 +1,4 @@
-import { createHubEventStreamResponse } from "$lib/server/events-sse";
+import { createHubEventStreamResponse } from "#lib/server/events-sse.ts";
 import { createLivenessSweepScheduler } from "@zendev-lab/spark-hub-coordination/liveness";
 import type { RequestHandler } from "@sveltejs/kit";
 

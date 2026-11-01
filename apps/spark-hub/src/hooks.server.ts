@@ -3,7 +3,8 @@ import {
   listUserDaemonGrantIds,
   listUserDaemonGrantWorkspaceIds,
 } from "@zendev-lab/spark-hub-coordination/hub-access";
-import type { Handle, HandleServerError, RequestEvent } from "@sveltejs/kit";
+import type { Handle, HandleServerError } from "@sveltejs/kit/hooks";
+import type { RequestEvent } from "@sveltejs/kit";
 import {
   getCurrentHubSession,
   hubSessionAllowsRequest,
@@ -11,16 +12,16 @@ import {
   sessionCookieName,
   sessionRefreshCookieName,
   setHubSessionCookies,
-} from "$lib/server/auth";
-import { getDatabase, pinDatabase, unpinDatabase } from "$lib/server/db";
+} from "#lib/server/auth.ts";
+import { getDatabase, pinDatabase, unpinDatabase } from "#lib/server/db.ts";
 import {
   hubServiceUnavailableResponse,
   isHubServiceUnavailableError,
   presentHubServerError,
-} from "$lib/server/error-presentation";
-import { INVOCATION_ROUTE_UNAVAILABLE_ERROR_CODE } from "$lib/error-codes";
-import { localeCookieName, resolveRequestLocale } from "$lib/i18n";
-import { remoteAccessDecision } from "$lib/server/remote-access";
+} from "#lib/server/error-presentation.ts";
+import { INVOCATION_ROUTE_UNAVAILABLE_ERROR_CODE } from "#lib/error-codes.ts";
+import { localeCookieName, resolveRequestLocale } from "#lib/i18n.ts";
+import { remoteAccessDecision } from "#lib/server/remote-access.ts";
 
 export const handle: Handle = async ({ event, resolve }) => {
   event.locals.requestId = createId("msg");
@@ -84,11 +85,16 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
 };
 
-export const handleError: HandleServerError = ({ error, event, status, message }) => {
+export const handleError: HandleServerError = (input) => {
+  const { error, event } = input;
+  if (input.kind !== "unknown") {
+    return { ...input.error, requestId: event.locals.requestId };
+  }
+  const status = 500;
   const presented = presentHubServerError({
     error,
     status,
-    fallbackMessage: message,
+    fallbackMessage: "Internal Error",
     requestId: event.locals.requestId,
   });
   if (presented.code === INVOCATION_ROUTE_UNAVAILABLE_ERROR_CODE) {

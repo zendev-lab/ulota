@@ -11,8 +11,8 @@
     type AttentionQueueItem,
   } from "@zendev-lab/spark-ui";
   import { DialogClose, DialogDescription, DialogTitle } from "@zendev-lab/spark-ui/headless";
-  import { formatRelativeTime, statusLabel as getStatusLabel } from "$lib/i18n";
-  import { workspacePath, workspaceSessionPath, workspaceSessionsPath } from "$lib/workspace-routes";
+  import { formatRelativeTime, statusLabel as getStatusLabel } from "#lib/i18n.ts";
+  import { workspacePath, workspaceSessionPath, workspaceSessionsPath } from "#lib/workspace-routes.ts";
 
   let { data, form } = $props();
 

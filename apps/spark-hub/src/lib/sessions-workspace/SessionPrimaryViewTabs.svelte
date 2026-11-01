@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Icon } from "@zendev-lab/spark-ui";
-  import type { SessionPrimaryView } from "$lib/session-work-view";
+  import type { SessionPrimaryView } from "#lib/session-work-view.ts";
 
   let {
     selected,

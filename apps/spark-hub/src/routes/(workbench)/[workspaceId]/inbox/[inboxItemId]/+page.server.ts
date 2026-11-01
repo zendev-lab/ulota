@@ -1,6 +1,6 @@
 import { fail, redirect, error as kitError } from "@sveltejs/kit";
 import { hasNonEmptySparkHumanAnswer } from "@zendev-lab/spark-protocol";
-import { getRequestDictionary, localeCookieName } from "$lib/i18n";
+import { getRequestDictionary, localeCookieName } from "#lib/i18n.ts";
 import {
   buildApprovalDecisionPayload,
   buildApprovalDeliveryCommandPayload,
@@ -16,12 +16,12 @@ import {
   humanMultiAnswerWithCustomFallback,
   humanSingleAnswerWithCustomFallback,
   parseHumanQuestions,
-} from "$lib/pending-ask";
+} from "#lib/pending-ask.ts";
 import { submitServerCommand } from "@zendev-lab/spark-hub-coordination/command-submission";
-import { getDatabase } from "$lib/server/db";
-import { formText, formTextList } from "$lib/server/form-data";
+import { getDatabase } from "#lib/server/db.ts";
+import { formText, formTextList } from "#lib/server/form-data.ts";
 import { recordHumanResponse } from "@zendev-lab/spark-hub-coordination/projection-services";
-import { workspacePath } from "$lib/workspace-routes";
+import { workspacePath } from "#lib/workspace-routes.ts";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ params }) => {
