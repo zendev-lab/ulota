@@ -74,7 +74,8 @@
     "audit": "pnpm audit --registry=https://registry.npmjs.org/ --audit-level high",
     "report:architecture": "node scripts/check-architecture-governance.mjs --write",
     "report:hygiene": "node scripts/report-hygiene.mjs",
-    "prepare": "prek install"
+    "prepare": "prek install",
+    "experiment:strategy": "node --experimental-strip-types scripts/run-strategy-experiment.mts"
   },
   "dependencies": {
     "@zendev-lab/dsh-channel-transports": "workspace:^",
@@ -104,6 +105,7 @@
     "@zendev-lab/dsh-cue": "workspace:^",
     "@zendev-lab/spark-daemon": "workspace:*",
     "@zendev-lab/spark-daemon-client": "workspace:*",
+    "@zendev-lab/spark-files": "workspace:^",
     "@zendev-lab/spark-hub-storage-sqlite": "workspace:*",
     "@zendev-lab/spark-lens": "workspace:^",
     "@zendev-lab/spark-platform-node": "workspace:*",

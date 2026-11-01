@@ -129,6 +129,13 @@ model selection and its own OAuth credential store. Configure it from Hub or
 `spark web` Settings (OAuth login); Spark does not read Pi or Codex CLI auth
 files at runtime.
 
+New default selection is `openai-codex/gpt-6-astra` across provider control and the
+native host. An explicitly selected model remains authoritative. The default Codex enabled scope remains `openai-codex/gpt-*`;
+Astra is the initial selection within that scope. Migration recognizes previous
+complete bundled scopes and preserves custom scopes.
+
+Model availability, context limits, reasoning levels, and cost metadata come from the pinned pi-ai catalog. The adapter does not maintain a separate model list. OAuth subscription billing is distinct from catalog API cost estimates.
+
 ## Kimi For Coding provider
 
 `@zendev-lab/spark-llm-providers/kimi-coding-provider` is the thin Spark adapter over
