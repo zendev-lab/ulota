@@ -130,7 +130,7 @@ describe("Workspace page owner state", () => {
     expect(screen.container.textContent).not.toContain("private workspace A role failure");
 
     currentResponse.resolve({ created: true, role: { ref: "role:project/role-b" } });
-    await expect.element(screen.getByRole("status")).toHaveTextContent("role:project/role-b");
+    await expect.element(screen.getByRole("status")).toMatchTextContent("role:project/role-b");
     await expect.element(screen.getByRole("button", { name: "Create Role" })).toBeEnabled();
     await screen.unmount();
   });
@@ -165,7 +165,7 @@ describe("Workspace page owner state", () => {
     });
     await expect
       .element(screen.getByRole("status"))
-      .toHaveTextContent("executor: provider/model-b · project");
+      .toMatchTextContent("executor: provider/model-b · project");
     await expect.element(screen.getByRole("button", { name: "Inspect" })).toBeEnabled();
     await screen.unmount();
   });
@@ -236,7 +236,7 @@ describe("Workspace page owner state", () => {
 
     await expect
       .element(screen.getByRole("alert"))
-      .toHaveTextContent("directory owner unavailable");
+      .toMatchTextContent("directory owner unavailable");
     await screen.unmount();
   });
 });
