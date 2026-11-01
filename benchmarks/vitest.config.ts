@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [codspeedPlugin()],
   test: {
     environment: "node",
-    include: benchmarkFiles,
+    include: [],
     benchmark: {
       include: benchmarkFiles,
     },

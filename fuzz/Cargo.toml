@@ -1,0 +1,23 @@
+[package]
+name = "spark-deployment-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = ["."]
+
+[[bin]]
+bench = false
+doc = false
+name = "deployment_state"
+path = "fuzz_targets/deployment_state.rs"
+test = false
+
+[dependencies]
+libfuzzer-sys = "0.4.12"
+serde_json = "1.0.143"
+spark-deployment = { path = "../packages/spark-deployment/native" }

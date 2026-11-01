@@ -1,28 +1,13 @@
-name: "CI - Benchmarks"
-
+name: CE - Benchmarks
 on:
-  # CodSpeed needs successful default-branch runs as PR comparison baselines.
-  push:
-    branches:
-      - main
-  pull_request:
-    paths-ignore:
-      - "**/*.md"
-      - "apps/spark-docs/**"
-  merge_group:
-    types:
-      - checks_requested
   schedule:
-    - cron: "17 3 * * *"
+    - cron: 17 3 * * *
   workflow_dispatch:
-
-concurrency:
-  group: ci-benchmarks-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
-
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   select-walltime:
     name: Select I/O Benchmarks
@@ -47,7 +32,9 @@ jobs:
         run: node --experimental-strip-types scripts/select-benchmark-files.mts
         env:
           BENCHMARK_ALL: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-          BENCHMARK_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || '' }}
+          BENCHMARK_BASE_SHA:
+            ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before
+            || '' }}
           BENCHMARK_LANE: walltime
 
   cpu-benchmarks:
@@ -69,7 +56,9 @@ jobs:
         id: select
         run: node --experimental-strip-types scripts/select-benchmark-files.mts
         env:
-          BENCHMARK_ALL: ${{ github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+          BENCHMARK_ALL:
+            ${{ github.event_name == 'push' || github.event_name == 'schedule' || github.event_name ==
+            'workflow_dispatch' }}
           BENCHMARK_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
           BENCHMARK_LANE: simulation
       - name: Run CodSpeed benchmarks
@@ -84,8 +73,8 @@ jobs:
 
   io-benchmarks:
     name: I/O Benchmarks
-    needs: select-walltime
-    if: needs.select-walltime.outputs.has_benchmarks == 'true'
+    needs:
+      - select-walltime
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -116,3 +105,4 @@ jobs:
         env:
           BENCHMARK_LANE: walltime
           SPARK_BENCHMARK_FILES: ${{ needs.select-walltime.outputs.files }}
+    if: needs.select-walltime.outputs.has_benchmarks == 'true'

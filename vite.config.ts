@@ -5,6 +5,8 @@ export default defineConfig({
     ignorePatterns: ["**/*.md", "packages/spark-i18n/src/paraglide/**", "prek.toml", "_typos.toml"],
   },
   lint: {
+    // Security rule fixtures intentionally contain unsafe examples for Semgrep.
+    ignorePatterns: ["quality/semgrep/**"],
     plugins: ["typescript"],
     rules: {
       "typescript/no-explicit-any": "error",

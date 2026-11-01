@@ -119,6 +119,14 @@ external deployment checks are intentionally not part of every local edit.
 Run them when the affected surface or release path requires them, and report
 anything that could not be executed.
 
+Regular CI runs for pull requests targeting `main` and merge groups targeting
+`main`; a push after merging does not repeat these checks.
+
+CI runs Rust dependency checks in `ci-static-checks.yml` and collects Rust
+coverage in `ci-tests.yml`. The scheduled `ce-quality.yml` also runs them as
+independent jobs, so dependency findings and coverage upload failures have
+separate results and artifacts.
+
 ## Tests and compatibility
 
 - Test observable behavior and owner boundaries rather than mirroring source

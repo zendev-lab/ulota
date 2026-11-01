@@ -196,16 +196,20 @@ impl UpdateLock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temporary_paths() -> UpdatePaths {
+        static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "spark-deployment-state-{}-{}",
+            "spark-deployment-state-{}-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
         ));
         UpdatePaths {
             versions_dir: root.join("versions"),
@@ -219,6 +223,45 @@ mod tests {
             launcher_path: root.join("bin/spark"),
             updater_launch_agent_path: root.join("updater.plist"),
             backups_dir: root.join("backups"),
+        }
+    }
+
+    #[test]
+    fn missing_files_use_defaults_but_unreadable_files_fail() {
+        let paths = temporary_paths();
+        assert_eq!(native_state(&paths).unwrap(), UpdateState::default());
+        assert_eq!(read_config(&paths).unwrap(), UpdateConfig::default());
+
+        fs::create_dir_all(&paths.state_file).unwrap();
+        fs::create_dir_all(&paths.config_file).unwrap();
+        assert!(read_state(&paths).unwrap_err().contains("failed to read"));
+        assert!(read_config(&paths).unwrap_err().contains("failed to read"));
+        fs::remove_dir_all(paths.state_dir.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn incompatible_state_is_rejected_on_read_and_write() {
+        for state in [
+            UpdateState {
+                schema_version: 3,
+                ..UpdateState::default()
+            },
+            UpdateState {
+                generation: "other".to_owned(),
+                ..UpdateState::default()
+            },
+        ] {
+            let paths = temporary_paths();
+            assert!(write_state(&paths, &state).is_err());
+            assert!(!paths.state_file.exists());
+            fs::create_dir_all(&paths.state_dir).unwrap();
+            fs::write(&paths.state_file, serde_json::to_vec(&state).unwrap()).unwrap();
+            assert!(
+                read_state(&paths)
+                    .unwrap_err()
+                    .contains("unsupported updater state")
+            );
+            fs::remove_dir_all(paths.state_dir.parent().unwrap()).unwrap();
         }
     }
 
@@ -268,5 +311,44 @@ mod tests {
         drop(lock);
         assert!(UpdateLock::acquire(&paths).is_ok());
         assert!(paths.lock_file.exists());
+    }
+
+    proptest! {
+        #[test]
+        fn native_state_round_trip_preserves_quarantine(
+            entries in prop::collection::vec((".{0,40}", ".{0,80}", ".{0,40}"), 0..8),
+            current_version in prop::option::of("[0-9]{1,5}\\.[0-9]{1,5}\\.[0-9]{1,5}"),
+        ) {
+            let paths = temporary_paths();
+            let state = UpdateState {
+                current_version,
+                quarantined: entries.into_iter().map(|(version, reason, quarantined_at)| {
+                    crate::model::QuarantinedVersion { version, reason, quarantined_at }
+                }).collect(),
+                ..UpdateState::default()
+            };
+            write_state(&paths, &state).unwrap();
+            let restored = native_state(&paths).unwrap();
+            fs::remove_dir_all(paths.state_dir.parent().unwrap()).unwrap();
+            prop_assert_eq!(restored, state);
+        }
+
+        #[test]
+        fn configuration_interval_accepts_only_one_to_168_hours(
+            hours in prop_oneof![1_u32..=168, Just(0_u32), 169_u32..=u32::MAX],
+        ) {
+            let paths = temporary_paths();
+            let config = UpdateConfig { check_interval_hours: hours, ..UpdateConfig::default() };
+            let written = write_config(&paths, &config);
+            if (1..=168).contains(&hours) {
+                prop_assert!(written.is_ok());
+                let restored = read_config(&paths).unwrap();
+                fs::remove_dir_all(paths.config_file.parent().unwrap().parent().unwrap()).unwrap();
+                prop_assert_eq!(restored, config);
+            } else {
+                prop_assert!(written.is_err());
+                prop_assert!(!paths.config_file.exists());
+            }
+        }
     }
 }

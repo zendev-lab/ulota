@@ -9,6 +9,12 @@
 **/.svelte-kit
 **/.astro
 **/.pnpm-store
+**/target
+**/coverage
+**/.stryker-tmp
+packages/*/reports
+fuzz/corpus
+fuzz/artifacts
 
 .spark
 .graft

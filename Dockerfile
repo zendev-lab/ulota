@@ -2,6 +2,8 @@
 
 FROM node:24.20.0-bookworm-slim AS base
 
+# Take Debian's CA trust-store updates with the pinned distribution image.
+# hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -24,8 +26,8 @@ RUN pnpm fetch --ignore-scripts
 
 COPY . .
 
-RUN pnpm install --offline --frozen-lockfile --ignore-scripts
-RUN SPARK_CONTAINER_PRODUCT_ONLY=1 pnpm run release:pack
+RUN pnpm install --offline --frozen-lockfile --ignore-scripts \
+    && SPARK_CONTAINER_PRODUCT_ONLY=1 pnpm run release:pack
 
 FROM base AS runtime
 
@@ -48,7 +50,7 @@ RUN npm install --prefix /opt/spark --omit=dev --ignore-scripts /tmp/spark-hub.t
     && rm /tmp/spark-hub.tgz \
     && install -d -o node -g node /var/lib/spark
 
-USER node
+USER 1000:1000
 
 VOLUME ["/var/lib/spark"]
 EXPOSE 5173

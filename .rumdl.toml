@@ -1,0 +1,13 @@
+[global]
+# Prose uses semantic lines, including Chinese text; no fixed character width.
+disable = ["MD013"]
+exclude = ["packages/spark-i18n/src/paraglide/**", ".agents/worktrees/**"]
+
+[MD025]
+# Frontmatter describes the visible document title rather than a second heading.
+front-matter-title = ""
+
+[per-file-ignores]
+# Roles use metadata and a responsibility/authority body; PRs use section headings.
+".agents/roles/*.md" = ["MD041"]
+".github/pull_request_template.md" = ["MD041"]

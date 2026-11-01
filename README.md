@@ -135,7 +135,6 @@ Spark publishes lockstep-versioned product distributions and platform-specific n
   through a thin forwarding launcher, but contains no parser or app implementation.
 - `@zendev-lab/spark-cli` owns the native `spark` parser, diagnostics, updater,
   companion routing, ACP/MCP adapters, and platform-specific optional payloads.
-
 - `@zendev-lab/spark-daemon`, `@zendev-lab/spark-hub`, and
   `@zendev-lab/spark-web` are independently installable executable apps.
 
