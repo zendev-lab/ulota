@@ -34,7 +34,10 @@ catalog:
   typescript: "^6.0.3"
   vite: "npm:@voidzero-dev/vite-plus-core@1.1.0"
   vite-plus: "1.1.0"
-  vitest: "5.0.3"
+  # Official @vitest/* packages publish in lockstep with Vitest.
+  vitest: &vitest-version "5.0.3"
+  "@vitest/browser-playwright": *vitest-version
+  "@vitest/coverage-v8": *vitest-version
   ws: "^8.18.3"
 
 catalogs:

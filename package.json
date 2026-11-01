@@ -103,7 +103,7 @@
     "@deepseek-ai/dsh-web": "catalog:dsh",
     "@j178/prek": "0.5.7",
     "@types/node": "^24.13.3",
-    "@vitest/coverage-v8": "5.0.3",
+    "@vitest/coverage-v8": "catalog:",
     "@zendev-lab/dsh-cue": "workspace:^",
     "@zendev-lab/spark-daemon": "workspace:*",
     "@zendev-lab/spark-daemon-client": "workspace:*",
