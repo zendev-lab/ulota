@@ -68,6 +68,7 @@
   } = $props();
 
   let search = $state("");
+  let searchInput = $state<HTMLInputElement | null>(null);
   let commandValue = $state("");
   let selectedOption = $derived(
     groups.flatMap((group) => group.options).find((option) => option.value === value),
@@ -165,6 +166,7 @@
       <Icon name="search" size={17} />
       <CommandInput
         bind:value={search}
+        bind:ref={searchInput}
         placeholder={searchPlaceholder}
         autocomplete="off"
         autofocus
@@ -174,7 +176,10 @@
           type="button"
           class="clear-search"
           aria-label={clearSearchLabel}
-          onclick={() => (search = "")}
+          onclick={() => {
+            search = "";
+            searchInput?.focus();
+          }}
         >
           <Icon name="close" size={14} />
         </button>

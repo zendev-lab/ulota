@@ -12,8 +12,8 @@
 
 - Kept the upstream `Streamdown` composition and selected `svelte-streamdown` with its opt-in code,
   math, and Mermaid components.
-- Replaced Tailwind and `mode-watcher` with Hub token CSS and the renderer's automatic
-  light/dark Shiki themes.
+- Replaced Tailwind and `mode-watcher` with Spark token CSS. Code highlighting defaults
+  to `github-dark` to match the shared code surface in both product themes.
 - Kept renderer props open so Hub can select streaming/static parsing, animation, controls,
   and security policy without owning a second Markdown parser.
 - Added a Hub-owned streaming caret and a fixed validation origin so relative local media

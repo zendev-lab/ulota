@@ -40,3 +40,6 @@ test-results/
 reports/
 packages/spark-db/.codegen-tmp/
 packages/spark-db/src/generated-types.ts
+
+# Generated interactive code map
+/apps/spark-docs/public/codemap/

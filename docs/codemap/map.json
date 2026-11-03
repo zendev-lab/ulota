@@ -1,0 +1,682 @@
+{
+  "schemaVersion": 1,
+  "title": "Ulota 代码地图",
+  "nodes": [
+    {
+      "id": "entry",
+      "label": "CLI 与安装",
+      "group": "入口",
+      "role": "负责原生命令分派、配套程序查找、托管安装和部署状态投影。",
+      "impact": "改动会影响用户启动、诊断、升级和回滚已安装产品的方式。",
+      "packages": ["@zendev-lab/spark-cli", "@zendev-lab/spark-deployment"],
+      "evidence": [
+        "apps/spark-cli/package.json",
+        "packages/spark-deployment/package.json",
+        "apps/spark-cli/README.md",
+        "packages/spark-deployment/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "web",
+      "label": "本地 Web 与守护进程客户端",
+      "group": "入口",
+      "role": "提供经过认证的本地浏览器工作台和带类型的守护进程 RPC 客户端；持久执行仍归守护进程管理。",
+      "impact": "改动会影响本地会话导航、请求提交、实时状态投影和守护进程连接。",
+      "packages": ["@zendev-lab/spark-web", "@zendev-lab/spark-daemon-client"],
+      "evidence": [
+        "apps/spark-web/package.json",
+        "packages/spark-daemon-client/package.json",
+        "apps/spark-web/README.md",
+        "packages/spark-daemon-client/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "hub",
+      "label": "Hub 应用",
+      "group": "入口",
+      "role": "提供经过认证的多守护进程管理 UI 与服务端路由；不执行目标工作区中的工作。",
+      "impact": "改动会影响远程访问、路由和跨守护进程监管。",
+      "packages": ["@zendev-lab/spark-hub"],
+      "evidence": ["apps/spark-hub/package.json"],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "presentation",
+      "label": "共享 UI 与本地化",
+      "group": "界面呈现",
+      "role": "负责共享 Svelte 组件、设计令牌、会话界面、安全文本渲染和本地化文本目录。",
+      "impact": "改动会同时影响 Web 与 Hub 的交互和无障碍呈现。",
+      "packages": [
+        "@zendev-lab/spark-ui",
+        "@zendev-lab/spark-i18n",
+        "@zendev-lab/spark-text-rendering"
+      ],
+      "evidence": [
+        "packages/spark-ui/package.json",
+        "packages/spark-i18n/package.json",
+        "packages/spark-text-rendering/package.json",
+        "packages/spark-ui/README.md",
+        "packages/spark-i18n/README.md",
+        "packages/spark-text-rendering/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "daemon",
+      "label": "守护进程组装与执行",
+      "group": "执行管理",
+      "role": "负责持久会话、调用、本地分派、通道、重试和恢复；product 子目录组装能力与提供者策略，存储文件单独展开。",
+      "impact": "改动可能影响所有前端，以及持久执行和恢复边界。",
+      "packages": ["@zendev-lab/spark-daemon"],
+      "evidence": ["apps/spark-daemon/package.json", "apps/spark-daemon/README.md"],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "daemon-store",
+      "label": "守护进程 SQLite 存储",
+      "group": "存储",
+      "role": "负责守护进程私有的 schema 迁移，以及会话、调用、循环、通道、访问和工作区注册的读写辅助函数。",
+      "impact": "schema 与写入改动会影响守护进程重启、恢复和持久化的执行事实。",
+      "packages": [],
+      "evidence": [
+        "apps/spark-daemon/src/store/schema.ts",
+        "apps/spark-daemon/src/store/migrations/registry.ts"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "coordination",
+      "label": "Hub 协同",
+      "group": "协同",
+      "role": "负责运行时注册、命令投递与发件箱、状态投影摄入、委派和有界回执。",
+      "impact": "改动会影响多守护进程路由和审计；执行事实仍必须来自守护进程。",
+      "packages": ["@zendev-lab/spark-hub-coordination"],
+      "evidence": [
+        "packages/spark-hub-coordination/package.json",
+        "packages/spark-hub-coordination/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "hub-store",
+      "label": "Hub SQLite 存储",
+      "group": "存储",
+      "role": "负责 Hub 私有的 SQLite 迁移、数据库打开辅助函数、Kysely 集成和数据库类型。",
+      "impact": "改动会影响 Hub 认证、注册表、状态投影和协同持久化，不影响目标仓库的执行归属。",
+      "packages": ["@zendev-lab/spark-hub-storage-sqlite"],
+      "evidence": [
+        "packages/spark-hub-storage-sqlite/package.json",
+        "packages/spark-hub-storage-sqlite/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "contracts",
+      "label": "契约与宿主基础模块",
+      "group": "基础模块",
+      "role": "定义跨界面的类型化 schema 和调用标识，提供共享重试、路径和 Node 系统基础能力。",
+      "impact": "改动会传播到协议兼容性、宿主路径和所有使用方；需检查声明的依赖关系。",
+      "packages": [
+        "@zendev-lab/spark-protocol",
+        "@zendev-lab/spark-invocation",
+        "@zendev-lab/spark-retry",
+        "@zendev-lab/spark-platform-node"
+      ],
+      "evidence": [
+        "packages/spark-protocol/package.json",
+        "packages/spark-invocation/package.json",
+        "packages/spark-retry/package.json",
+        "packages/spark-platform-node/package.json",
+        "packages/spark-protocol/README.md",
+        "packages/spark-invocation/README.md",
+        "packages/spark-retry/README.md",
+        "packages/spark-platform-node/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "tasks",
+      "label": "任务、角色与单任务执行",
+      "group": "能力模块",
+      "role": "负责任务与认领数据、可复用的角色解析，以及带租约、超时和运行证据的单任务执行适配器；图调度归工作流管理。",
+      "impact": "改动会影响任务认领、具体角色运行和任务归属记录。",
+      "packages": [
+        "@zendev-lab/spark-tasks",
+        "@zendev-lab/spark-roles",
+        "@zendev-lab/spark-task-runtime"
+      ],
+      "evidence": [
+        "packages/spark-tasks/package.json",
+        "packages/spark-roles/package.json",
+        "packages/spark-task-runtime/package.json",
+        "packages/spark-tasks/README.md",
+        "packages/spark-roles/README.md",
+        "packages/spark-task-runtime/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "autonomy",
+      "label": "目标、工作流与 Repro",
+      "group": "能力模块",
+      "role": "提供 Goal/Loop 状态辅助、工作流定义与图执行，以及可复现的工作流能力；执行由守护进程监管。",
+      "impact": "改动会影响自主推进、就绪任务编排和复现证据。",
+      "packages": [
+        "@zendev-lab/spark-driver",
+        "@zendev-lab/spark-workflows",
+        "@zendev-lab/spark-repro"
+      ],
+      "evidence": [
+        "packages/spark-driver/package.json",
+        "packages/spark-workflows/package.json",
+        "packages/spark-repro/package.json",
+        "packages/spark-driver/README.md",
+        "packages/spark-workflows/README.md",
+        "packages/spark-repro/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "artifacts",
+      "label": "产物与文件",
+      "group": "能力模块",
+      "role": "负责面向用户的 issue/git_change/document 产物、独立的内部 Evidence，以及有界的工作区文件能力。",
+      "impact": "改动会影响持久交付物、证据来源和文件访问。",
+      "packages": ["@zendev-lab/spark-artifacts", "@zendev-lab/spark-files"],
+      "evidence": [
+        "packages/spark-artifacts/package.json",
+        "packages/spark-files/package.json",
+        "packages/spark-artifacts/README.md",
+        "packages/spark-files/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "interaction",
+      "label": "人工交互与会话",
+      "group": "能力模块",
+      "role": "通过作为权威来源的守护进程管理问题与审批状态，以及面向兼容的会话操作。",
+      "impact": "改动会影响等待人工输入、回答和会话连续性。",
+      "packages": ["@zendev-lab/spark-ask", "@zendev-lab/spark-session"],
+      "evidence": [
+        "packages/spark-ask/package.json",
+        "packages/spark-session/package.json",
+        "packages/spark-ask/README.md",
+        "packages/spark-session/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "knowledge",
+      "label": "记忆与 Lens",
+      "group": "能力模块",
+      "role": "提供工作区记忆能力，以及用于分析与验证的 Lens 接口。",
+      "impact": "改动会影响上下文回忆和有界的分析证据。",
+      "packages": ["@zendev-lab/spark-memory", "@zendev-lab/spark-lens"],
+      "evidence": [
+        "packages/spark-memory/package.json",
+        "packages/spark-lens/package.json",
+        "packages/spark-memory/README.md",
+        "packages/spark-lens/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "providers",
+      "label": "模型提供者",
+      "group": "能力模块",
+      "role": "在 Spark 自有接口后实现提供者目录、凭据和模型传输适配。",
+      "impact": "改动会影响模型发现、认证、请求规范化和流式响应。",
+      "packages": ["@zendev-lab/spark-llm-providers"],
+      "evidence": [
+        "packages/spark-llm-providers/package.json",
+        "packages/spark-llm-providers/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "execution",
+      "label": "Cue 与宿主工具适配器",
+      "group": "执行适配器",
+      "role": "提供 Cue IPC/执行运行时、宿主工具适配器、Git worktree 嫁接、Fusion 工具和网页检索。Cue 可使用本地套接字或显式 SSH 目标。",
+      "impact": "改动会影响外部命令执行、worktree 边界和工具结果。",
+      "packages": [
+        "@zendev-lab/dsh-cue",
+        "@zendev-lab/dsh-tool-cue",
+        "@zendev-lab/spark-graft",
+        "@zendev-lab/dsh-tool-fusion",
+        "@zendev-lab/dsh-tool-web"
+      ],
+      "evidence": [
+        "packages/dsh-cue/package.json",
+        "packages/dsh-tool-cue/package.json",
+        "packages/spark-graft/package.json",
+        "packages/dsh-tool-fusion/package.json",
+        "packages/dsh-tool-web/package.json",
+        "packages/dsh-cue/README.md",
+        "packages/dsh-tool-cue/README.md",
+        "packages/spark-graft/README.md",
+        "packages/dsh-tool-fusion/README.md",
+        "packages/dsh-tool-web/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "transports",
+      "label": "ACP、MCP 与通道适配器",
+      "group": "入口",
+      "role": "将协议或通道客户端请求转换为对应负责模块的 API 调用；不拥有持久业务状态。",
+      "impact": "改动会影响编辑器、MCP 和消息集成。",
+      "packages": [
+        "@zendev-lab/spark-acp",
+        "@zendev-lab/spark-mcp",
+        "@zendev-lab/dsh-channel-transports"
+      ],
+      "evidence": [
+        "packages/spark-acp/package.json",
+        "packages/spark-mcp/package.json",
+        "packages/dsh-channel-transports/package.json",
+        "packages/spark-acp/README.md",
+        "packages/spark-mcp/README.md",
+        "packages/dsh-channel-transports/README.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "docs",
+      "label": "公开文档",
+      "group": "文档与治理",
+      "role": "提供中英双语的当前用户指南和归档版本文档，通过 Astro/Starlight 构建。",
+      "impact": "改动会影响内容可发现性和操作指南的准确性。",
+      "packages": ["@zendev-lab/spark-docs"],
+      "evidence": ["apps/spark-docs/package.json", "apps/spark-docs/README.md"],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "tooling",
+      "label": "仓库治理与测试",
+      "group": "文档与治理",
+      "role": "负责包归属清单、规范契约、发布脚本和跨包集成测试。",
+      "impact": "改动会影响验证、打包，以及依赖和状态边界的约束。",
+      "packages": [],
+      "evidence": [
+        "architecture/packages.json",
+        "CONTRIBUTING.md",
+        ".agents/notes/contracts/command-planes.md"
+      ],
+      "testNote": "来自所属测试文件的代表性声明；不代表测试执行或覆盖率。"
+    },
+    {
+      "id": "external",
+      "label": "外部运行时与服务",
+      "group": "外部依赖",
+      "role": "包括 Node/SQLite、Svelte/Bits UI、Astro/Starlight、模型提供者 SDK、Cue/OpenSSH 和其他生产依赖。各模块详情列出声明的包版本，锁文件固定实际解析结果。",
+      "impact": "可用性或版本变化会影响适配器和宿主执行；地图不实现外部服务，也不证明其健康状态。",
+      "packages": [],
+      "evidence": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "Cargo.lock",
+        "packages/dsh-cue/README.md",
+        "packages/spark-hub-storage-sqlite/src/client.ts"
+      ],
+      "testNote": "外部服务不包含 Spark 自有测试。可查看执行与提供者适配器测试；存在这些测试不代表外部服务可用。"
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry-web",
+      "source": "entry",
+      "target": "web",
+      "kind": "dataflow",
+      "label": "分派 Web 配套程序，启动经过认证的本地工作台。",
+      "evidence": ["apps/spark-cli/native/src/main.rs", "apps/spark-web/src/cli.ts"]
+    },
+    {
+      "id": "web-daemon",
+      "source": "web",
+      "target": "daemon",
+      "kind": "dataflow",
+      "label": "通过允许清单中的类型化 RPC 请求调用本地守护进程。",
+      "evidence": [
+        "apps/spark-web/src/lib/server/rpc.ts",
+        "apps/spark-daemon/src/local-rpc/dispatch.ts"
+      ]
+    },
+    {
+      "id": "daemon-web",
+      "source": "daemon",
+      "target": "web",
+      "kind": "dataflow",
+      "label": "将有界历史和实时状态投影返回浏览器。",
+      "evidence": [
+        "apps/spark-web/src/lib/server/sse.ts",
+        "apps/spark-web/src/lib/server/dashboard.ts"
+      ]
+    },
+    {
+      "id": "hub-coordination",
+      "source": "hub",
+      "target": "coordination",
+      "kind": "dataflow",
+      "label": "经过认证的 Hub 路由调用协同模块。",
+      "evidence": [
+        "apps/spark-hub/AGENTS.md",
+        "packages/spark-hub-coordination/src/runtime-session-control.ts"
+      ]
+    },
+    {
+      "id": "coordination-daemon",
+      "source": "coordination",
+      "target": "daemon",
+      "kind": "dataflow",
+      "label": "运行时控制命令路由到选定的守护进程；目标执行仍留在该进程。",
+      "evidence": [
+        "packages/spark-hub-coordination/src/runtime-control.ts",
+        "apps/spark-daemon/src/command-dispatcher.ts"
+      ]
+    },
+    {
+      "id": "coordination-hub-store",
+      "source": "coordination",
+      "target": "hub-store",
+      "kind": "dataflow",
+      "label": "通过 Hub 数据库持久化协同与状态投影。",
+      "evidence": [
+        "packages/spark-hub-coordination/src/runtime-session-control.ts",
+        "packages/spark-hub-storage-sqlite/src/client.ts"
+      ]
+    },
+    {
+      "id": "daemon-daemon-store",
+      "source": "daemon",
+      "target": "daemon-store",
+      "kind": "dataflow",
+      "label": "读写持久执行状态并应用迁移。",
+      "evidence": [
+        "apps/spark-daemon/src/store/schema.ts",
+        "apps/spark-daemon/src/store/invocations.ts"
+      ]
+    },
+    {
+      "id": "daemon-providers",
+      "source": "daemon",
+      "target": "providers",
+      "kind": "dataflow",
+      "label": "将提供者目录和传输能力组装到原生会话。",
+      "evidence": [
+        "apps/spark-daemon/src/product/host/bootstrap.ts",
+        "apps/spark-daemon/src/product/host/auth.ts"
+      ]
+    },
+    {
+      "id": "daemon-interaction",
+      "source": "daemon",
+      "target": "interaction",
+      "kind": "dataflow",
+      "label": "通过守护进程处理器分派待处理的人工请求与回答。",
+      "evidence": [
+        "apps/spark-daemon/src/local-rpc/handlers/human.ts",
+        "packages/spark-ask/src/flow.ts"
+      ]
+    },
+    {
+      "id": "autonomy-tasks",
+      "source": "autonomy",
+      "target": "tasks",
+      "kind": "dataflow",
+      "label": "就绪任务工作流调用单任务运行时；角色和认领仍归各自模块管理。",
+      "evidence": [
+        "packages/spark-workflows/src/orchestrator/ready-task-runner.ts",
+        "apps/spark-daemon/src/product/policy/spark-ready-task-runtime.ts",
+        "apps/spark-daemon/src/product/policy/spark-run-ready-tasks-tool-registration.ts"
+      ]
+    },
+    {
+      "id": "tasks-artifacts",
+      "source": "tasks",
+      "target": "artifacts",
+      "kind": "dataflow",
+      "label": "通过独立 EvidenceStore 持久化任务运行证据。",
+      "evidence": [
+        "packages/spark-task-runtime/README.md",
+        "packages/spark-artifacts/src/index.ts",
+        "packages/spark-task-runtime/src/index.ts"
+      ]
+    },
+    {
+      "id": "daemon-autonomy",
+      "source": "daemon",
+      "target": "autonomy",
+      "kind": "dataflow",
+      "label": "守护进程的产品策略组装目标和工作流运行状态。",
+      "evidence": [
+        "apps/spark-daemon/src/product/policy/spark-session-goals.ts",
+        "apps/spark-daemon/src/product/policy/spark-workflow-run-store.ts"
+      ]
+    },
+    {
+      "id": "daemon-execution",
+      "source": "daemon",
+      "target": "execution",
+      "kind": "dataflow",
+      "label": "守护进程组装层将 Spark 策略接入宿主无关的 Cue 与工具运行时。",
+      "evidence": [
+        "apps/spark-daemon/src/product/host/product-composition.ts",
+        "apps/spark-daemon/src/cordis-root.ts",
+        "packages/dsh-cue/README.md"
+      ]
+    },
+    {
+      "id": "execution-external",
+      "source": "execution",
+      "target": "external",
+      "kind": "dataflow",
+      "label": "Cue 使用本地 Unix IPC，或通过 OpenSSH 连接已明确可用的远程 Cue 守护进程。",
+      "evidence": ["packages/dsh-cue/README.md"]
+    },
+    {
+      "id": "providers-external",
+      "source": "providers",
+      "target": "external",
+      "kind": "dataflow",
+      "label": "提供者适配器向配置的外部 API 提交模型请求。",
+      "evidence": ["packages/spark-llm-providers/README.md"]
+    },
+    {
+      "id": "transports-daemon",
+      "source": "transports",
+      "target": "daemon",
+      "kind": "dataflow",
+      "label": "ACP/通道适配器使用守护进程管理的执行能力。",
+      "evidence": [
+        "packages/spark-acp/README.md",
+        "apps/spark-daemon/src/channels/human-interactions.ts"
+      ]
+    },
+    {
+      "id": "transports-knowledge",
+      "source": "transports",
+      "target": "knowledge",
+      "kind": "dataflow",
+      "label": "MCP 通过只读接口查询工作区 Memory 的列表与状态。",
+      "evidence": [
+        "packages/spark-mcp/src/index.ts",
+        "packages/spark-mcp/bin/spark-mcp.ts",
+        "packages/spark-mcp/README.md"
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "local-turn",
+      "title": "本地浏览器会话轮次",
+      "command": "spark web",
+      "steps": [
+        {
+          "node": "entry",
+          "description": "从工作区启动 Web 配套程序。",
+          "evidence": ["apps/spark-cli/native/src/main.rs"]
+        },
+        {
+          "node": "web",
+          "description": "使用守护进程令牌认证，仅提交允许清单中的 RPC。",
+          "evidence": [
+            "apps/spark-web/src/lib/server/auth.ts",
+            "apps/spark-web/src/lib/server/rpc.ts"
+          ]
+        },
+        {
+          "node": "daemon",
+          "description": "解析、分派并监管会话调用。",
+          "evidence": [
+            "apps/spark-daemon/src/local-rpc/dispatch.ts",
+            "apps/spark-daemon/src/local-rpc/handlers/session.ts"
+          ]
+        },
+        {
+          "node": "daemon-store",
+          "description": "持久化调用与会话状态，以便恢复。",
+          "evidence": ["apps/spark-daemon/src/store/invocations.ts"]
+        },
+        {
+          "node": "web",
+          "description": "读取有界的会话状态投影和实时事件。",
+          "evidence": [
+            "apps/spark-web/src/lib/server/dashboard.ts",
+            "apps/spark-web/src/lib/server/sse.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "human",
+      "title": "人工回答与继续执行",
+      "command": "在所属 Session 中打开待回答问题",
+      "steps": [
+        {
+          "node": "interaction",
+          "description": "表示待处理的人工请求及其回答状态。",
+          "evidence": ["packages/spark-ask/src/flow.ts"]
+        },
+        {
+          "node": "web",
+          "description": "通过会话界面展示待处理交互。",
+          "evidence": [
+            "apps/spark-web/src/lib/pending-human-interactions.ts",
+            "apps/spark-web/src/lib/pending-human-interactions.test.ts"
+          ]
+        },
+        {
+          "node": "daemon",
+          "description": "在所属守护进程中验证并分派人工回答。",
+          "evidence": ["apps/spark-daemon/src/local-rpc/handlers/human.ts"]
+        },
+        {
+          "node": "daemon-store",
+          "description": "通过守护进程迁移与存储保留持久的人工等待状态。",
+          "evidence": ["apps/spark-daemon/src/store/migrations/human-waits.ts"]
+        }
+      ]
+    },
+    {
+      "id": "task",
+      "title": "工作流 → 任务运行证据",
+      "command": "运行已配置的工作流或就绪任务",
+      "steps": [
+        {
+          "node": "autonomy",
+          "description": "解析工作流定义并编排就绪任务。",
+          "evidence": ["packages/spark-workflows/README.md"]
+        },
+        {
+          "node": "tasks",
+          "description": "解析角色、认领任务，并在超时与租约约束下执行单个任务。",
+          "evidence": ["packages/spark-task-runtime/README.md"]
+        },
+        {
+          "node": "daemon",
+          "description": "使用守护进程注入的角色执行端口和产品策略。",
+          "evidence": ["apps/spark-daemon/src/product/policy/spark-task-session-dispatch.ts"]
+        },
+        {
+          "node": "artifacts",
+          "description": "持久化运行 Evidence，更新任务与运行状态。",
+          "evidence": ["packages/spark-task-runtime/README.md"]
+        }
+      ]
+    },
+    {
+      "id": "hub-remote",
+      "title": "Hub → 远程守护进程",
+      "command": "spark hub → 选择已注册守护进程的 Session",
+      "steps": [
+        {
+          "node": "hub",
+          "description": "使用经过认证的远程管理路由。",
+          "evidence": ["apps/spark-hub/AGENTS.md"]
+        },
+        {
+          "node": "coordination",
+          "description": "解析路由并提交运行时控制命令。",
+          "evidence": ["packages/spark-hub-coordination/src/runtime-session-control.ts"]
+        },
+        {
+          "node": "hub-store",
+          "description": "将协同状态持久化到 Hub 自有数据库。",
+          "evidence": ["packages/spark-hub-storage-sqlite/src/client.ts"]
+        },
+        {
+          "node": "daemon",
+          "description": "接收命令，仅由目标所属模块执行。",
+          "evidence": ["apps/spark-daemon/src/command-dispatcher.ts"]
+        },
+        {
+          "node": "coordination",
+          "description": "摄入执行状态投影，供远程界面展示。",
+          "evidence": ["packages/spark-hub-coordination/src/projection/ingest.ts"]
+        }
+      ]
+    },
+    {
+      "id": "cue",
+      "title": "工具请求 → 外部进程",
+      "command": "cue_exec（通过已配置的宿主工具运行时）",
+      "steps": [
+        {
+          "node": "daemon",
+          "description": "将产品策略接入共享执行基础设施。",
+          "evidence": [
+            "apps/spark-daemon/src/product/host/product-composition.ts",
+            "packages/dsh-cue/README.md"
+          ]
+        },
+        {
+          "node": "execution",
+          "description": "规范化参数，复用 IPC 连接，管理取消和重试。",
+          "evidence": ["packages/dsh-cue/README.md"]
+        },
+        {
+          "node": "external",
+          "description": "通过本地 Cue 或显式 SSH 网关执行；不会自动启动远程服务。",
+          "evidence": ["packages/dsh-cue/README.md"]
+        },
+        {
+          "node": "execution",
+          "description": "返回有界的流式输出，并附带 Execution 和 Step 标识。",
+          "evidence": ["packages/dsh-cue/README.md"]
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "地图依据当前工作区源码，不代表运行时验收通过。",
+    "构建依赖按职责汇总 package.json 中的生产依赖声明；开发依赖和原生 Cargo 依赖通过清单文件查看，不推断为调用关系。",
+    "运行时关系和工作流是人工整理的架构路径，并非完整的动态调用图。",
+    "这里只索引代表性测试声明；其名称与源码对应，执行结果需查阅单独的验收记录。",
+    "GitHub 源码链接指向构建时的提交；工作区未提交变化不会自动进入该提交。",
+    "构建提交中不存在的文件没有 GitHub 链接；文件模式可以查看工作副本。"
+  ]
+}
