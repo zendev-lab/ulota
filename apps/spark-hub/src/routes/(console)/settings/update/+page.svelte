@@ -7,7 +7,7 @@
 </script>
 
 <svelte:head>
-  <title>{copy.title} · Spark</title>
+  <title>{copy.title} · Ulota</title>
 </svelte:head>
 
 <section class="update-page">

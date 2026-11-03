@@ -153,17 +153,17 @@
   }
 
   async function refreshDaemon() {
-    await run("Spark status", async () => {
+    await run("Ulota status", async () => {
       daemonOverride = await webRpc("daemon.status", {});
-      return `Spark is ${daemonOverride.lifecycle.state}.`;
+      return `Ulota is ${daemonOverride.lifecycle.state}.`;
     });
   }
 
   async function restartDaemon() {
-    await run("Spark restart", async () => {
+    await run("Ulota restart", async () => {
       const result = await webRpc("daemon.restart", {});
       restartOpen = false;
-      return `Spark restart ${result.restartId} accepted; active work is draining.`;
+      return `Ulota restart ${result.restartId} accepted; active work is draining.`;
     });
   }
 
@@ -279,7 +279,7 @@
   confirmLabel={copy.restart}
   cancelLabel={copy.cancel}
   danger
-  loading={busy === "Spark restart"}
+  loading={busy === "Ulota restart"}
   onConfirm={() => void restartDaemon()}
 />
 

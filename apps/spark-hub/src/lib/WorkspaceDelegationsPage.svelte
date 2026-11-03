@@ -10,7 +10,7 @@
   }
 </script>
 
-<svelte:head><title>{messages.title} · Spark</title></svelte:head>
+<svelte:head><title>{messages.title} · Ulota</title></svelte:head>
 
 <section class="delegations-page">
   <header>

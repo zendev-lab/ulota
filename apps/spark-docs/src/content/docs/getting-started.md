@@ -14,7 +14,7 @@ Spark currently requires Node.js `>=24` and npm. `@zendev-lab/spark` is the comp
 The verified curl bootstrap is recommended. It detects the current macOS/Linux x64/arm64 target, verifies the release SHA-256, then asks the exact native CLI to install the matching managed npm payload:
 
 ```bash
-curl -fsSL https://github.com/zendev-lab/spark/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/zendev-lab/ulota/releases/latest/download/install.sh | sh
 spark version --json
 spark update status --json
 ```
@@ -22,7 +22,7 @@ spark update status --json
 The stable launcher defaults to `~/.local/bin/spark`. Use an explicit absolute prefix when needed:
 
 ```bash
-curl -fsSL https://github.com/zendev-lab/spark/releases/latest/download/install.sh \
+curl -fsSL https://github.com/zendev-lab/ulota/releases/latest/download/install.sh \
   | sh -s -- --prefix /opt/spark
 ```
 

@@ -453,7 +453,7 @@ describe("Session page owner state", () => {
       .element(link)
       .toHaveAttribute("href", "https://github.com/zendev-lab/spark/pull/189");
     await expect.element(screen.getByText("You", { exact: true })).toBeVisible();
-    await expect.element(screen.getByText("Spark", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("Ulota", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("Done", { exact: true })).toBeVisible();
     await expect
       .element(screen.getByText("Unknown endpoint: POST /v1/responses", { exact: true }))
@@ -538,7 +538,7 @@ describe("Session page owner state", () => {
     await screen.getByRole("button", { name: "Open conversations" }).click();
     await screen.getByRole("button", { name: "Close", exact: true }).click();
     await expect.element(screen.getByRole("dialog")).toBeVisible();
-    await expect.element(screen.getByText("Spark will mark Session a as closed.")).toBeVisible();
+    await expect.element(screen.getByText("Ulota will mark Session a as closed.")).toBeVisible();
     expect(mocks.webRpc.mock.calls.some(([method]) => method === "session.close")).toBe(false);
 
     await screen.getByRole("button", { name: "Keep session" }).click();

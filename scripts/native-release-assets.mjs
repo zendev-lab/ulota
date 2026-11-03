@@ -26,7 +26,7 @@ export async function buildNativeReleaseAssets(options = {}) {
   );
   const distributions = options.distributions ?? nativeNpmDistributions;
   const releaseBaseUrl =
-    options.releaseBaseUrl ?? `https://github.com/zendev-lab/spark/releases/download/v${version}`;
+    options.releaseBaseUrl ?? `https://github.com/zendev-lab/ulota/releases/download/v${version}`;
 
   assertReleaseIdentity(version, gitSha);
   await mkdir(outputDirectory, { recursive: true });

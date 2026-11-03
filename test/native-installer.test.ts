@@ -17,6 +17,53 @@ const distributions = [
   { target: "x86_64-unknown-linux-musl" },
 ];
 
+test("default bootstrap downloads from the Ulota repository", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ulota-installer-repository-"));
+  try {
+    const bin = join(root, "bin");
+    const record = join(root, "curl.args");
+    await mkdir(bin);
+    await writeFile(
+      join(bin, "curl"),
+      '#!/bin/sh\nprintf "%s\\n" "$@" > "$SPARK_CURL_ARGS"\nexit 23\n',
+      { mode: 0o755 },
+    );
+    for (const { target } of distributions) {
+      const directory = join(root, "native", target);
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, "spark"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    }
+    await buildNativeReleaseAssets({
+      version: "0.5.0",
+      gitSha: "a".repeat(40),
+      outputDirectory: join(root, "release"),
+      nativeBinaryRoot: join(root, "native"),
+      distributions,
+    });
+
+    await assert.rejects(
+      execFileAsync(
+        "sh",
+        [join(root, "release", "install.sh"), "--prefix", join(root, "install")],
+        {
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPARK_CURL_ARGS: record },
+        },
+      ),
+      { code: 23 },
+    );
+    const downloadUrl = (await readFile(record, "utf8"))
+      .trim()
+      .split("\n")
+      .find((arg) => arg.startsWith("https://"));
+    assert.equal(
+      downloadUrl,
+      `https://github.com/zendev-lab/ulota/releases/download/v0.5.0/spark-cli-${targetForCurrentPlatform()}.tar.gz`,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("curl bootstrap pins, verifies, and delegates an exact managed install", async () => {
   const root = await mkdtemp(join(tmpdir(), "spark-native-installer-"));
   const nativeRoot = join(root, "native");

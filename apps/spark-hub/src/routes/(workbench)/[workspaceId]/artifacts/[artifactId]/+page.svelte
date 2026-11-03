@@ -55,7 +55,7 @@
 </script>
 
 <svelte:head>
-  <title>{displayTitle} · {t.headTitleSuffix} · Spark</title>
+  <title>{displayTitle} · {t.headTitleSuffix} · Ulota</title>
 </svelte:head>
 
 <section class="artifact-detail-page">

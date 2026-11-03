@@ -13,20 +13,20 @@ export default defineConfig({
   integrations: [
     starlight({
       title: {
-        en: "Spark Docs",
-        "zh-CN": "Spark 文档",
+        en: "Ulota Docs",
+        "zh-CN": "Ulota 文档",
       },
       description:
-        "Install, operate, and understand Spark across its CLI, local web workbench, daemon, and Hub surfaces.",
+        "Install, operate, and understand Ulota across its CLI, local web workbench, daemon, and Hub surfaces.",
       favicon: "/spark.svg",
       editLink: {
-        baseUrl: "https://github.com/zendev-lab/spark/edit/main/apps/spark-docs/",
+        baseUrl: "https://github.com/zendev-lab/ulota/edit/main/apps/spark-docs/",
       },
       social: [
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/zendev-lab/spark",
+          href: "https://github.com/zendev-lab/ulota",
         },
       ],
       locales: {
@@ -90,8 +90,8 @@ export default defineConfig({
           ],
         },
         {
-          label: "Use Spark",
-          translations: { zh: "使用 Spark" },
+          label: "Use Ulota",
+          translations: { zh: "使用 Ulota" },
           items: [
             {
               label: "Local web",

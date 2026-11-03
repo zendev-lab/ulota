@@ -1,6 +1,6 @@
 import type { SparkLocale } from "../index.ts";
-import en from "./en.ts";
-import zhCN from "./zh-CN.ts";
+import en from "./en.json" with { type: "json" };
+import zhCN from "./zh-CN.json" with { type: "json" };
 
 export type HubMessages = typeof en;
 
