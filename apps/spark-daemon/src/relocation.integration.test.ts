@@ -316,6 +316,7 @@ test("live daemon relocates between snapshot-restored HTTPS/WSS Hubs without res
     );
     expect(readSparkDaemonConfig(paths)).toEqual({
       installationId,
+      localOwnerId: `owner-${installationId}`,
       displayName: "Live relocation daemon",
     });
     expect(getSparkDaemonServerProfile(paths, source.origin)).toBeUndefined();

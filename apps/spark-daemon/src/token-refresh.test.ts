@@ -110,6 +110,7 @@ describe("Spark daemon token refresh", () => {
       expect(config.refreshToken).toBe("spark_rt_refresh_new_000000000000000000000000000");
       expect(readSparkDaemonConfig(paths)).toEqual({
         installationId: "install-test",
+        localOwnerId: "owner-install-test",
         displayName: "Test daemon",
         invocationConcurrency: 8,
       });
@@ -200,6 +201,7 @@ describe("Spark daemon token refresh", () => {
       ]);
       expect(readSparkDaemonConfig(paths)).toEqual({
         installationId: "install-test",
+        localOwnerId: "owner-install-test",
         displayName: "Test daemon",
       });
       expect(config).toMatchObject({

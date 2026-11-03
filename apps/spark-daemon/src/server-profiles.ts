@@ -268,13 +268,17 @@ export function sparkDaemonServerProfileFromConfig(
 /** Preserve the public SparkDaemonConfig shape for existing registration and
  * connection call sites while replacing, rather than mixing, credential tuples. */
 export function sparkDaemonConfigForServerProfile(
-  identity: Pick<SparkDaemonConfig, "installationId" | "displayName" | "invocationConcurrency">,
+  identity: Pick<
+    SparkDaemonConfig,
+    "installationId" | "displayName" | "localOwnerId" | "invocationConcurrency"
+  >,
   profile: SparkDaemonServerProfile,
 ): SparkDaemonConfig {
   const normalized = normalizeServerProfile(profile);
   return {
     installationId: identity.installationId,
     displayName: identity.displayName,
+    localOwnerId: identity.localOwnerId,
     ...(identity.invocationConcurrency !== undefined
       ? { invocationConcurrency: identity.invocationConcurrency }
       : {}),

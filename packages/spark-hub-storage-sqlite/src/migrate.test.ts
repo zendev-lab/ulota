@@ -174,6 +174,7 @@ describe("migrations", () => {
       "0027",
       "0028",
       "0029",
+      "0030",
     ]);
 
     const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{
@@ -208,7 +209,7 @@ describe("migrations", () => {
       count: number;
     };
 
-    expect(migrationCount.count).toBe(29);
+    expect(migrationCount.count).toBe(30);
     db.close();
   });
 

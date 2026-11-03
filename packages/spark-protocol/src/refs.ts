@@ -13,6 +13,7 @@ import { z } from "zod";
 
 export const idPrefixSchema = z.enum([
   "usr",
+  "pb",
   "sess",
   "ws",
   "watok",

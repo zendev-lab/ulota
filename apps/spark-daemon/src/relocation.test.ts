@@ -66,6 +66,7 @@ describe("daemon Hub relocation", () => {
       expect(reconnect).toHaveBeenCalledWith(sourceUrl);
       expect(readSparkDaemonConfig(h.paths)).toEqual({
         installationId: "install-relocation",
+        localOwnerId: "owner-install-relocation",
         displayName: "Relocation daemon",
         invocationConcurrency: 8,
       });
@@ -301,6 +302,7 @@ describe("daemon Hub relocation", () => {
 
       expect(readSparkDaemonConfig(h.paths)).toEqual({
         installationId: "install-relocation",
+        localOwnerId: "owner-install-relocation",
         displayName: "Relocation daemon",
         invocationConcurrency: 8,
       });
