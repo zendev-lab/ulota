@@ -105,3 +105,32 @@ export function withPersonalOperation<T>(
     throw caught;
   }
 }
+
+export interface PersonalLegacyMapping {
+  recordId: string;
+  sourceHash: string;
+}
+export function personalLegacyMapping(
+  db: DatabaseSync,
+  userId: string,
+  capability: PersonalRecordTable,
+  legacyId: string,
+) {
+  return db
+    .prepare(
+      "SELECT record_id AS recordId,source_hash AS sourceHash FROM personal_legacy_imports WHERE user_id=? AND capability=? AND legacy_id=?",
+    )
+    .get(userId, capability, legacyId) as PersonalLegacyMapping | undefined;
+}
+export function insertPersonalLegacyMapping(
+  db: DatabaseSync,
+  userId: string,
+  capability: PersonalRecordTable,
+  legacyId: string,
+  recordId: string,
+  sourceHash: string,
+) {
+  db.prepare(
+    "INSERT INTO personal_legacy_imports (user_id,capability,legacy_id,record_id,source_hash,imported_at) VALUES (?,?,?,?,?,?)",
+  ).run(userId, capability, legacyId, recordId, sourceHash, new Date().toISOString());
+}

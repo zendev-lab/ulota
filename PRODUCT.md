@@ -18,6 +18,8 @@ Spark is a durable coding-agent product with two task-shaped browser surfaces. L
 
 Local Web and Hub share one product model without sharing one page topology. Web presents local Sessions and Invocations through a chat-shaped experience and treats the local execution owner as an implementation detail. Hub adds daemon-scoped authentication, registry, audit, and coordination across authorized daemons through an attention workbench; internal Workspaces appear only when users need to group Sessions.
 
+Optional Personal pages host a signed-in user’s inventory, personal todos and subscriptions as independently enabled capabilities. The Hub owns these business records; linked daemons execute AI through explicit personal/session grants. Disabling a capability preserves its data, and legacy BoneHub import is explicit, previewed and never overwrites existing Hub records.
+
 ## Positioning
 
 Spark Web and Hub present daemon-owned durable Sessions and Invocations, explicit human-wait states, lineage, recovery, and attributable Artifacts. Conversation provides the interaction model; it does not introduce a browser-owned execution queue. Browser surfaces submit commands and render typed projections without inferring or recreating execution state.

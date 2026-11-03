@@ -15,7 +15,8 @@
   <p>{t.signInBody}</p><Button href="/login?next=%2Fpersonal">{t.signIn}</Button>
   {#if data.localSignIn}<form method="POST" action="?/localSignIn"><Button type="submit" variant="secondary">{t.localSignIn}</Button></form>{/if}
 {:else}
-  <section aria-labelledby="personal-tools"><h2 id="personal-tools">{t.plugins}</h2><ul>
+  <p><a href="/personal/import">{t.importFields.title}</a></p>
+<section aria-labelledby="personal-tools"><h2 id="personal-tools">{t.plugins}</h2><ul>
     {#each capabilities as capability}
       <li><form method="POST" action="?/toggle" use:enhance>
         <strong>{t[capability]}</strong><span>{data.enabled.includes(capability) ? t.enabled : t.disabled}</span>

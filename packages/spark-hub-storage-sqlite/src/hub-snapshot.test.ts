@@ -102,6 +102,7 @@ describe("Hub instance snapshots", () => {
       "0032",
       "0033",
       "0034",
+      "0035",
     ]);
     expect(manifest.tableCounts).toMatchObject({
       workspaces: 1,

@@ -1,3 +1,5 @@
+import type { PersonalRecordTable } from "./personal-records.ts";
+
 export interface SchemaMigrationsTable {
   version: string;
   name: string;
@@ -558,6 +560,7 @@ export interface SparkDatabase {
   personal_inventory: PersonalRecordsTable;
   personal_todos: PersonalRecordsTable;
   personal_subscriptions: PersonalRecordsTable;
+  personal_legacy_imports: PersonalLegacyImportsTable;
   personal_operation_receipts: PersonalOperationReceiptsTable;
   personal_capability_settings: PersonalCapabilitySettingsTable;
   personal_session_grants: PersonalSessionGrantsTable;
@@ -621,14 +624,14 @@ export interface PersonalBindingsTable {
 
 export interface PersonalCapabilitySettingsTable {
   user_id: string;
-  capability: "inventory" | "todos" | "subscriptions";
+  capability: PersonalRecordTable;
   enabled: 0 | 1;
 }
 export interface PersonalSessionGrantsTable {
   user_id: string;
   binding_id: string;
   session_id: string;
-  capability: "inventory" | "todos" | "subscriptions";
+  capability: PersonalRecordTable;
   can_write: 0 | 1;
 }
 export interface PersonalSessionsTable {
@@ -652,4 +655,13 @@ export interface PersonalOperationReceiptsTable {
   request_hash: string;
   result_json: string;
   created_at: string;
+}
+
+export interface PersonalLegacyImportsTable {
+  user_id: string;
+  capability: PersonalRecordTable;
+  legacy_id: string;
+  record_id: string;
+  source_hash: string;
+  imported_at: string;
 }
