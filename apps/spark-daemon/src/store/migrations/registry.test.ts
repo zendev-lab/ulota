@@ -438,3 +438,66 @@ describe("daemon migration registry", () => {
     }
   });
 });
+
+describe("daemon migration atomicity", () => {
+  it.each([false, true])(
+    "rolls back schema, data and markers inside an existing transaction: %s",
+    (nested) => {
+      const db = new DatabaseSync(":memory:");
+      try {
+        db.exec(
+          "CREATE TABLE daemon_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE TABLE migration_existing (value TEXT); INSERT INTO migration_existing VALUES ('original')",
+        );
+        if (nested) {
+          db.exec("BEGIN; INSERT INTO migration_existing VALUES ('caller')");
+        }
+        const first = {
+          id: "first",
+          owner: "test",
+          up(target: DatabaseSync) {
+            target.exec(
+              "CREATE TABLE migration_new (value TEXT); INSERT INTO migration_existing VALUES ('partial')",
+            );
+          },
+        };
+        expect(() =>
+          runDaemonMigrations(db, [
+            first,
+            {
+              id: "second",
+              owner: "test",
+              up() {
+                throw new Error("interrupted migration");
+              },
+            },
+          ]),
+        ).toThrow(/interrupted/);
+        expect(
+          db.prepare("SELECT name FROM sqlite_master WHERE name='migration_new'").get(),
+        ).toBeUndefined();
+        expect(db.prepare("SELECT key FROM daemon_meta").all()).toEqual([]);
+        expect(db.prepare("SELECT value FROM migration_existing").all()).toEqual(
+          nested ? [{ value: "original" }, { value: "caller" }] : [{ value: "original" }],
+        );
+        expect(db.isTransaction).toBe(nested);
+        const second = {
+          id: "second",
+          owner: "test",
+          up(target: DatabaseSync) {
+            target.exec("INSERT INTO migration_new VALUES ('done')");
+          },
+        };
+        runDaemonMigrations(db, [first, second]);
+        runDaemonMigrations(db, [first, second]);
+        expect(db.prepare("SELECT value FROM migration_new").all()).toEqual([{ value: "done" }]);
+        expect(db.prepare("SELECT key FROM daemon_meta ORDER BY key").all()).toEqual([
+          { key: "first" },
+          { key: "second" },
+        ]);
+        if (nested) db.exec("ROLLBACK");
+      } finally {
+        db.close();
+      }
+    },
+  );
+});

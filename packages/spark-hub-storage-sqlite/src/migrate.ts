@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,7 +61,13 @@ function repairLegacyWorkspaceSchema(db: DatabaseSync): void {
 }
 
 export function migrate(db: DatabaseSync, migrations = loadMigrations()): void {
-  db.exec("BEGIN");
+  const known = new Map<string, Migration>();
+  for (const migration of migrations) {
+    if (known.has(migration.version))
+      throw new Error(`Duplicate Hub migration version: ${migration.version}`);
+    known.set(migration.version, migration);
+  }
+  db.exec("BEGIN IMMEDIATE");
   try {
     const bootstrapMigration = migrations.find((migration) => migration.version === "0001");
     if (!bootstrapMigration) {
@@ -74,20 +81,30 @@ export function migrate(db: DatabaseSync, migrations = loadMigrations()): void {
         )
         .get(),
     );
-    if (!schemaMigrationsExists) {
+    if (schemaMigrationsExists) {
+      validateAppliedMigrations(db, known);
+    } else {
       db.exec(bootstrapMigration.sql);
+    }
+    if (!hasMigrationChecksum(db)) {
+      db.exec("ALTER TABLE schema_migrations ADD COLUMN checksum TEXT");
     }
 
     repairLegacyWorkspaceSchema(db);
 
     const bootstrapAppliedAt = new Date().toISOString();
     db.prepare(
-      "INSERT OR IGNORE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-    ).run(bootstrapMigration.version, bootstrapMigration.name, bootstrapAppliedAt);
+      "INSERT OR IGNORE INTO schema_migrations (version, name, applied_at, checksum) VALUES (?, ?, ?, ?)",
+    ).run(
+      bootstrapMigration.version,
+      bootstrapMigration.name,
+      bootstrapAppliedAt,
+      schemaMigrationsExists ? null : migrationChecksum(bootstrapMigration),
+    );
 
     const hasMigration = db.prepare("SELECT 1 FROM schema_migrations WHERE version = ? LIMIT 1");
     const insertMigration = db.prepare(
-      "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+      "INSERT INTO schema_migrations (version, name, applied_at, checksum) VALUES (?, ?, ?, ?)",
     );
 
     for (const migration of migrations) {
@@ -99,13 +116,61 @@ export function migrate(db: DatabaseSync, migrations = loadMigrations()): void {
         assertHubIdentityMigrationIsUnambiguous(db);
       }
       db.exec(migration.sql);
-      insertMigration.run(migration.version, migration.name, new Date().toISOString());
+      insertMigration.run(
+        migration.version,
+        migration.name,
+        new Date().toISOString(),
+        migrationChecksum(migration),
+      );
     }
 
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
+  }
+}
+
+function migrationChecksum(migration: Migration): string {
+  return createHash("sha256").update(migration.sql).digest("hex");
+}
+
+function hasMigrationChecksum(db: DatabaseSync): boolean {
+  return db
+    .prepare("PRAGMA table_info(schema_migrations)")
+    .all()
+    .some((column) => column.name === "checksum");
+}
+
+function validateAppliedMigrations(db: DatabaseSync, known: Map<string, Migration>): void {
+  const checksumColumn = hasMigrationChecksum(db) ? "checksum" : "NULL AS checksum";
+  const rows = db
+    .prepare(`SELECT version, name, ${checksumColumn} FROM schema_migrations`)
+    .all() as Array<{
+    version: string;
+    name: string;
+    checksum: string | null;
+  }>;
+  for (const row of rows) {
+    const migration = known.get(row.version);
+    if (!migration) throw new Error(`Unknown or future Hub migration: ${row.version}`);
+    if (migration.name !== row.name)
+      throw new Error(`Hub migration identity mismatch: ${row.version}`);
+    if (row.checksum !== null && row.checksum !== migrationChecksum(migration)) {
+      throw new Error(`Hub migration checksum mismatch: ${row.version}`);
+    }
+  }
+  const applied = new Set(rows.map((row) => row.version));
+  const latest = rows.reduce((latest, row) => (row.version > latest ? row.version : latest), "");
+  for (const migration of known.values()) {
+    if (
+      migration.version !== "0001" &&
+      latest &&
+      migration.version < latest &&
+      !applied.has(migration.version)
+    ) {
+      throw new Error(`Hub migration history gap: ${migration.version}`);
+    }
   }
 }
 

@@ -911,3 +911,142 @@ describe("migrations", () => {
     );
   });
 });
+
+describe("migration history integrity", () => {
+  const migrations = [
+    {
+      version: "0001",
+      name: "bootstrap",
+      sql: "CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)",
+    },
+    {
+      version: "0002",
+      name: "items",
+      sql: "CREATE TABLE migration_items (name TEXT); INSERT INTO migration_items VALUES ('kept')",
+    },
+    {
+      version: "0003",
+      name: "index",
+      sql: "CREATE INDEX migration_items_name ON migration_items(name)",
+    },
+  ];
+  function state(db: ReturnType<typeof openMemoryDatabase>) {
+    return {
+      schema: db.prepare("SELECT name, sql FROM sqlite_master ORDER BY name").all(),
+      rows: db.prepare("SELECT * FROM schema_migrations ORDER BY version").all(),
+    };
+  }
+  it.each([
+    [
+      "future",
+      "INSERT INTO schema_migrations (version,name,applied_at) VALUES ('9999','future','later')",
+    ],
+    ["identity", "UPDATE schema_migrations SET name='changed' WHERE version='0002'"],
+    ["history gap", "DELETE FROM schema_migrations WHERE version='0002'"],
+    ["checksum", "UPDATE schema_migrations SET checksum='' WHERE version='0002'"],
+  ])("rejects %s history before changing the database", (reason, change) => {
+    const db = openMemoryDatabase();
+    try {
+      migrate(db, migrations);
+      db.exec(change);
+      const before = state(db);
+      expect(() => migrate(db, migrations)).toThrow(new RegExp(reason));
+      expect(state(db)).toEqual(before);
+      expect(db.isTransaction).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
+  it("detects changed SQL already applied by this runner", () => {
+    const db = openMemoryDatabase();
+    try {
+      migrate(db, migrations);
+      const before = state(db);
+      expect(() =>
+        migrate(
+          db,
+          migrations.map((m) => (m.version === "0002" ? { ...m, sql: m.sql + "; SELECT 1" } : m)),
+        ),
+      ).toThrow(/checksum mismatch/);
+      expect(state(db)).toEqual(before);
+    } finally {
+      db.close();
+    }
+  });
+  it.each([false, true])(
+    "preserves unverified legacy history with a missing bootstrap row: %s",
+    (missingBootstrap) => {
+      const db = openMemoryDatabase();
+      try {
+        for (const migration of migrations.slice(0, 2)) {
+          db.exec(migration.sql);
+          if (!(missingBootstrap && migration.version === "0001"))
+            db.prepare("INSERT INTO schema_migrations VALUES (?,?,?)").run(
+              migration.version,
+              migration.name,
+              "legacy",
+            );
+        }
+        migrate(db, migrations);
+        migrate(db, migrations);
+        expect(
+          db.prepare("SELECT checksum FROM schema_migrations WHERE version < '0003'").all(),
+        ).toEqual([{ checksum: null }, { checksum: null }]);
+        expect(
+          db.prepare("SELECT checksum FROM schema_migrations WHERE version='0003'").get()?.checksum,
+        ).toMatch(/^[a-f0-9]{64}$/);
+        expect(db.prepare("SELECT name FROM migration_items").all()).toEqual([{ name: "kept" }]);
+      } finally {
+        db.close();
+      }
+    },
+  );
+  it("rejects a future legacy history before adding checksum metadata", () => {
+    const db = openMemoryDatabase();
+    try {
+      db.exec(migrations[0]!.sql);
+      db.exec("INSERT INTO schema_migrations VALUES ('9999', 'future', 'legacy')");
+      const before = state(db);
+      expect(() => migrate(db, migrations)).toThrow(/future/);
+      expect(state(db)).toEqual(before);
+    } finally {
+      db.close();
+    }
+  });
+  it("rolls back failed SQL and records only the corrected successful retry", () => {
+    const db = openMemoryDatabase();
+    try {
+      migrate(db, migrations);
+      const before = state(db);
+      const pending = {
+        version: "0004",
+        name: "retry",
+        sql: "CREATE TABLE migration_retry (value TEXT); INSERT INTO missing_table VALUES ('fail')",
+      };
+      expect(() => migrate(db, [...migrations, pending])).toThrow(/missing_table/);
+      expect(state(db)).toEqual(before);
+      migrate(db, [
+        ...migrations,
+        {
+          ...pending,
+          sql: "CREATE TABLE migration_retry (value TEXT); INSERT INTO migration_retry VALUES ('done')",
+        },
+      ]);
+      expect(db.prepare("SELECT value FROM migration_retry").all()).toEqual([{ value: "done" }]);
+      expect(
+        db.prepare("SELECT checksum FROM schema_migrations WHERE version='0004'").get()?.checksum,
+      ).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      db.close();
+    }
+  });
+  it("rejects duplicate versions before creating any schema", () => {
+    const db = openMemoryDatabase();
+    try {
+      expect(() => migrate(db, [...migrations, migrations[1]!])).toThrow(/Duplicate/);
+      expect(db.prepare("SELECT name FROM sqlite_master").all()).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+});

@@ -36,12 +36,19 @@ export function runDaemonMigrations(
     if (seen.has(migration.id)) throw new Error(`Duplicate daemon migration id: ${migration.id}`);
     seen.add(migration.id);
   }
-  const applied = readAppliedMigrationIds(db);
-  const now = new Date().toISOString();
-  for (const migration of migrations) {
-    if (!migration.everyOpen && applied.has(migration.id)) continue;
-    migration.up(db);
-    if (!migration.everyOpen) markMigrationApplied(db, migration.id, now);
+  db.exec("SAVEPOINT daemon_schema_migrations");
+  try {
+    const applied = readAppliedMigrationIds(db);
+    const now = new Date().toISOString();
+    for (const migration of migrations) {
+      if (!migration.everyOpen && applied.has(migration.id)) continue;
+      migration.up(db);
+      if (!migration.everyOpen) markMigrationApplied(db, migration.id, now);
+    }
+    db.exec("RELEASE daemon_schema_migrations");
+  } catch (error) {
+    db.exec("ROLLBACK TO daemon_schema_migrations; RELEASE daemon_schema_migrations");
+    throw error;
   }
 }
 
