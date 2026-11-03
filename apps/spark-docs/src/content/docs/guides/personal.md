@@ -20,3 +20,7 @@ from general Hub session lists and require their owning account even on loopback
 ## Inventory plugin
 
 After enabling inventory, `/personal/inventory` and the daemon `inventory` tool share the same Hub records. Create, edit, delete, filter by status/tag, and inspect costs and monthly purchase trends. Amounts retain their original unit without inferred currency; current asset value means held purchase cost. Updates and deletion require the current revision. Refresh and review after a stale-edit conflict. Disabling the capability retains records and immediately closes access.
+
+## Personal todos
+
+Enable todos to use `/personal/todos` or the `personal_todo` tool. Track status, priority, due dates, estimated hours, parents and dependencies. Relations must belong to the same owner and cannot form cycles. Remove references before deletion. Completion records a timestamp; reopening clears it. Filters apply to both records and statistics. Cancelled tasks are excluded from overdue counts.

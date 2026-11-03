@@ -1,3 +1,5 @@
+import { executePersonalTodo } from "@zendev-lab/ulota-personal-todos";
+import { personalTodoSchema } from "@zendev-lab/spark-protocol";
 import { executeInventory } from "@zendev-lab/ulota-inventory";
 import { inventoryItemSchema, type PersonalCapability } from "@zendev-lab/spark-protocol";
 import {
@@ -6,7 +8,7 @@ import {
 } from "@zendev-lab/spark-hub-storage-sqlite";
 import { requirePersonalCapability } from "@zendev-lab/spark-hub-coordination/personal";
 import { getDatabase } from "./db.ts";
-export const installedPersonalCapabilities: readonly PersonalCapability[] = ["inventory"];
+export const installedPersonalCapabilities: readonly PersonalCapability[] = ["inventory", "todos"];
 export function executeHostedPersonalCapability(
   userId: string,
   capability: PersonalCapability,
@@ -18,6 +20,11 @@ export function executeHostedPersonalCapability(
     switch (capability) {
       case "inventory":
         return executeInventory(inventoryRepositoryForUser(userId), {
+          action: request.action,
+          input: request.input,
+        });
+      case "todos":
+        return executePersonalTodo(todoRepositoryForUser(userId), {
           action: request.action,
           input: request.input,
         });
@@ -45,5 +52,12 @@ export function inventoryRepositoryForUser(userId: string) {
   requirePersonalCapability(getDatabase(), userId, "inventory");
   return createPersonalRecordRepository(getDatabase(), "inventory", userId, (value) =>
     inventoryItemSchema.parse(value),
+  );
+}
+
+export function todoRepositoryForUser(userId: string) {
+  requirePersonalCapability(getDatabase(), userId, "todos");
+  return createPersonalRecordRepository(getDatabase(), "todos", userId, (value) =>
+    personalTodoSchema.parse(value),
   );
 }
