@@ -4,7 +4,7 @@ import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { writePrivateFile, type SparkPaths } from "@zendev-lab/spark-platform-node";
-import { readSparkDaemonConfig, type SparkDaemonConfig } from "./config.js";
+import { readSparkDaemonConfig, type SparkDaemonConfig } from "./config.ts";
 
 import { errorMessage } from "./text.ts";
 import { isRecord } from "./local-rpc/is-record.ts";

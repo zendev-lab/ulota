@@ -1,3 +1,5 @@
+import { bindPersonalHub, readPersonalCredential, unbindPersonalHub } from "../../personal.ts";
+import { readSparkDaemonConfig } from "../../config.ts";
 import { SparkDaemonBrowserSessionStore } from "../../store/daemon-browser-sessions.ts";
 import { SparkInvocationStore } from "../../store/invocations.ts";
 import { SparkChannelDeliveryStore } from "../../store/channel-deliveries.ts";
@@ -11,6 +13,7 @@ type DaemonRequest = Extract<
   LocalRpcServiceRequest,
   {
     method:
+      | "daemon.personal"
       | "daemon.status"
       | "daemon.stop"
       | "daemon.restart"
@@ -28,6 +31,24 @@ export async function handleDaemonRequest(
 ): Promise<LocalRpcServiceOutput<DaemonRequest>> {
   const { db, onStop, options } = ctx;
   switch (request.method) {
+    case "daemon.personal": {
+      const localOwnerId = readSparkDaemonConfig(ctx.paths).localOwnerId!;
+      if (request.params.action === "bind") {
+        if (!request.params.serverUrl || !request.params.token)
+          throw new SparkDaemonControlError(
+            "personal_pairing_invalid",
+            "Hub URL and pairing code are required.",
+          );
+        await bindPersonalHub(ctx.paths, request.params.serverUrl, request.params.token);
+      }
+      if (request.params.action === "unbind")
+        return { localOwnerId, ...(await unbindPersonalHub(ctx.paths)) };
+      const credential = readPersonalCredential(ctx.paths);
+      if (!credential) return { localOwnerId };
+      const { token: _token, localOwnerId: _owner, ...binding } = credential;
+      return { localOwnerId, binding };
+    }
+
     case "daemon.access.create": {
       const store = new SparkDaemonUserTokenStore(db);
       const created = store.create({

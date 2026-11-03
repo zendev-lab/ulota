@@ -30,3 +30,40 @@ export const personalBindingCreateRequestSchema = z
 export const personalBindingRevokeRequestSchema = z
   .object({ id: z.string().min(1).max(256) })
   .strict();
+
+export const personalCapabilitySettingSchema = z
+  .object({ capability: personalCapabilitySchema, enabled: z.boolean() })
+  .strict();
+export const personalSessionGrantSchema = z
+  .object({
+    bindingId: z.string().min(1),
+    sessionId: z.string().min(1),
+    capability: personalCapabilitySchema,
+    canWrite: z.boolean(),
+  })
+  .strict();
+export const personalExecuteRequestSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    capability: personalCapabilitySchema,
+    action: z.string().min(1),
+    input: z.record(z.string(), z.unknown()).default({}),
+  })
+  .strict();
+export const personalOperationResultSchema = z.object({ result: z.unknown() }).strict();
+export const personalDeviceAccessSchema = z
+  .object({ capabilities: z.array(personalCapabilitySchema) })
+  .strict();
+
+export const personalServerUrlSchema = z.url().refine((value) => {
+  const url = new URL(value);
+  return (
+    !url.username &&
+    !url.password &&
+    (url.protocol === "https:" ||
+      (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))
+  );
+}, "Personal Hub requires HTTPS or loopback HTTP.");
+export const personalStoredCredentialSchema = personalBoundCredentialSchema.extend({
+  serverUrl: personalServerUrlSchema,
+});

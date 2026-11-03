@@ -1,3 +1,4 @@
+import { registerPersonalCapabilities } from "./personal-capabilities.ts";
 /** Spark TUI native host service construction. */
 
 import { basename, join, resolve } from "node:path";
@@ -233,6 +234,7 @@ export async function createSparkCliHostServices(
   );
 
   await registerSparkProductCapabilities(runtime);
+  registerPersonalCapabilities(runtime, options.sparkHome);
 
   const themeCatalog = await loadSparkThemeCatalog({
     cwd,

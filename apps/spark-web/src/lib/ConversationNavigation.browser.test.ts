@@ -143,7 +143,9 @@ it("pins recognizable QQ branding, removes global actions, and scopes each new c
   screen.container.style.width = "280px";
   const nav = screen.container.querySelector("nav")!;
   expect(getComputedStyle(nav).userSelect).toBe("none");
-  const first = screen.container.querySelector<HTMLAnchorElement>(".navigation-scroll a")!;
+  const first = screen.container.querySelector<HTMLAnchorElement>(
+    '.navigation-scroll a[href^="/sessions/"]',
+  )!;
   expect(first.getAttribute("href")).toBe("/sessions/qq-channel");
   expect(first.textContent).toContain("QQ chat · 7B047099…");
   expect(first.textContent).not.toContain("qqbot:c2c:");

@@ -230,12 +230,10 @@ export async function executeSparkDaemonSessionControl(
       return { result: publicObject(chunk) };
     }
     case "session.create.request": {
-      const requestedScope = request.payload.scope;
+      const scope = request.payload.scope as { kind?: string } | undefined;
       if (
-        !requestedScope ||
-        typeof requestedScope !== "object" ||
-        Array.isArray(requestedScope) ||
-        (requestedScope as Record<string, unknown>).kind !== "workspace"
+        scope?.kind !== "workspace" &&
+        !(scope?.kind === "daemon" && request.payload.purpose === "personal")
       ) {
         throw new SparkSessionRegistryError(
           "invalid_scope",
@@ -243,12 +241,6 @@ export async function executeSparkDaemonSessionControl(
         );
       }
       const parsed = sparkSessionCreateRequestSchema.parse(request.payload);
-      if (parsed.scope.kind !== "workspace") {
-        throw new SparkSessionRegistryError(
-          "invalid_scope",
-          "New top-level sessions must belong to a workspace.",
-        );
-      }
       if (
         options.actor === "spark-daemon-runtime-ws" &&
         (parsed.cwd !== undefined ||

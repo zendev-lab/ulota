@@ -37,6 +37,7 @@ describe("SparkCommand vocabulary", () => {
       "daemon.status",
       "daemon.stop",
       "daemon.restart",
+      "daemon.personal",
       "daemon.access.create",
       "daemon.access.list",
       "daemon.access.revoke",
@@ -247,6 +248,7 @@ describe("SparkCommand vocabulary", () => {
       "channel.qqbot.auth.cancel.request",
       "invocation.cancel.request",
       "artifact.content.request",
+      "human.request.list.request",
       "human.response.deliver.request",
       "diagnostics.request",
     ]);

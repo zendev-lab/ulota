@@ -6,6 +6,12 @@ import {
   createPersonalBinding,
   redeemPersonalBinding,
   revokePersonalBinding,
+  revokePersonalBindingCredential,
+  setPersonalCapability,
+  listPersonalCapabilities,
+  grantPersonalSession,
+  authorizePersonalSession,
+  revokePersonalSession,
 } from "./personal.ts";
 
 function fixture() {
@@ -165,6 +171,95 @@ it("revoking a device grant invalidates pairing and existing personal credential
     expect(() =>
       redeemPersonalBinding(db, pending.token, "local", "device-b", "device-b-runtime"),
     ).toThrow();
+  } finally {
+    db.close();
+  }
+});
+
+it("keeps personal capabilities disabled by default and gates workspace access independently", () => {
+  const db = fixture();
+  try {
+    const pairing = createPersonalBinding(db, {
+      userId: "alice",
+      runtimeId: "device-a",
+      hubInstanceId: "hub-one",
+    });
+    const bound = redeemPersonalBinding(db, pairing.token, "local", "device-a", "device-a-runtime");
+    expect(listPersonalCapabilities(db, "alice")).toEqual([]);
+    expect(() => authorizePersonalSession(db, bound, "work", "inventory", false)).toThrow();
+    setPersonalCapability(db, "alice", "inventory", true);
+    db.prepare(`INSERT INTO runtime_session_projections (runtime_id, session_id, scope, lifecycle, placement, activity, lifetime, lineage_origin_kind, record_json, projected_at)
+      VALUES ('device-a', 'work', 'daemon', 'open', 'active', 'idle', 'persistent', 'root', ?, ?)`).run(
+      JSON.stringify({
+        scope: { kind: "workspace", workspaceId: "project" },
+        purpose: "interactive",
+        bindings: [],
+      }),
+      new Date().toISOString(),
+    );
+    expect(() => authorizePersonalSession(db, bound, "work", "inventory", false)).toThrow();
+    grantPersonalSession(db, "alice", {
+      bindingId: bound.id,
+      sessionId: "work",
+      capability: "inventory",
+      canWrite: false,
+    });
+    expect(() => authorizePersonalSession(db, bound, "work", "inventory", false)).not.toThrow();
+    expect(() => authorizePersonalSession(db, bound, "work", "inventory", true)).toThrow();
+    expect(() =>
+      grantPersonalSession(db, "bob", {
+        bindingId: bound.id,
+        sessionId: "work",
+        capability: "inventory",
+        canWrite: true,
+      }),
+    ).toThrow();
+    grantPersonalSession(db, "alice", {
+      bindingId: bound.id,
+      sessionId: "work",
+      capability: "inventory",
+      canWrite: true,
+    });
+    expect(() => authorizePersonalSession(db, bound, "work", "inventory", true)).not.toThrow();
+    revokePersonalSession(db, "alice", bound.id, "work", "inventory");
+    expect(() => authorizePersonalSession(db, bound, "work", "inventory", false)).toThrow();
+    db.prepare(
+      "UPDATE runtime_session_projections SET record_json = ? WHERE session_id = 'work'",
+    ).run(JSON.stringify({ purpose: "channel", bindings: [] }));
+    expect(() =>
+      grantPersonalSession(db, "alice", {
+        bindingId: bound.id,
+        sessionId: "work",
+        capability: "inventory",
+        canWrite: true,
+      }),
+    ).toThrow();
+    db.prepare(
+      "INSERT INTO personal_sessions (session_id, user_id, binding_id, runtime_id, created_at) VALUES ('private', 'alice', ?, 'device-a', ?)",
+    ).run(bound.id, new Date().toISOString());
+    expect(() => authorizePersonalSession(db, bound, "private", "inventory", true)).not.toThrow();
+    setPersonalCapability(db, "alice", "inventory", false);
+    expect(() => authorizePersonalSession(db, bound, "private", "inventory", false)).toThrow();
+  } finally {
+    db.close();
+  }
+});
+
+it("can confirm revocation while an account is disabled, without restoring old credentials", () => {
+  const db = fixture();
+  try {
+    const pairing = createPersonalBinding(db, {
+      userId: "alice",
+      runtimeId: "device-a",
+      hubInstanceId: "hub-one",
+    });
+    const bound = redeemPersonalBinding(db, pairing.token, "local", "device-a", "device-a-runtime");
+    db.prepare("UPDATE users SET status = 'disabled' WHERE id = 'alice'").run();
+    expect(revokePersonalBindingCredential(db, bound.token)).toEqual({ revoked: true });
+    expect(revokePersonalBindingCredential(db, bound.token)).toEqual({ revoked: true });
+    db.prepare("UPDATE users SET status = 'active' WHERE id = 'alice'").run();
+    expect(() => authenticatePersonalBinding(db, bound.token)).toThrow();
+    expect(() => revokePersonalBindingCredential(db, "wrong")).toThrow();
   } finally {
     db.close();
   }

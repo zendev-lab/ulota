@@ -1,3 +1,4 @@
+import { personalBindingSchema } from "./personal.ts";
 import { type ContractRouterClient, type ErrorMap, oc } from "@orpc/contract";
 import { z } from "zod";
 import {
@@ -271,6 +272,15 @@ export const sparkLocalRpcSessionOrpcErrors = {
   ...sparkLocalRpcSideThreadOrpcErrors,
 } as const satisfies Record<SparkSessionRegistryErrorCode, { status: number }>;
 
+export const sparkLocalRpcPersonalOrpcErrors = {
+  personal_unbound: { status: 403 },
+  personal_binding_exists: { status: 409 },
+  personal_pairing_failed: { status: 403 },
+  personal_unbind_failed: { status: 503 },
+  personal_unavailable: { status: 503 },
+  personal_request_failed: { status: 403 },
+  personal_pairing_invalid: { status: 400 },
+} as const;
 export const sparkLocalRpcDaemonOrpcErrors = {
   daemon_restart_conflict: { status: 409 },
   daemon_restart_unavailable: { status: 503 },
@@ -1518,6 +1528,25 @@ export const sparkLocalRpcProcedureSchemas = {
     input: sparkLocalRpcEmptyInputSchema,
     output: sparkLocalRpcDaemonRestartResultSchema,
   },
+  "daemon.personal": {
+    input: z
+      .object({
+        action: z.enum(["status", "bind", "unbind"]),
+        serverUrl: z.string().optional(),
+        token: z.string().optional(),
+      })
+      .strict(),
+    output: z
+      .object({
+        localOwnerId: z.string(),
+        binding: personalBindingSchema
+          .omit({ localOwnerId: true })
+          .extend({ serverUrl: z.string() })
+          .optional(),
+        unbound: z.boolean().optional(),
+      })
+      .strict(),
+  },
   "daemon.access.create": {
     input: sparkLocalRpcDaemonAccessCreateRequestSchema,
     output: sparkLocalRpcDaemonAccessCreateResultSchema,
@@ -1972,6 +2001,7 @@ export const sparkLocalRpcOrpcOnlyMethods = [
   "session.media.read",
   "session.prompt-history",
   "session.retry-target",
+  "daemon.personal",
   "daemon.access.create",
   "daemon.access.list",
   "daemon.access.revoke",
@@ -2021,6 +2051,12 @@ export const sparkLocalRpcOrpcContract = {
       "/daemon/restart",
       p["daemon.restart"],
       sparkLocalRpcReadinessDaemonOrpcErrors,
+    ),
+    personal: procedure(
+      "POST",
+      "/daemon/personal",
+      p["daemon.personal"],
+      sparkLocalRpcPersonalOrpcErrors,
     ),
     access: {
       create: procedure(

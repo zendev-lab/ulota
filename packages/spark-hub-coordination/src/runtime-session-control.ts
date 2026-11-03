@@ -1,3 +1,4 @@
+import { personalSessionOwner } from "./personal-session-ownership.ts";
 import type { DatabaseSync } from "node:sqlite";
 
 import {
@@ -288,7 +289,9 @@ export function listRuntimeSessionProjections(
        ORDER BY projected_at DESC, session_id`,
     )
     .all(...values) as unknown as RuntimeSessionProjectionRow[];
-  return rows.map(runtimeSessionProjectionRecord);
+  return rows
+    .map(runtimeSessionProjectionRecord)
+    .filter((record) => !personalSessionOwner(db, record.session.sessionId));
 }
 
 /**

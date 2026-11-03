@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  ensurePersonalSessionWorkspace,
+  validatePersonalSessionWorkspace,
   channelConfigPath,
   channelRuntimeDir,
   channelSessionWorkspacePath,
@@ -47,4 +49,20 @@ describe("daemon Channel paths", () => {
       /real directory/u,
     );
   });
+});
+
+it("keeps personal workspaces private and rejects a linked personal directory", async () => {
+  const root = join(tmpdir(), `ulota-personal-paths-${crypto.randomUUID()}`);
+  const paths = roots(root);
+  const cwd = await ensurePersonalSessionWorkspace(paths, "sess_personal");
+  expect(cwd).toBe(join(paths.dataDir, "personal", "sessions", "sess_personal", "workspace"));
+  expect((await lstat(cwd)).mode & 0o777).toBe(0o700);
+  await expect(validatePersonalSessionWorkspace(paths, "sess_personal", cwd)).resolves.toBe(cwd);
+  await expect(validatePersonalSessionWorkspace(paths, "sess_personal", root)).rejects.toThrow();
+  const linked = roots(join(tmpdir(), `ulota-personal-linked-${crypto.randomUUID()}`));
+  await mkdir(linked.dataDir, { recursive: true });
+  await symlink(root, join(linked.dataDir, "personal"), "dir");
+  await expect(ensurePersonalSessionWorkspace(linked, "sess_personal")).rejects.toThrow(
+    /real directory/u,
+  );
 });

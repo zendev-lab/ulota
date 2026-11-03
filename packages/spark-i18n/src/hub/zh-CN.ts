@@ -1,4 +1,6 @@
+import personalMessages from "./personal/zh-CN.json" with { type: "json" };
 const messages = {
+  personal: personalMessages,
   common: {
     never: "从未",
     justNow: "刚刚",

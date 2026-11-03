@@ -75,6 +75,9 @@ export function createLocalRpcOrpcRouter(input: CreateLocalRpcOrpcRouterOptions)
       status: os.daemon.status.handler(async () => invoke("daemon.status", {})),
       stop: os.daemon.stop.handler(async () => invoke("daemon.stop", {})),
       restart: os.daemon.restart.handler(async () => invoke("daemon.restart", {})),
+      personal: os.daemon.personal.handler(async ({ input: params }) =>
+        invoke("daemon.personal", params),
+      ),
       access: {
         create: os.daemon.access.create.handler(async ({ input: params }) =>
           invoke("daemon.access.create", params),

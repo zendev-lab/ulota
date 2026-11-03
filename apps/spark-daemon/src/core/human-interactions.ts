@@ -214,6 +214,8 @@ export class SparkDaemonHumanInteractionBroker {
     const route = resolveHumanInteractionRoute(this.options.db, context);
     const runtimeId = route ? this.options.getRuntimeId(route)?.trim() : undefined;
     const localTui = context.sessionSource === "tui";
+    const localWeb =
+      context.sessionSource === "web" && !context.workspaceBindingId && !context.workspaceId;
     const toSessionId = durable.ask.toSessionId?.trim();
     const sessionAddressed = Boolean(toSessionId);
     if (sessionAddressed && request.kind === "toolApproval") {
@@ -243,6 +245,7 @@ export class SparkDaemonHumanInteractionBroker {
     const hubProjected = !sessionAddressed && Boolean(runtimeId && route);
     const operatorAnswerable =
       Boolean(context.channel) ||
+      localWeb ||
       context.sessionSource === "daemon" ||
       context.sessionSource === "session";
     if (!sessionAddressed && !hubProjected && !localTui && !operatorAnswerable) {
@@ -260,6 +263,7 @@ export class SparkDaemonHumanInteractionBroker {
     if (
       !hubProjected &&
       operatorAnswerable &&
+      !localWeb &&
       !context.channel &&
       (durable.ask.delivery ?? "blocking") === "blocking" &&
       durable.ask.timeoutMs === undefined
@@ -617,8 +621,8 @@ function resolveHumanInteractionRoute(
   db: DatabaseSync,
   context: SparkDaemonHumanInteractionContext,
 ): SparkDaemonHumanInteractionRoute | null {
-  // Daemon-global Channel interactions deliberately have no Workspace route.
-  if (context.channel) return null;
+  // A daemon-owned conversation cannot inherit an unrelated workspace inbox.
+  if (context.channel || (!context.workspaceBindingId && !context.workspaceId)) return null;
 
   const localReference = context.workspaceBindingId ?? context.workspaceId;
   const localRoute = localReference ? findLocalWorkspaceRoute(db, localReference) : null;

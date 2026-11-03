@@ -67,6 +67,7 @@ describe("side-thread local RPC parsing", () => {
       "session.media.read",
       "session.prompt-history",
       "session.retry-target",
+      "daemon.personal",
       "daemon.access.create",
       "daemon.access.list",
       "daemon.access.revoke",

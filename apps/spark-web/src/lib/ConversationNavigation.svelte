@@ -20,6 +20,7 @@
 
 <nav class="conversation-navigation" aria-label={copy.primaryNavigation}>
   <div class="navigation-scroll">
+    <a class="session-link" href="/personal" onclick={closeNavigation}>{messages.web.personal.title}</a>
     {#if navigation.channels.length > 0}
       <ul class="pinned-channels" aria-label={copy.channelConversations}>
         {#each navigation.channels as session (session.sessionId)}

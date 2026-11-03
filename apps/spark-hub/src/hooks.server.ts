@@ -1,3 +1,4 @@
+import { personalSessionOwner } from "@zendev-lab/spark-hub-coordination/personal";
 import { createId } from "@zendev-lab/spark-protocol";
 import {
   listUserDaemonGrantIds,
@@ -46,10 +47,19 @@ export const handle: Handle = async ({ event, resolve }) => {
       }
     }
 
+    const normalizedPath = decodeURI(event.url.pathname);
+    const sessionId = event.params?.sessionId ?? normalizedPath.match(/\/sessions\/([^/]+)/u)?.[1];
+    if (sessionId) {
+      const owner = personalSessionOwner(db, sessionId);
+      if (owner && owner !== hubSession?.userId)
+        return new Response("Personal session access denied.", { status: 403 });
+    }
     const clientAddress = getClientAddress(event);
     const decision = remoteAccessDecision({ url: event.url, clientAddress });
     event.locals.hasControlPlaneAccess = !decision.required || hubSession?.role === "owner";
-    const personalDeviceRequest = event.url.pathname === "/api/v1/personal/bindings/redeem";
+    const personalDeviceRequest =
+      event.url.pathname === "/api/v1/personal/bindings/redeem" ||
+      event.url.pathname.startsWith("/api/v1/personal/device/");
     if (decision.required && !hubSession && !personalDeviceRequest) {
       return remoteAccessRequiredResponse(event);
     }

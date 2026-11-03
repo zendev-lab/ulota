@@ -156,6 +156,7 @@ describe("sparkLocalRpcOrpcContract (Phase 4)", () => {
       "session.media.read",
       "session.prompt-history",
       "session.retry-target",
+      "daemon.personal",
       "daemon.access.create",
       "daemon.access.list",
       "daemon.access.revoke",
