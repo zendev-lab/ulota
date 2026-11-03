@@ -16,3 +16,7 @@ device, or explicitly grant a workspace conversation read or write access to a
 specific tool. Message-platform conversations cannot receive these grants.
 Revocation takes effect on subsequent requests. Personal conversations are excluded
 from general Hub session lists and require their owning account even on loopback.
+
+## Inventory plugin
+
+After enabling inventory, `/personal/inventory` and the daemon `inventory` tool share the same Hub records. Create, edit, delete, filter by status/tag, and inspect costs and monthly purchase trends. Amounts retain their original unit without inferred currency; current asset value means held purchase cost. Updates and deletion require the current revision. Refresh and review after a stale-edit conflict. Disabling the capability retains records and immediately closes access.

@@ -27,3 +27,13 @@ dynamic discovery mechanism or autonomous scheduler is introduced.
 
 Legacy imports are explicit, validated, transactional and repeatable. Sources are
 read-only. Existing imported records are never overwritten by a repeated import.
+
+## Record operations
+
+Hosted records are scoped by authenticated user and stable record id. Every update
+and deletion requires the observed revision; stale revisions fail without changing
+data. Mutations carry an operation id. The Hub commits the business change and
+its request-bound receipt in one transaction, so repeating an identical operation
+returns its previous result and changing its payload conflicts. Inventory retains
+BoneHub's filtered purchase-cost and calendar-month statistics; no currency is
+inferred from locale.

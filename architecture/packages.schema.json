@@ -19,7 +19,7 @@
       "type": "object",
       "minProperties": 1,
       "propertyNames": {
-        "pattern": "^@zendev-lab/(?:spark|dsh)-[a-z0-9-]+$"
+        "pattern": "^@zendev-lab/(?:spark|dsh|ulota)-[a-z0-9-]+$"
       },
       "additionalProperties": {
         "$ref": "#/$defs/package"
@@ -44,7 +44,7 @@
     },
     "packageName": {
       "type": "string",
-      "pattern": "^@zendev-lab/(?:spark|dsh)-[a-z0-9-]+$"
+      "pattern": "^@zendev-lab/(?:spark|dsh|ulota)-[a-z0-9-]+$"
     },
     "taskRef": {
       "type": "string",

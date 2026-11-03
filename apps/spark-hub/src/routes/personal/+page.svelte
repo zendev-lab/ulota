@@ -5,6 +5,7 @@
   let { data, form } = $props();
   const t = $derived(data.messages.personal);
   const capabilities = $derived(data.signedIn ? data.installed : []);
+  const canGrant = $derived(data.signedIn && data.bindings.some(binding => !binding.revokedAt && binding.localOwnerId) && data.sessionOptions.length > 0 && capabilities.length > 0);
 </script>
 <svelte:head><title>{t.title} · Ulota</title></svelte:head>
 <PageHeader title={t.title} lede={t.body} />
@@ -38,12 +39,15 @@
     {#if data.conversations.length === 0}<p>{t.emptyConversations}</p>{:else}<ul>{#each data.conversations as conversation (conversation.sessionId)}<li>{#if conversation.session}<a href="/personal/sessions/{conversation.sessionId}">{conversation.session.name ?? t.title}</a>{:else}<span>{t.unavailable}</span>{/if}</li>{/each}</ul>{/if}
   </section>
   <section aria-labelledby="personal-permissions"><h2 id="personal-permissions">{t.workspaceAccess}</h2>
+    {#if !canGrant}<p id="personal-grant-hint">{t.permissionPrerequisite}</p>{/if}
     <form method="POST" action="?/grant" use:enhance>
-      <label>{t.device}<select name="bindingId" required>{#each data.bindings.filter(binding => !binding.revokedAt && binding.localOwnerId) as binding}<option value={binding.id}>{data.daemons.find(device => device.id === binding.runtimeId)?.name ?? t.device}</option>{/each}</select></label>
-      <label>{t.session}<select name="sessionId" required>{#each data.sessionOptions as session}<option value={session.sessionId}>{session.name}</option>{/each}</select></label>
-      <label>{t.capability}<select name="capability">{#each capabilities as capability}<option value={capability}>{t[capability]}</option>{/each}</select></label>
-      <label><input type="checkbox" name="canWrite" />{t.write}</label><Button type="submit">{t.grant}</Button>
+      <label>{t.device}<select disabled={!canGrant} name="bindingId" required>{#each data.bindings.filter(binding => !binding.revokedAt && binding.localOwnerId) as binding}<option value={binding.id}>{data.daemons.find(device => device.id === binding.runtimeId)?.name ?? t.device}</option>{/each}</select></label>
+      <label>{t.session}<select disabled={!canGrant} name="sessionId" required>{#each data.sessionOptions as session}<option value={session.sessionId}>{session.name}</option>{/each}</select></label>
+      <label>{t.capability}<select disabled={!canGrant} name="capability">{#each capabilities as capability}<option value={capability}>{t[capability]}</option>{/each}</select></label>
+      <label class="permission-write"><input disabled={!canGrant} type="checkbox" name="canWrite" />{t.write}</label><Button type="submit" disabled={!canGrant}>{t.grant}</Button>
     </form>
     <ul>{#each data.grants as grant}<li><form method="POST" action="?/grant" use:enhance><span>{t[grant.capability as "inventory" | "todos" | "subscriptions"]}</span><code>{grant.sessionId}</code><input type="hidden" name="bindingId" value={grant.bindingId} /><input type="hidden" name="sessionId" value={grant.sessionId} /><input type="hidden" name="capability" value={grant.capability} /><input type="hidden" name="revoke" value="true" /><Button type="submit" variant="secondary">{t.remove}</Button></form></li>{/each}</ul>
   </section>
 {/if}
+
+<style>.permission-write { display: flex !important; align-items: center; }</style>

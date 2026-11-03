@@ -38,6 +38,10 @@ it("shows enablement, pending pairing and recoverable failure without revealing 
     .element(screen.getByRole("button", { name: "Start personal conversation" }))
     .toBeDisabled();
   await expect.element(screen.getByRole("alert")).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: messages.personal.grant, exact: true }))
+    .toBeDisabled();
+  await expect.element(screen.getByText(messages.personal.permissionPrerequisite)).toBeVisible();
   const select = screen.getByRole("combobox").first();
   await select.click();
   await userEvent.keyboard("{Escape}");

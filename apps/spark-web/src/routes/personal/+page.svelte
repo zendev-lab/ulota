@@ -17,4 +17,4 @@
 {/if}
 {#if form?.failed}<p role="alert">{t.failure}</p>{/if}
 </section>
-<style>.personal { max-width: 44rem; margin-inline: auto; padding: 2rem; } form { display: grid; gap: 1rem; margin-block: 1.5rem; } label { display: grid; gap: .5rem; } input { color: inherit; background: var(--color-surface); border: 1px solid var(--color-border); padding: .75rem; border-radius: var(--radius-sm, 6px); font: inherit; }</style>
+<style>.personal { max-width: 44rem; margin-inline: auto; padding: 2rem; } form { display: grid; gap: 1rem; margin-block: 1.5rem; } label { display: grid; gap: .5rem; } input { color: inherit; background: var(--color-surface); border: 1px solid var(--color-border); padding: .75rem; border-radius: var(--rounded-sm); font: inherit; }</style>

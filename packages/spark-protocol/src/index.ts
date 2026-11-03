@@ -16,3 +16,4 @@ export * from "./role-session.ts";
 export * from "./runtime-v1/diagnostics.ts";
 export * from "./web-workbench-control.ts";
 export * from "./personal.ts";
+export * from "./personal-inventory.ts";

@@ -555,6 +555,8 @@ export interface EventIngestSequenceTable {
 }
 
 export interface SparkDatabase {
+  personal_inventory: PersonalRecordsTable;
+  personal_operation_receipts: PersonalOperationReceiptsTable;
   personal_capability_settings: PersonalCapabilitySettingsTable;
   personal_session_grants: PersonalSessionGrantsTable;
   personal_sessions: PersonalSessionsTable;
@@ -632,5 +634,20 @@ export interface PersonalSessionsTable {
   user_id: string;
   binding_id: string;
   runtime_id: string;
+  created_at: string;
+}
+
+export interface PersonalRecordsTable {
+  user_id: string;
+  record_id: string;
+  revision: number;
+  updated_at: string;
+  record_json: string;
+}
+export interface PersonalOperationReceiptsTable {
+  user_id: string;
+  operation_id: string;
+  request_hash: string;
+  result_json: string;
   created_at: string;
 }

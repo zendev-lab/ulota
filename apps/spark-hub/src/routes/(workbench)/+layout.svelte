@@ -192,6 +192,7 @@
         <Icon name="users" size={18} />
         <span>{t.nav.delegations}</span>
       </a>
+      <a class="nav-item" href="/personal" onclick={closeNavigation}><Icon name="user" size={18} /><span>{data.messages.personal.title}</span></a>
       <a
         class="shell-nav-link workbench-nav-link"
         href={settingsHref}
