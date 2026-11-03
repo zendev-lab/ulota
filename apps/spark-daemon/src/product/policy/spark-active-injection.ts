@@ -13,31 +13,8 @@ import { loadSessionGoal } from "./spark-session-goals.ts";
 import { sparkLanguageForProject, type SparkLanguage } from "./spark-i18n.ts";
 import { sparkSystemPromptLanguageDirective } from "./spark-model-prompts.ts";
 import { renderBaseSystemPromptsCatalogPrompt } from "@zendev-lab/spark-roles/builtin-skills";
-import type { SparkModeEntryDeps, SparkModeMessageApi } from "./spark-mode-entry.ts";
 import type { SparkToolContext } from "./spark-tool-registration.ts";
 import { sparkTaskClaimSessionKey } from "./task-claim-selection.ts";
-
-interface SparkInputEvent {
-  text: string;
-  source?: string;
-}
-
-export interface SparkInputModeRouter {
-  piApi: SparkModeMessageApi;
-  deps: SparkModeEntryDeps;
-}
-
-export async function handleSparkInput(
-  event: unknown,
-  _ctx: SparkToolContext,
-  _router?: SparkInputModeRouter,
-): Promise<unknown> {
-  if (!isSparkInputEvent(event)) return { action: "continue" };
-  if (event.source === "extension") return { action: "continue" };
-  const text = event.text.trim();
-  if (!text || text.startsWith("/")) return { action: "continue" };
-  return { action: "continue" };
-}
 
 export async function injectSparkHints(event: unknown, ctx: SparkToolContext): Promise<unknown> {
   // Spark is always available: inject the standing neutral prompt even when no
@@ -111,12 +88,6 @@ export function renderSparkActiveSystemPrompt(
     .map((section) => section?.trim())
     .filter((section): section is string => Boolean(section))
     .join("\n\n");
-}
-
-function isSparkInputEvent(event: unknown): event is SparkInputEvent {
-  return Boolean(
-    event && typeof event === "object" && typeof (event as { text?: unknown }).text === "string",
-  );
 }
 
 function eventSystemPrompt(event: unknown): string {

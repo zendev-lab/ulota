@@ -103,7 +103,6 @@ test("Spark product policy starts and stops heartbeat only at session lifecycle 
     },
     {
       refreshSparkWidget: async () => undefined,
-      ensureWorkflowRunManager: async () => undefined,
       sessionHeartbeatController: {
         lease: () => undefined,
         async start() {
