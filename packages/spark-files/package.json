@@ -31,7 +31,7 @@
     "@zendev-lab/spark-platform-node": "workspace:^",
     "diff": "^9.0.0",
     "ignore": "^7.0.5",
-    "minimatch": "^10.2.5",
+    "minimatch": "^11.0.0",
     "typebox": "catalog:"
   },
   "devDependencies": {
