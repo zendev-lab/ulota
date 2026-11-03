@@ -24,3 +24,7 @@ After enabling inventory, `/personal/inventory` and the daemon `inventory` tool 
 ## Personal todos
 
 Enable todos to use `/personal/todos` or the `personal_todo` tool. Track status, priority, due dates, estimated hours, parents and dependencies. Relations must belong to the same owner and cannot form cycles. Remove references before deletion. Completion records a timestamp; reopening clears it. Filters apply to both records and statistics. Cancelled tasks are excluded from overdue counts.
+
+## Subscriptions
+
+Enable subscriptions to use `/personal/subscriptions` or the `subscription` tool. Renew advances the stored next payment date by one calendar cycle, clamping month ends. Lifetime subscriptions cannot renew. Cancel also turns off auto-renew. Costs retain the legacy 30-day month and 365-day year estimates, grouped by currency without exchange rates. Estimated spent is not a payment ledger. Reminder days are retained preferences; no background reminders run.

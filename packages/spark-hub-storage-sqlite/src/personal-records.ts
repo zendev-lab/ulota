@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-const tables = { inventory: "personal_inventory", todos: "personal_todos" } as const;
+const tables = {
+  inventory: "personal_inventory",
+  todos: "personal_todos",
+  subscriptions: "personal_subscriptions",
+} as const;
 export type PersonalRecordTable = keyof typeof tables;
 export interface PersonalStoredRecord {
   id: string;
