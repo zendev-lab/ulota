@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { createId } from "@zendev-lab/spark-protocol";
+import { createId } from "@zendev-lab/spark-protocol/domain";
 
 /**
  * Daemon-owned `daemon-user` access tokens for direct browser surfaces

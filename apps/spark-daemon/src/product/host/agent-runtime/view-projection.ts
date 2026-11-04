@@ -9,16 +9,18 @@ import type {
   ToolResultMessage,
 } from "@zendev-lab/spark-llm-providers";
 import {
-  SPARK_PROTOCOL_VERSION,
   summarizeToolCallArguments,
   summarizeToolResultContent,
+} from "@zendev-lab/spark-protocol/presentation";
+import { SPARK_PROTOCOL_VERSION } from "@zendev-lab/spark-protocol/domain";
+import {
   type SparkArtifactView,
   type SparkEvidenceView,
   type SparkMessageView,
   type SparkRunView,
   type SparkTaskTodoView,
   type SparkTaskView,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
 import { assistantConversationParts, displaySafeAssistantText } from "./conversation-parts.ts";
 
 let viewMessageCounter = 0;

@@ -1,16 +1,17 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { SPARK_PROTOCOL_VERSION, createId } from "@zendev-lab/spark-protocol/domain";
 import {
-  SPARK_PROTOCOL_VERSION,
   createBlockedInteractionResponse,
-  createId,
   parseSparkInteractionRequest,
   sparkJsonObjectSchema,
-  type SparkDirectAnswerProvenance,
-  type SparkEvidenceAnswerEvent,
   type SparkInteractionRequest,
   type SparkInteractionResponse,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
+import {
+  type SparkDirectAnswerProvenance,
+  type SparkEvidenceAnswerEvent,
+} from "@zendev-lab/spark-protocol/interaction";
 import { runtimeEnvelope } from "../protocol/outbound.ts";
 import {
   SparkDaemonHumanWaitRegistry,

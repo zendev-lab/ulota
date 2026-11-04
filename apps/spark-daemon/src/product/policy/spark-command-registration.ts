@@ -5,7 +5,10 @@ import {
 } from "@zendev-lab/spark-driver";
 import { isUnfinishedTaskStatus, type TaskGraph } from "@zendev-lab/spark-tasks";
 import { type ProjectRef } from "@zendev-lab/spark-invocation";
-import type { SparkLoopSessionLifetime, SparkLoopView } from "@zendev-lab/spark-protocol";
+import type {
+  SparkLoopSessionLifetime,
+  SparkLoopView,
+} from "@zendev-lab/spark-protocol/interaction";
 import type { SparkEntryIntent } from "./spark-entry.ts";
 
 type LoopDomain = "goal" | "loop" | "workflow";

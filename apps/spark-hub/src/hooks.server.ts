@@ -1,4 +1,4 @@
-import { createId } from "@zendev-lab/spark-protocol";
+import { createId } from "@zendev-lab/spark-protocol/domain";
 import {
   listUserDaemonGrantIds,
   listUserDaemonGrantWorkspaceIds,

@@ -1,3 +1,4 @@
+// Compatibility entry point. Production consumers use the contract-domain subpaths.
 export * from "./protocol.ts";
 export * from "./artifact-control.ts";
 export * from "./agent-catalog.ts";

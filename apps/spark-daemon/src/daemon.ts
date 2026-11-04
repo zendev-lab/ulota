@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import WebSocket, { type RawData } from "ws";
+import { createId } from "@zendev-lab/spark-protocol/domain";
 import {
-  createId,
   humanResponseDeliverEnvelopeSchema,
-  parseSparkDaemonEvent,
   runtimeCommandResultEnvelopeSchema,
   runtimeEphemeralSecretResultEnvelopeSchema,
   serverEphemeralSecretRequestEnvelopeSchema,
@@ -14,11 +13,14 @@ import {
   serverCommandEnvelopeSchema,
   serverHeartbeatAckEnvelopeSchema,
   serverHelloAckEnvelopeSchema,
-  type SparkDaemonEvent,
-  type SparkJsonObject,
   type RuntimeFeature,
   type RuntimeWorkspaceBindingSummary,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/runtime";
+import {
+  parseSparkDaemonEvent,
+  type SparkDaemonEvent,
+  type SparkJsonObject,
+} from "@zendev-lab/spark-protocol/presentation";
 import { readSparkBuildInfo } from "@zendev-lab/spark-deployment";
 import { type SparkDaemonConfig } from "./config.js";
 import {

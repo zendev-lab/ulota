@@ -1,4 +1,4 @@
-import type { SparkSessionState } from "@zendev-lab/spark-protocol";
+import type { SparkSessionState } from "@zendev-lab/spark-protocol/daemon";
 import type { SparkSessionCloseCandidate } from "@zendev-lab/spark-protocol/session-assignment";
 import { SparkSessionRegistryError } from "@zendev-lab/spark-session";
 import { loopDriverCloseCandidate } from "../../spark/loop-close-completion.ts";

@@ -6,7 +6,7 @@ import {
   type SparkLocalRpcOutput,
   type SparkSessionProjection,
   type SparkTurnSubmitResult,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import { resolveSparkPaths } from "@zendev-lab/spark-platform-node";
 import { requestSparkDaemon, type SparkDaemonClientOptions } from "@zendev-lab/spark-daemon-client";
 

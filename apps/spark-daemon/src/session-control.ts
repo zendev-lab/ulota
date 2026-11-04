@@ -9,7 +9,6 @@ import {
   sparkSessionParentId,
   sparkInvocationListRequestSchema,
   sparkInvocationListResultSchema,
-  parseSparkSessionView,
   sparkSessionArchiveRequestSchema,
   sparkSessionBindRequestSchema,
   sparkSessionCreateRequestSchema,
@@ -21,7 +20,6 @@ import {
   sparkSessionPromptHistoryRequestSchema,
   sparkSessionRetryTargetRequestSchema,
   sparkSessionRetryTargetSchema,
-  sparkSessionSnapshotPageSchema,
   sparkSessionSnapshotRequestSchema,
   sparkSessionUnbindRequestSchema,
   sparkTurnCancelRequestSchema,
@@ -33,19 +31,23 @@ import {
   sparkTurnSubmitRequestSchema,
   sparkTurnSubmitResultSchema,
   isSparkInvocationTerminalStatus,
-  sparkSessionViewStatusAfterPendingTurns,
   type SparkAssignment,
   type SparkCommandKind,
   type SparkInvocationListResult,
   type SparkProtocolJsonValue,
   type SparkSessionCreateRequest,
   type SparkSessionLineageOrigin,
-  type SparkSessionPromptHistory,
   type SparkSessionRetryTarget,
   type SparkSessionProjection,
   type SparkSessionState,
+} from "@zendev-lab/spark-protocol/daemon";
+import {
+  parseSparkSessionView,
+  sparkSessionSnapshotPageSchema,
+  sparkSessionViewStatusAfterPendingTurns,
+  type SparkSessionPromptHistory,
   type SparkSessionView,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
 import {
   loadSparkSessionMediaChunk,
   loadSparkSessionPromptHistory,

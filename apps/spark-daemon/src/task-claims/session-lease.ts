@@ -4,7 +4,7 @@ import {
   sparkSessionParentId,
   type SparkSessionLineageOrigin,
   type SparkSessionState,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import type { SparkSessionLeaseIdentity } from "@zendev-lab/spark-invocation";
 import { sparkSessionKey } from "@zendev-lab/spark-driver";
 import type {

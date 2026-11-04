@@ -3,8 +3,6 @@ import {
   parseSparkSessionPeerProjection,
   parseSparkSessionProjection,
   parseSparkSessionProjections,
-  sparkSessionSnapshotPageSchema,
-  parseSparkSessionView,
   projectSparkSessionState,
   SPARK_SESSION_PEER_INVOCATION_SUMMARY_MAX_BYTES,
   sparkSessionInboxResultSchema,
@@ -14,7 +12,11 @@ import {
   type SparkSessionMailMessage,
   type SparkSessionProjection,
   type SparkSessionSendRequest,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
+import {
+  sparkSessionSnapshotPageSchema,
+  parseSparkSessionView,
+} from "@zendev-lab/spark-protocol/presentation";
 import { SparkSessionRegistryError } from "@zendev-lab/spark-session";
 import {
   executeSparkDaemonSessionControl,

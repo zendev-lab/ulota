@@ -1,7 +1,7 @@
 import { error as kitError, fail } from "@sveltejs/kit";
 import { getCurrentUserIdBySessionToken } from "@zendev-lab/spark-hub-coordination/hub-queries";
 import { listRuntimeSessionProjections } from "@zendev-lab/spark-hub-coordination/runtime-session-control";
-import type { SparkQqbotQrAuthFlow } from "@zendev-lab/spark-protocol";
+import type { SparkQqbotQrAuthFlow } from "@zendev-lab/spark-protocol/daemon";
 import { renderSVG } from "uqr";
 import { daemonChannelSessionSummaries } from "$lib/daemon-channel-session";
 import {

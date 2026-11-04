@@ -8,7 +8,7 @@ import {
   type SparkInvocationStatus,
   type SparkTurnStatusResult,
   type SparkTurnStreamPage,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import {
   runRuntimeSessionControlCommand,
   runtimeSessionRouteForRuntime,

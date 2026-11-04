@@ -4,7 +4,7 @@ import { getRuntimeSessionProjection } from "@zendev-lab/spark-hub-coordination/
 import {
   normalizeSparkA2uiDocument,
   type SparkSessionReproWorkView,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
 
 export type HubReproWorkbenchBinding = NonNullable<SparkSessionReproWorkView["workbench"]>;
 

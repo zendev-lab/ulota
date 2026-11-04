@@ -2,7 +2,7 @@ import type {
   SparkInvocationEvent,
   SparkTurnResult,
   SparkTurnStatusResult,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 
 import { invokeSparkWebRpc, type SparkWebDaemonInvoker } from "./rpc.ts";
 

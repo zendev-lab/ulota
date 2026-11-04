@@ -16,7 +16,7 @@ import type {
   SparkActionBarView,
   SparkActionView,
   SparkSessionView,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
 import type { ChannelSessionPresentation } from "@zendev-lab/spark-ui/channel-session";
 import type {
   ModelControlState,

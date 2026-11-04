@@ -3,7 +3,7 @@ import {
   sparkConversationPartSchema,
   type SparkConversationProjectionPart,
   type SparkMessageView,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
 import type {
   ConversationApprovalState,
   ConversationPart,

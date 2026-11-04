@@ -1,4 +1,7 @@
-import type { SparkInteractionRequest, SparkJsonObject } from "@zendev-lab/spark-protocol";
+import type {
+  SparkInteractionRequest,
+  SparkJsonObject,
+} from "@zendev-lab/spark-protocol/presentation";
 
 import type { SparkAskFlowRequest, SparkAskFlowResult } from "./schema.ts";
 

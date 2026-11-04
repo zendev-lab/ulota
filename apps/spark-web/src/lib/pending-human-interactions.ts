@@ -2,7 +2,7 @@ import {
   sparkAskQuestionViewSchema,
   type SparkAskQuestionView,
   type SparkInteractionRequest,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
 import type { SparkLocalRpcOutput } from "@zendev-lab/spark-protocol/local-rpc-orpc-contract";
 
 type ListedHumanWait = SparkLocalRpcOutput<"human.interaction.list">["waits"][number];

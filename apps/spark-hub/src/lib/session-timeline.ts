@@ -1,4 +1,4 @@
-import type { SparkMessageView } from "@zendev-lab/spark-protocol";
+import type { SparkMessageView } from "@zendev-lab/spark-protocol/presentation";
 import { shortenOpaqueChannelId } from "@zendev-lab/spark-ui/channel-session";
 import { isInternalExecutionTransportFailure } from "./components/conversation/internal-execution-detail";
 import {

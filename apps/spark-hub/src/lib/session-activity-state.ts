@@ -1,9 +1,10 @@
-import type { SparkSessionView, SparkSessionActivityPhase } from "@zendev-lab/spark-protocol";
+import type { SparkSessionView } from "@zendev-lab/spark-protocol/presentation";
+import type { SparkSessionActivityPhase } from "@zendev-lab/spark-protocol/domain";
 import {
   resolveSessionActivityState as resolveProtocolSessionActivityState,
   sessionActivityNeedsStatusProbe as protocolSessionActivityNeedsStatusProbe,
   type SparkSessionActivityState,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
 import type { HubPendingTurn } from "./session-pending-turns";
 
 export type SessionActivityPhase = SparkSessionActivityPhase;

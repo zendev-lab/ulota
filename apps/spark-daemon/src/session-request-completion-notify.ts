@@ -2,7 +2,7 @@ import { SparkSessionMailStore } from "@zendev-lab/spark-session";
 import {
   isSparkInvocationTerminalStatus,
   type SparkSessionState,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 
 import type { SparkDaemonModelControl } from "./model-control.ts";
 import type { DaemonSessionRegistry } from "./session-registry.ts";

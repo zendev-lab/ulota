@@ -1,6 +1,13 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import {
+  SPARK_PROTOCOL_SUBPATHS,
+  findSparkProtocolRootReferences,
+  isSparkProductionSourcePath,
+  sparkProtocolSubpathBoundaryViolations,
+} from "./spark-protocol-governance.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const architecture = readJson(join(root, "architecture/packages.json"));
@@ -77,6 +84,7 @@ function runArchitectureRatchets() {
     }
   }
 
+  checkSparkProtocolImports(failures);
   for (const workspaceDir of ["apps", "packages"]) {
     visit(join(root, workspaceDir), (path) => {
       if (!/\.[cm]?tsx?$/u.test(path)) return;
@@ -156,6 +164,39 @@ function readJson(path) {
     return JSON.parse(readFileSync(path, "utf8"));
   } catch (error) {
     throw new Error(`Failed to parse JSON from ${path}`, { cause: error });
+  }
+}
+
+function checkSparkProtocolImports(failures) {
+  const protocolPackage = readJson(join(root, "packages/spark-protocol/package.json"));
+  for (const subpath of SPARK_PROTOCOL_SUBPATHS) {
+    const target = protocolPackage.exports?.[`./${subpath}`];
+    if (typeof target !== "string") {
+      failures.push(`@zendev-lab/spark-protocol is missing required export ./${subpath}`);
+      continue;
+    }
+    if (!isFile(join(root, "packages/spark-protocol", target))) {
+      failures.push(`@zendev-lab/spark-protocol export ./${subpath} points to missing ${target}`);
+    }
+  }
+  for (const workspaceDir of ["apps", "packages"]) {
+    visit(join(root, workspaceDir), (sourcePath) => {
+      if (!isSparkProductionSourcePath(sourcePath)) return;
+      const references = findSparkProtocolRootReferences(
+        readFileSync(sourcePath, "utf8"),
+        sourcePath,
+      );
+      if (references.length === 0) return;
+      failures.push(
+        `${relative(root, sourcePath).replaceAll("\\", "/")} references @zendev-lab/spark-protocol root barrel (${references.map((reference) => reference.kind).join(", ")}); use the public contract-domain or focused subpaths`,
+      );
+    });
+  }
+  for (const subpath of ["domain", "presentation", "runtime"]) {
+    const source = readFileSync(join(root, `packages/spark-protocol/src/${subpath}.ts`), "utf8");
+    for (const violation of sparkProtocolSubpathBoundaryViolations(subpath, source)) {
+      failures.push(`spark-protocol ${violation}`);
+    }
   }
 }
 

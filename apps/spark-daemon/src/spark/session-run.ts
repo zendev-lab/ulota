@@ -1,21 +1,23 @@
 import { mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setImmediate as yieldToMacrotask } from "node:timers/promises";
+import { SPARK_PROTOCOL_VERSION } from "@zendev-lab/spark-protocol/domain";
 import {
-  SPARK_PROTOCOL_VERSION,
   parseSparkDaemonEvent,
   parseSparkInteractionRequest,
   parseSparkViewModelEvent,
-  sparkSessionLifetimeForLineage,
-  sparkSessionLineageOriginKind,
-  sparkSessionParentId,
-  sparkThinkingLevelSchema,
   type SparkDaemonEvent,
   type SparkJsonObject,
   type SparkInteractionRequest,
   type SparkInteractionResponse,
+} from "@zendev-lab/spark-protocol/presentation";
+import {
+  sparkSessionLifetimeForLineage,
+  sparkSessionLineageOriginKind,
+  sparkSessionParentId,
+  sparkThinkingLevelSchema,
   type SparkSessionState,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import type {
   ArtifactRef,
   ExtensionInteractionCapabilities,

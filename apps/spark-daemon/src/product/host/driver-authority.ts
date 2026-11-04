@@ -4,12 +4,12 @@ import {
   setSparkSessionDriverAuthority,
   type SparkSessionContext,
 } from "@zendev-lab/spark-driver";
+import { SPARK_PROTOCOL_VERSION } from "@zendev-lab/spark-protocol/domain";
 import {
-  SPARK_PROTOCOL_VERSION,
   parseSparkInteractionRequest,
   type SparkInteractionRequest,
   type SparkInteractionResponse,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
 
 export const SPARK_DRIVER_AUTHORITY_QUESTION_ID = "driver_authority";
 export const SPARK_DRIVER_AUTHORITY_GRANT = "grant";

@@ -3,11 +3,11 @@ import { existsSync } from "node:fs";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
+import { sparkLoopPolicySchema } from "@zendev-lab/spark-protocol/interaction";
 import {
-  sparkLoopPolicySchema,
   type SparkLoopPolicy,
   type SparkLoopPolicyInput,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/interaction";
 import { parseDocument } from "yaml";
 import {
   defaultProjectResourceDirs,

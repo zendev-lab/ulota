@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
-  import type { SparkAuthFlow } from "@zendev-lab/spark-protocol";
+  import type { SparkAuthFlow } from "@zendev-lab/spark-protocol/daemon";
   import {
     Button,
     Field,

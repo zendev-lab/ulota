@@ -8,7 +8,8 @@ import { type TaskGraph } from "@zendev-lab/spark-tasks";
 import type { ProjectRef, TaskRef } from "@zendev-lab/spark-invocation";
 import { type Project } from "@zendev-lab/spark-tasks";
 import { type Task } from "@zendev-lab/spark-tasks";
-import { createId, parseSparkAssignment } from "@zendev-lab/spark-protocol";
+import { createId } from "@zendev-lab/spark-protocol/domain";
+import { parseSparkAssignment } from "@zendev-lab/spark-protocol/daemon";
 
 import {
   consoleSparkCliErrorOutput,

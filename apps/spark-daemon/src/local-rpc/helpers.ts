@@ -5,12 +5,14 @@ import {
 } from "@zendev-lab/dsh-channel-transports";
 import {
   isSparkInvocationTerminalStatus,
-  parseSparkSessionView,
   sparkTurnResultSchema,
   type SparkInvocationStatus,
+} from "@zendev-lab/spark-protocol/daemon";
+import {
+  parseSparkSessionView,
   type SparkSessionMailChannelDeliveryView,
   type SparkSessionView,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
 import {
   SparkSessionRegistryError,
   type SparkSessionMailDeliveryStatus,

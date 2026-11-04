@@ -10,14 +10,14 @@ import {
 import {
   sparkSideThreadSnapshotSchema,
   sparkSideThreadExchangeSchema,
-  sparkViewModelStatusFromPendingTurns,
   type SparkModelRef,
   type SparkSessionState,
   type SparkSideThreadErrorCode,
   type SparkSideThreadExchange,
   type SparkSideThreadMode,
   type SparkSideThreadSnapshot,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
+import { sparkViewModelStatusFromPendingTurns } from "@zendev-lab/spark-protocol/presentation";
 import {
   loadSparkSessionSnapshot,
   sparkSessionSnapshotIndexPath,

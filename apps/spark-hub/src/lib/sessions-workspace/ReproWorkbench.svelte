@@ -1,6 +1,6 @@
 <script lang="ts">
   import { A2uiRenderer } from "@zendev-lab/spark-ui/a2ui";
-  import type { SparkSessionReproWorkView } from "@zendev-lab/spark-protocol";
+  import type { SparkSessionReproWorkView } from "@zendev-lab/spark-protocol/presentation";
 
   type SparkA2uiInteractiveBinding = NonNullable<SparkSessionReproWorkView["workbench"]>;
 

@@ -4,7 +4,7 @@ import {
   type Artifact,
   type ArtifactRef,
 } from "@zendev-lab/spark-artifacts";
-import type { SparkArtifactCatalogEntry } from "@zendev-lab/spark-protocol";
+import type { SparkArtifactCatalogEntry } from "@zendev-lab/spark-protocol/daemon";
 
 import { SparkDaemonControlError } from "../../control-error.ts";
 import { resolveWorkspaceLocalPath } from "../../store/workspaces.ts";

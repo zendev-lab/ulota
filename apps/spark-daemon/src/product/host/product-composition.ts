@@ -5,7 +5,7 @@ import type { Context, Plugin } from "@deepseek-ai/cordis";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import * as dshToolSubagent from "@deepseek-ai/dsh-tool-subagent";
 import type { SparkDshToolPolicyMetadata, SparkHostAPI } from "@zendev-lab/spark-invocation";
-import { sparkMemoryDirectIntentReceiptSchema } from "@zendev-lab/spark-protocol";
+import { sparkMemoryDirectIntentReceiptSchema } from "@zendev-lab/spark-protocol/daemon";
 
 import * as dshCuePlugin from "@zendev-lab/dsh-tool-cue";
 import * as dshFusionPlugin from "@zendev-lab/dsh-tool-fusion";

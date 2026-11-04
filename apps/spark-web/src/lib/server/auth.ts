@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { SparkLocalRpcOutput } from "@zendev-lab/spark-protocol";
+import type { SparkLocalRpcOutput } from "@zendev-lab/spark-protocol/daemon";
 import {
   requestSparkDaemon,
   resolveSparkWebRequestTrustFailure,

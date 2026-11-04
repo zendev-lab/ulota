@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
 
 import { requestSparkDaemon } from "@zendev-lab/spark-daemon-client";
-import type { SparkSessionSnapshotPage } from "@zendev-lab/spark-protocol";
+import type { SparkSessionSnapshotPage } from "@zendev-lab/spark-protocol/presentation";
 
 export type SparkWebSseEvent = {
   event: "spark.session.snapshot";

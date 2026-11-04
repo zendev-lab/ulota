@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { parseSparkModelValue, sparkThinkingLevelOptions } from "@zendev-lab/spark-protocol";
+  import { parseSparkModelValue, sparkThinkingLevelOptions } from "@zendev-lab/spark-protocol/daemon";
   import {
     Button,
     Checkbox,

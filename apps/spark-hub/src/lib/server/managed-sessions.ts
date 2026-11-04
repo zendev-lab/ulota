@@ -1,12 +1,12 @@
 import type { DatabaseSync } from "node:sqlite";
-import { SPARK_SESSION_MEDIA_CHUNK_MAX_BYTES } from "@zendev-lab/spark-protocol";
+import { SPARK_SESSION_MEDIA_CHUNK_MAX_BYTES } from "@zendev-lab/spark-protocol/daemon";
 import type {
   SparkSessionBindRequest,
   SparkSessionMediaReadRequest,
   SparkSessionMediaReadResult,
   SparkSessionProjection,
   SparkSideThreadSnapshot,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import {
   getRuntimeSessionProjection,
   listRuntimeSessionProjections,

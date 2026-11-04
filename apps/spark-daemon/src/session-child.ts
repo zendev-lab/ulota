@@ -8,12 +8,12 @@ import {
   stableSparkSessionContextEntries,
   type SparkSessionEntry,
 } from "@zendev-lab/spark-session/transcript";
+import { createId } from "@zendev-lab/spark-protocol/domain";
 import {
-  createId,
   type SparkModelRef,
   type SparkSessionState,
   type SparkThinkingLevel,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 import { createSparkRoleRegistry } from "@zendev-lab/spark-roles";
 import { SparkSessionRegistryError } from "@zendev-lab/spark-session";
 

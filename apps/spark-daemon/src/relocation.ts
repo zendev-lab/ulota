@@ -5,7 +5,7 @@ import {
   hubRuntimeRelocationMetadataSchema,
   runtimeRelocationPreflightResponseSchema,
   type RuntimeRelocationPreflightResponse,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/runtime";
 import type { SparkPaths } from "@zendev-lab/spark-platform-node";
 
 import { SparkDaemonControlError } from "./control-error.ts";

@@ -1,6 +1,6 @@
 import type { ModelPickerGroup } from "$lib/components/model-selector";
 import { brandIconForModelProvider } from "@zendev-lab/spark-ui";
-import type { SparkModelCatalogProvider } from "@zendev-lab/spark-protocol";
+import type { SparkModelCatalogProvider } from "@zendev-lab/spark-protocol/daemon";
 import { modelValue } from "./presentation";
 import type { SessionsWorkbenchCopy } from "./types";
 

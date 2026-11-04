@@ -10,7 +10,10 @@ import {
   type RoleSpec,
 } from "@zendev-lab/spark-roles";
 import { SparkSkillResolver, type SparkSkill } from "@zendev-lab/spark-roles/skill-resolver";
-import type { SparkRoleCatalogEntry, SparkSkillCatalogEntry } from "@zendev-lab/spark-protocol";
+import type {
+  SparkRoleCatalogEntry,
+  SparkSkillCatalogEntry,
+} from "@zendev-lab/spark-protocol/daemon";
 
 import { SparkDaemonControlError } from "../../control-error.ts";
 import { resolveWorkspaceLocalPath } from "../../store/workspaces.ts";

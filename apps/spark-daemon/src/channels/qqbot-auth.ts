@@ -3,12 +3,12 @@ import {
   startQqbotQrAuth,
   type QqbotQrCredentials,
 } from "@zendev-lab/dsh-channel-transports/qqbot-auth";
+import { createId } from "@zendev-lab/spark-protocol/domain";
 import {
-  createId,
   parseSparkQqbotQrAuthFlow,
   type SparkQqbotQrAuthFlow,
   type SparkQqbotQrAuthReason,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/daemon";
 
 const DEFAULT_QQBOT_QR_AUTH_LIFETIME_MS = 10 * 60_000;
 

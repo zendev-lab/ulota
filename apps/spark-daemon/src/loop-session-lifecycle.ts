@@ -1,4 +1,4 @@
-import type { SparkSessionState } from "@zendev-lab/spark-protocol";
+import type { SparkSessionState } from "@zendev-lab/spark-protocol/daemon";
 import { SparkSessionRegistryError } from "@zendev-lab/spark-session";
 import type { DaemonSessionRegistry } from "./session-registry.ts";
 import type { SparkInvocationRecord, SparkInvocationStore } from "./store/invocations.ts";

@@ -1,15 +1,15 @@
+import { SPARK_PROTOCOL_VERSION } from "@zendev-lab/spark-protocol/domain";
+import { isRuntimeInvocationTerminalStatus } from "@zendev-lab/spark-protocol/runtime";
+import { sanitizeSparkDisplayError } from "@zendev-lab/spark-protocol/domain";
 import {
   sessionEventCursor as protocolSessionEventCursor,
   sessionEventCursorStorageKey as protocolSessionEventCursorStorageKey,
-  SPARK_PROTOCOL_VERSION,
-  isRuntimeInvocationTerminalStatus,
   parseSparkDaemonEvent,
-  sanitizeSparkDisplayError,
   type SparkDaemonEvent,
   type SparkMessageView,
   type SparkSessionSnapshotHistory,
   type SparkSessionView,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
 
 export interface SessionSerializedEvent {
   id: string;

@@ -8,11 +8,11 @@ import {
   sparkSessionGoalWorkViewSchema,
   sparkSessionReproWorkViewSchema,
   sparkSessionWorkViewSchema,
-  type SparkLoopView,
   type SparkSessionGoalWorkView,
   type SparkSessionReproWorkView,
   type SparkSessionWorkView,
-} from "@zendev-lab/spark-protocol";
+} from "@zendev-lab/spark-protocol/presentation";
+import { type SparkLoopView } from "@zendev-lab/spark-protocol/interaction";
 import type {
   SparkReproUsageScope,
   SparkTokenUsageAggregate,

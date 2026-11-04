@@ -1,8 +1,6 @@
 import { registerSparkReproRoles } from "./product/policy/spark-repro-roles.ts";
-import {
-  sparkTurnSubmitResultSchema,
-  type SparkEvidenceAnswerEvent,
-} from "@zendev-lab/spark-protocol";
+import { sparkTurnSubmitResultSchema } from "@zendev-lab/spark-protocol/daemon";
+import { type SparkEvidenceAnswerEvent } from "@zendev-lab/spark-protocol/interaction";
 import type { SparkPaths } from "@zendev-lab/spark-platform-node";
 import type { DatabaseSync } from "node:sqlite";
 import type { SparkDaemonHumanWaitRegistry } from "./core/human-waits.ts";

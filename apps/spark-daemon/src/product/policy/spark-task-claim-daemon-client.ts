@@ -1,6 +1,6 @@
 import { createSparkDaemonClient, type SparkDaemonClient } from "@zendev-lab/spark-daemon-client";
 import type { SparkSessionLeaseIdentity } from "@zendev-lab/spark-invocation";
-import type { SparkLocalRpcMethod, SparkLocalRpcOutput } from "@zendev-lab/spark-protocol";
+import type { SparkLocalRpcMethod, SparkLocalRpcOutput } from "@zendev-lab/spark-protocol/daemon";
 import type { SparkToolContext } from "./spark-tool-registration.ts";
 import { sparkTaskClaimSessionKey } from "./task-claim-selection.ts";
 

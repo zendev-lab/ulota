@@ -4,7 +4,7 @@ import {
   type ChannelSessionLabels,
 } from "@zendev-lab/spark-ui/channel-session";
 import { workspaceSessionPath } from "../workspace-routes";
-import type { SparkSessionProjection } from "@zendev-lab/spark-protocol";
+import type { SparkSessionProjection } from "@zendev-lab/spark-protocol/daemon";
 
 export type HubSearchSession = SparkSessionProjection & { activityStatus?: string };
 

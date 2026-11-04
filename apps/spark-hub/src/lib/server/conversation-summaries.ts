@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { SparkSessionProjection } from "@zendev-lab/spark-protocol";
+import type { SparkSessionProjection } from "@zendev-lab/spark-protocol/daemon";
 import {
   conversationActivityStatus,
   type ConversationActivityStatus,
