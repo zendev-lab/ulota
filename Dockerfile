@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24.20.0-bookworm-slim AS base
+FROM node:26.13.0-bookworm-slim AS base
 
 # Take Debian's CA trust-store updates with the pinned distribution image.
 # hadolint ignore=DL3008
