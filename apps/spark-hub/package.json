@@ -46,7 +46,7 @@
     "typebox": "catalog:",
     "uqr": "0.1.3",
     "vite": "catalog:",
-    "web-push": "^3.6.7",
+    "web-push": "^4.0.0",
     "ws": "catalog:"
   },
   "devDependencies": {
