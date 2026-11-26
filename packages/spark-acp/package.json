@@ -32,7 +32,7 @@
     "@zendev-lab/spark-protocol": "workspace:^"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
+    "@types/node": "^26.0.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
